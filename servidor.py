@@ -250,7 +250,7 @@ async def ver_detalle(simbolo: str):
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
     # 1. Obtenemos el histórico
-    historico = await obtener_historico(simbolo)
+    historico = await obtener_historico_optimizado(simbolo)
     
     # 2. Procesamos los datos para la gráfica (formato necesario para ApexCharts)
     series_data = []
@@ -298,14 +298,36 @@ async def ver_detalle(simbolo: str):
     html += "</div></body></html>"
     return HTMLResponse(html)
 
-async def obtener_historico(simbolo: str):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    async with httpx.AsyncClient() as client:
-        # Hacemos la petición igualita a la de la página
-        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
-        datos = r.json()
-        return datos.get('cur_hist_mov_emisora', [])
-        
+import json
+import os
+import httpx
+
+HISTORICO_CACHE_FILE = 'historico_bolsa.json'
+
+async def obtener_historico_optimizado(simbolo: str):
+    # 1. Intentamos leer el archivo caché
+    if os.path.exists(HISTORICO_CACHE_FILE):
+        try:
+            with open(HISTORICO_CACHE_FILE, 'r') as f:
+                cache = json.load(f)
+                if simbolo in cache:
+                    return cache[simbolo]
+        except:
+            cache = {}
+    else:
+        cache = {}
+
+    # 2. Si no está, llamamos a la API real
+    datos_reales = await obtener_historico(simbolo)
+    
+    # 3. Guardamos el resultado en el archivo para la próxima vez
+    if datos_reales:
+        cache[simbolo] = datos_reales
+        with open(HISTORICO_CACHE_FILE, 'w') as f:
+            json.dump(cache, f)
+            
+    return datos_reales
+
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
     port = int(os.environ.get("PORT", 8000))
