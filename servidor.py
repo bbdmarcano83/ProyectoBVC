@@ -1,16 +1,27 @@
-from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-import uvicorn
-import json
 import os
+import json
+from fastapi import FastAPI
+import uvicorn
+
+# Configuración de rutas (para que nunca se pierdan los archivos)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
+PORTAFOLIO_FILE = os.path.join(BASE_DIR, 'portafolio.json')
 
 app = FastAPI()
-CONFIG_FILE = 'config.json'
 
+# Tus funciones de carga
 def cargar_config():
     if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r') as f: return json.load(f)
+        with open(CONFIG_FILE, 'r') as f: 
+            return json.load(f)
     return {"tasa": 0.0}
+
+def cargar_portafolio():
+    if os.path.exists(PORTAFOLIO_FILE):
+        with open(PORTAFOLIO_FILE, 'r') as f: 
+            return json.load(f)
+    return []
 
 def guardar_config(tasa):
     with open(CONFIG_FILE, 'w') as f: json.dump({"tasa": tasa}, f)
@@ -297,8 +308,6 @@ async def obtener_historico(simbolo: str):
         return datos.get('cur_hist_mov_emisora', [])
     
 if __name__ == "__main__":
-    import uvicorn
-    import os
-    # Obtenemos el puerto que Render nos asigna, o usamos 8000 si estamos en local
+    # Esto detecta si estamos en el servidor o en tu PC
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
