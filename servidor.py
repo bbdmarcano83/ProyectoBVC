@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import FastAPI
+from fastapi import FastAPI, Form, Request, Depends
 import uvicorn
 
 # Configuración de rutas (para que nunca se pierdan los archivos)
