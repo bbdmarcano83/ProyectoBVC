@@ -295,10 +295,14 @@ async def ver_detalle(simbolo: str):
     html += "<div id='chart-ohlc'></div><div id='chart-vol'></div>"
     html += f"""
     <script>
-        var optionsOHLC = {{ series: [{{ data: {ohlc_json} }}], chart: {{ id: 'candlestick', height: 300, type: 'candlestick' }}, plotOptions: {{ candlestick: {{ colors: {{ upward: '#2ecc71', downward: '#e74c3c' }} }} }} }};
-        var optionsVol = {{ series: [{{ name: 'Volumen', data: {vol_json} }}], chart: {{ id: 'volume', height: 150, type: 'bar', brush: {{ target: 'candlestick', enabled: true }}, selection: {{ enabled: true }} }}, colors: ['#7f8c8d'] }};
-        new ApexCharts(document.querySelector("#chart-ohlc"), optionsOHLC).render();
-        new ApexCharts(document.querySelector("#chart-vol"), optionsVol).render();
+        // Reemplaza tus líneas de var optionsOHLC por estas:
+        var optionsOHLC = { 
+            series: [{ data: {ohlc_json} }], 
+            chart: { id: 'candlestick', height: 300, type: 'candlestick' }, 
+            plotOptions: { candlestick: { colors: { upward: '#2ecc71', downward: '#e74c3c' } } },
+            xaxis: { type: 'category', reversed: true } // <--- ESTA ES LA LÍNEA QUE CAMBIA TODO
+        };
+        
     </script>
     """
     html += "</div></body></html>"
