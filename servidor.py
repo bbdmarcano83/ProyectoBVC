@@ -2,6 +2,8 @@ import os
 import json
 from fastapi import FastAPI, Form, Request, Depends
 import uvicorn
+import traceback
+import sys
 
 # Configuración de rutas (para que nunca se pierdan los archivos)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -308,8 +310,11 @@ async def obtener_historico(simbolo: str):
         return datos.get('cur_hist_mov_emisora', [])
     
 if __name__ == "__main__":
-    import uvicorn
-    import os
-    # Esto le dice a tu servidor que use el puerto que Render le asigne
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("servidor:app", host="0.0.0.0", port=port)
+    try:
+        import uvicorn
+        port = int(os.environ.get("PORT", 8000))
+        uvicorn.run("servidor:app", host="0.0.0.0", port=port)
+    except Exception:
+        print("--- ERROR DETECTADO AL ARRANCAR ---")
+        traceback.print_exc()
+        sys.exit(1)
