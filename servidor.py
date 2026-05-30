@@ -305,22 +305,27 @@ import httpx
 HISTORICO_CACHE_FILE = 'historico_bolsa.json'
 
 async def obtener_historico_optimizado(simbolo: str):
-    # 1. Intentamos leer el archivo caché
+    # 1. Intentamos leer el caché local
+    cache = {}
     if os.path.exists(HISTORICO_CACHE_FILE):
         try:
             with open(HISTORICO_CACHE_FILE, 'r') as f:
-                cache = json.load(f)
-                if simbolo in cache:
-                    return cache[simbolo]
-        except:
+                contenido = f.read()
+                if contenido: # Solo intentamos cargar si no está vacío
+                    cache = json.loads(contenido)
+        except Exception as e:
+            print(f"Error leyendo caché: {e}")
             cache = {}
-    else:
-        cache = {}
 
-    # 2. Si no está, llamamos a la API real
+    # 2. Si el símbolo está en el caché, lo retornamos
+    if simbolo in cache and cache[simbolo]:
+        return cache[simbolo]
+
+    # 3. Si no está en caché, llamamos a la API
+    print(f"Consultando API real para: {simbolo}")
     datos_reales = await obtener_historico(simbolo)
     
-    # 3. Guardamos el resultado en el archivo para la próxima vez
+    # 4. Guardamos el nuevo dato en el archivo
     if datos_reales:
         cache[simbolo] = datos_reales
         with open(HISTORICO_CACHE_FILE, 'w') as f:
