@@ -304,7 +304,7 @@ async def ver_detalle(simbolo: str):
                     colors: {{ upward: '#2ecc71', downward: '#e74c3c' }} 
                 }} 
             }},
-            xaxis: {{ type: 'category', reversed: true }}
+            xaxis: {{ type: 'category', reversed: false }}
         }};
         
         var optionsVol = {{ 
@@ -317,7 +317,7 @@ async def ver_detalle(simbolo: str):
         new ApexCharts(document.querySelector("#chart-vol"), optionsVol).render();
     </script>
     """
-    
+
     html += "</div></body></html>"
     return HTMLResponse(html)
       
