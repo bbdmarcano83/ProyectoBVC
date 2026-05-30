@@ -234,9 +234,6 @@ async def ver_portafolio():
         color_usd = "green" if gan_usd > 0 else ("red" if gan_usd < 0 else "blue")
         
         html += f"""<tr>
-            <td>{simb}</td><td>{cant}</td><td>{prom:,.2f}</td>
-            <td>{precio_actual:,.2f}</td><td>{val_port:,.2f}</td><td>{peso:.1f}%</td>
-            <td style='color:{'green' if gan>=0 else 'red'}'>{gan:,.2f}</td>
             <td style='color:{color_usd}'>{gan_usd:,.2f}</td>
         </tr>"""
     html += "</table>"
@@ -246,6 +243,21 @@ async def ver_portafolio():
     
 
 import json # Asegúrate de tener este import arriba en tu archivo
+def procesar_historico_para_grafica(historico):
+    ohlc_data = []
+    volume_data = []
+    for mov in historico[:30]:
+        try:
+            fec = mov.get('FEC')
+            ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
+            maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
+            mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
+            cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
+            vol = float(mov.get('VOLUMEN', '0').replace('.', '').replace(',', '.'))
+            ohlc_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
+            volume_data.append({"x": fec, "y": vol})
+        except: continue
+    return ohlc_data, volume_data
 
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
@@ -255,54 +267,43 @@ async def ver_detalle(simbolo: str):
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    # 1. Obtenemos el histórico
     historico = await obtener_historico_optimizado(simbolo)
+    ohlc_data, volume_data = procesar_historico_para_grafica(historico)
     
-    # 2. Procesamos los datos para la gráfica (formato necesario para ApexCharts)
-    series_data = []
-    for mov in historico[:30]: # Tomamos los últimos 30 días
-        fec = mov.get('FEC')
-        # Limpiamos los números (quitamos puntos de miles, cambiamos coma por punto)
-        ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
-        maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
-        mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
-        cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
-        series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
+    ohlc_json = json.dumps(ohlc_data)
+    vol_json = json.dumps(volume_data)
 
-    # Convertimos la lista de Python a formato que JS entiende
-    series_json = json.dumps(series_data)
+    var_f = float(activo.get('VAR_REL', 0))
+    color_var = "green" if var_f > 0 else ("red" if var_f < 0 else "#3498db")
 
-    # 3. Construimos el HTML
     html = f"<html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body><div class='container'>"
-    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
-    html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a>"
+    html += f"<div style='display:flex; justify-content:space-between; align-items:center;'><h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
+    html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a></div>"
     
-    # Tabla de datos actuales
+    # DATOS TÉCNICOS PROFESIONALES
     html += f"""
-    <table style='margin-top:20px;'>
-        <tr><th colspan='2'>Datos Técnicos de {simbolo}</th></tr>
-        <tr><td>Precio Último</td><td>{activo.get('PRECIO', 'N/A')} Bs</td></tr>
-        <tr><td>Volumen</td><td>{activo.get('VOLUMEN', 'N/A')}</td></tr>
-        <tr><td>Variación</td><td>{activo.get('VAR_REL', 'N/A')}%</td></tr>
-    </table>
+    <div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 20px 0;'>
+        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #2c3e50;'><strong>Precio Actual:</strong><br><span style='font-size:1.3em;'>{activo.get('PRECIO', '0')} Bs</span></div>
+        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #bdc3c7;'><strong>Precio Anterior:</strong><br><span style='font-size:1.3em;'>{activo.get('PRECIO_ANT', '0')} Bs</span></div>
+        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #2ecc71;'><strong>Compra (BID):</strong><br><span style='font-size:1.3em; color:green;'>{activo.get('PRE_CMP_1', '0')} Bs</span></div>
+        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #e74c3c;'><strong>Venta (ASK):</strong><br><span style='font-size:1.3em; color:red;'>{activo.get('PRE_VTA_1', '0')} Bs</span></div>
+        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid {color_var};'><strong>Variación:</strong><br><span style='font-size:1.3em; color:{color_var};'>{var_f}%</span></div>
+    </div>
     """
     
-    # La Gráfica Profesional
-    html += "<div id='chart' style='margin-top:30px; background:white; padding:20px; border-radius:8px;'></div>"
+    # GRÁFICA COMBINADA PROFESIONAL
+    html += "<div id='chart-ohlc'></div><div id='chart-vol'></div>"
     html += f"""
     <script>
-        var options = {{
-            series: [{{ data: {series_json} }}],
-            chart: {{ type: 'candlestick', height: 350 }},
-            title: {{ text: 'Histórico Últimos 30 días', align: 'left' }},
-            xaxis: {{ type: 'category' }}
-        }};
-        var chart = new ApexCharts(document.querySelector("#chart"), options);
-        chart.render();
+        var optionsOHLC = {{ series: [{{ data: {ohlc_json} }}], chart: {{ id: 'candlestick', height: 300, type: 'candlestick' }}, plotOptions: {{ candlestick: {{ colors: {{ upward: '#2ecc71', downward: '#e74c3c' }} }} }} }};
+        var optionsVol = {{ series: [{{ name: 'Volumen', data: {vol_json} }}], chart: {{ id: 'volume', height: 150, type: 'bar', brush: {{ target: 'candlestick', enabled: true }}, selection: {{ enabled: true }} }}, colors: ['#7f8c8d'] }};
+        new ApexCharts(document.querySelector("#chart-ohlc"), optionsOHLC).render();
+        new ApexCharts(document.querySelector("#chart-vol"), optionsVol).render();
     </script>
     """
     html += "</div></body></html>"
     return HTMLResponse(html)
+      
 
 import json
 import os
@@ -312,7 +313,6 @@ HISTORICO_CACHE_FILE = 'historico_bolsa.json'
 
 # --- BLOQUE ÚNICO Y DEFINITIVO ---
 async def obtener_historico_optimizado(simbolo: str):
-    # 1. Definimos la lógica de la API directamente aquí
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
     file_path = os.path.join(CACHE_DIR, f"{simbolo}.json")
 
@@ -335,7 +335,6 @@ async def obtener_historico_optimizado(simbolo: str):
     except Exception as e:
         print(f"Error consultando BVC: {e}")
         return []
-# --- FIN DEL BLOQUE ---
 
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
