@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
@@ -6,6 +5,13 @@ import json
 import os
 
 app = FastAPI()
+
+# --- INYECCIÓN QUIRÚRGICA: Definición de la carpeta de caché para evitar el error 500 ---
+CACHE_DIR = 'historico_cache'
+if not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR)
+# --------------------------------------------------------------------------------------
+
 CONFIG_FILE = 'config.json'
 
 def cargar_config():
@@ -304,34 +310,32 @@ import httpx
 
 HISTORICO_CACHE_FILE = 'historico_bolsa.json'
 
+# --- BLOQUE ÚNICO Y DEFINITIVO ---
 async def obtener_historico_optimizado(simbolo: str):
-    # 1. Intentamos leer el caché local
-    cache = {}
-    if os.path.exists(HISTORICO_CACHE_FILE):
-        try:
-            with open(HISTORICO_CACHE_FILE, 'r') as f:
-                contenido = f.read()
-                if contenido: # Solo intentamos cargar si no está vacío
-                    cache = json.loads(contenido)
-        except Exception as e:
-            print(f"Error leyendo caché: {e}")
-            cache = {}
+    # 1. Definimos la lógica de la API directamente aquí
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    file_path = os.path.join(CACHE_DIR, f"{simbolo}.json")
 
-    # 2. Si el símbolo está en el caché, lo retornamos
-    if simbolo in cache and cache[simbolo]:
-        return cache[simbolo]
+    # Si existe en caché, lo devolvemos
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            return json.load(f)
 
-    # 3. Si no está en caché, llamamos a la API
-    print(f"Consultando API real para: {simbolo}")
-    datos_reales = await obtener_historico(simbolo)
-    
-    # 4. Guardamos el nuevo dato en el archivo
-    if datos_reales:
-        cache[simbolo] = datos_reales
-        with open(HISTORICO_CACHE_FILE, 'w') as f:
-            json.dump(cache, f)
+    # Si no, consultamos a la BVC
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
+            datos = r.json().get('cur_hist_mov_emisora', [])
             
-    return datos_reales
+            # Guardamos en caché para la próxima
+            if datos:
+                with open(file_path, 'w') as f:
+                    json.dump(datos, f)
+            return datos
+    except Exception as e:
+        print(f"Error consultando BVC: {e}")
+        return []
+# --- FIN DEL BLOQUE ---
 
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
