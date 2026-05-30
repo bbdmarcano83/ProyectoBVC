@@ -9,9 +9,18 @@ app = FastAPI()
 CONFIG_FILE = 'config.json'
 
 def cargar_config():
-    if not os.path.exists(CONFIG_FILE):
-        return {"tasa": 0.0} # Retorna valor por defecto si no existe
-    with open(CONFIG_FILE, 'r') as f: return json.load(f)
+    if not os.path.exists('config.json'):
+        # Crea el archivo con un valor inicial si no existe
+        with open('config.json', 'w') as f: json.dump({"tasa": 0.0}, f)
+    with open('config.json', 'r') as f: 
+        return json.load(f)
+
+def cargar_portafolio():
+    if not os.path.exists('portafolio.json'):
+        # Crea el archivo con un diccionario vacío si no existe
+        with open('portafolio.json', 'w') as f: json.dump({}, f)
+    with open('portafolio.json', 'r') as f: 
+        return json.load(f)
 
 def guardar_config(tasa):
     with open(CONFIG_FILE, 'w') as f: json.dump({"tasa": tasa}, f)
