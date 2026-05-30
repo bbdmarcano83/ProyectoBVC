@@ -308,6 +308,8 @@ async def obtener_historico(simbolo: str):
         return datos.get('cur_hist_mov_emisora', [])
     
 if __name__ == "__main__":
-    # Esto detecta si estamos en el servidor o en tu PC
+    import uvicorn
+    import os
+    # Esto le dice a tu servidor que use el puerto que Render le asigne
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run("servidor:app", host="0.0.0.0", port=port)
