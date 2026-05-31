@@ -298,41 +298,47 @@ async def ver_detalle(simbolo: str):
     # GRÁFICA COMBINADA PROFESIONAL
     # GRÁFICA COMBINADA PROFESIONAL
     html += "<div id='chart-ohlc'></div><div id='chart-vol'></div>"
-    html += f"""
+    # GRÁFICA COMBINADA CON BOTONES DE TEMPORALIDAD Y ORDEN CORREGIDO
+    html += """
     <div style='margin: 15px 0; text-align: center;'>
-    <button onclick="updateData(30)" class='btn'>1 Mes</button>
-    <button onclick="updateData(90)" class='btn'>3 Meses</button>
-    <button onclick="updateData(365)" class='btn'>1 Año</button>
-    <button onclick="updateData(9999)" class='btn'>Todo</button>
-</div>
+        <button onclick="updateData(1)" class='btn'>1 Dia</button>
+        <button onclick="updateData(30)" class='btn'>1 Mes</button>
+        <button onclick="updateData(90)" class='btn'>3 Meses</button>
+        <button onclick="updateData(365)" class='btn'>1 Año</button>
+        <button onclick="updateData(9999)" class='btn'>Todo</button>
+    </div>
+    <div id='chart-ohlc'></div>
+    <div id='chart-vol'></div>
+    """
 
-<script>
-    // Los datos ya vienen de Python en orden [Viejo -> Nuevo]
-    const fullOHLC = {ohlc_json}; 
-    const fullVol = {vol_json};
+    html += f"""
+    <script>
+        const fullOHLC = {ohlc_json};
+        const fullVol = {vol_json};
 
-    var optionsOHLC = { 
-        series: [{ data: fullOHLC.slice(-30) }], 
-        chart: { id: 'candlestick', height: 300, type: 'candlestick' },
-        xaxis: { type: 'category' } // Sin reversed, porque Python ya los ordenó
-    };
+        var optionsOHLC = {{ 
+            series: [{{ data: fullOHLC.slice(-30) }}], 
+            chart: {{ id: 'candlestick', height: 300, type: 'candlestick' }},
+            xaxis: {{ type: 'category' }}
+        }};
 
-    var optionsVol = { 
-        series: [{ name: 'Volumen', data: fullVol.slice(-30) }],
-        chart: { id: 'volume', height: 150, type: 'bar', brush: { target: 'candlestick', enabled: true } },
-        xaxis: { type: 'category' }
-    };
+        var optionsVol = {{ 
+            series: [{{ name: 'Volumen', data: fullVol.slice(-30) }}],
+            chart: {{ id: 'volume', height: 150, type: 'bar', brush: {{ target: 'candlestick', enabled: true }} }},
+            xaxis: {{ type: 'category' }}
+        }};
 
-    var chartOHLC = new ApexCharts(document.querySelector("#chart-ohlc"), optionsOHLC);
-    var chartVol = new ApexCharts(document.querySelector("#chart-vol"), optionsVol);
-    chartOHLC.render();
-    chartVol.render();
+        var chartOHLC = new ApexCharts(document.querySelector("#chart-ohlc"), optionsOHLC);
+        var chartVol = new ApexCharts(document.querySelector("#chart-vol"), optionsVol);
+        
+        chartOHLC.render();
+        chartVol.render();
 
-    function updateData(days) {
-        chartOHLC.updateSeries([{ data: fullOHLC.slice(-days) }]);
-        chartVol.updateSeries([{ data: fullVol.slice(-days) }]);
-    }
-</script>
+        function updateData(days) {{
+            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-days) }}]);
+            chartVol.updateSeries([{{ data: fullVol.slice(-days) }}]);
+        }}
+    </script>
     """
 
     html += "</div></body></html>"
