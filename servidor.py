@@ -286,6 +286,30 @@ async def ver_detalle(simbolo: str):
     </div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
+    // ... dentro de tu <script> en ver_detalle
+    fetch('/api/v1/bvc-data/{simbolo}')
+        .then(res => res.json())
+        .then(data => {
+            console.log("Datos recibidos:", data); // Esto te ayudará a ver en consola si llegan bien
+            if (!data || data.length === 0) {
+                container.innerHTML = "<p style='text-align:center;'>No hay datos para mostrar.</p>";
+                return;
+            }
+            container.innerHTML = ""; // Limpiamos el texto "Cargando..."
+            
+            // Creamos la serie si no existe
+            const candleSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a', downColor: '#ef5350',
+                borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+            });
+            
+            candleSeries.setData(data);
+            chart.timeScale().fitContent();
+        })
+        .catch(err => {
+            console.error("Error:", err);
+            container.innerHTML = "<p style='text-align:center;'>Error al cargar el gráfico.</p>";
+        });
         const container = document.getElementById('chart-container');
         const chart = LightweightCharts.createChart(container, {{
             width: container.clientWidth,
