@@ -1,17 +1,11 @@
+
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 import json
 import os
-from datetime import datetime
+
 app = FastAPI()
-
-# --- INYECCIÓN QUIRÚRGICA: Definición de la carpeta de caché para evitar el error 500 ---
-CACHE_DIR = 'historico_cache'
-if not os.path.exists(CACHE_DIR):
-    os.makedirs(CACHE_DIR)
-# --------------------------------------------------------------------------------------
-
 CONFIG_FILE = 'config.json'
 
 def cargar_config():
@@ -182,6 +176,7 @@ async def ver_pizarra():
     return HTMLResponse(html)
     
 @app.get("/portafolio")
+@app.get("/portafolio")
 async def ver_portafolio():
     datos_bolsa = await obtener_datos_bvc()
     portafolio = cargar_portafolio()
@@ -233,6 +228,9 @@ async def ver_portafolio():
         color_usd = "green" if gan_usd > 0 else ("red" if gan_usd < 0 else "blue")
         
         html += f"""<tr>
+            <td>{simb}</td><td>{cant}</td><td>{prom:,.2f}</td>
+            <td>{precio_actual:,.2f}</td><td>{val_port:,.2f}</td><td>{peso:.1f}%</td>
+            <td style='color:{'green' if gan>=0 else 'red'}'>{gan:,.2f}</td>
             <td style='color:{color_usd}'>{gan_usd:,.2f}</td>
         </tr>"""
     html += "</table>"
@@ -243,31 +241,6 @@ async def ver_portafolio():
 
 import json # Asegúrate de tener este import arriba en tu archivo
 
-from datetime import datetime
-
-def procesar_historico_para_grafica(historico):
-    datos_limpios = []
-    for fila in historico:
-        # Convertir fecha de "01-APR-20" a "2020-04-01"
-        try:
-            # Asumimos que el formato que llega es DD-MON-YY
-            fecha_str = str(fila.get('FECHA', ''))
-            # Ajusta el formato de entrada según lo que venga de tu fuente
-            fecha_obj = datetime.strptime(fecha_str, "%d-%b-%y")
-            fecha_iso = fecha_obj.strftime("%Y-%m-%d")
-        except:
-            fecha_iso = "2026-01-01" # Fallback si falla la conversión
-
-        datos_limpios.append({
-            "time": fecha_iso,
-            "open": float(fila.get('OPEN', 0)),
-            "high": float(fila.get('HIGH', 0)),
-            "low": float(fila.get('LOW', 0)),
-            "close": float(fila.get('CLOSE', 0))
-        })
-    return datos_limpios
-
-
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
     datos_bolsa = await obtener_datos_bvc()
@@ -276,116 +249,64 @@ async def ver_detalle(simbolo: str):
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    html = f"<html><head>{CSS_STYLE}</head><body><div class='container'>"
+    # 1. Obtenemos el histórico
+    historico = await obtener_historico(simbolo)
+    
+    # 2. Procesamos los datos para la gráfica (formato necesario para ApexCharts)
+    series_data = []
+    for mov in historico[:30]: # Tomamos los últimos 30 días
+        fec = mov.get('FEC')
+        # Limpiamos los números (quitamos puntos de miles, cambiamos coma por punto)
+        ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
+        maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
+        mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
+        cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
+        series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
+
+    # Convertimos la lista de Python a formato que JS entiende
+    series_json = json.dumps(series_data)
+
+    # 3. Construimos el HTML
+    html = f"<html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body><div class='container'>"
     html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
     html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a>"
     
+    # Tabla de datos actuales
     html += f"""
-    <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px; margin-top: 20px;'>
-        Cargando datos del mercado...
-    </div>
-    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-   <script>
-    // 1. Identificamos el contenedor
-    const container = document.getElementById('chart-container');
+    <table style='margin-top:20px;'>
+        <tr><th colspan='2'>Datos Técnicos de {simbolo}</th></tr>
+        <tr><td>Precio Último</td><td>{activo.get('PRECIO', 'N/A')} Bs</td></tr>
+        <tr><td>Volumen</td><td>{activo.get('VOLUMEN', 'N/A')}</td></tr>
+        <tr><td>Variación</td><td>{activo.get('VAR_REL', 'N/A')}%</td></tr>
+    </table>
+    """
     
-    // 2. Inicializamos el gráfico (Solo una vez)
-    const chart = LightweightCharts.createChart(container, {
-        width: container.clientWidth,
-        height: 500,
-        layout: { background: { type: 'solid', color: '#ffffff' } },
-        grid: { vertLines: { color: '#e1e1e1' }, horzLines: { color: '#e1e1e1' } },
-        crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
-    });
-    
-    // 3. Añadimos la serie
-    const candleSeries = chart.addCandlestickSeries({
-        upColor: '#26a69a', downColor: '#ef5350',
-        borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-    });
-
-    // 4. Observador de tamaño
-    new ResizeObserver(() => {
-        chart.applyOptions({ width: container.clientWidth });
-    }).observe(container);
-
-    // 5. Fetch único
-    fetch('/api/v1/bvc-data/{simbolo}')
-        .then(res => res.json())
-        .then(data => {
-            console.log("Datos recibidos:", data);
-            if (!Array.isArray(data) || data.length === 0) {
-                container.innerHTML = "<p style='text-align:center; padding-top:20px;'>No hay datos disponibles.</p>";
-                return;
-            }
-            // Importante: No borres el contenedor entero, solo cargamos los datos
-            candleSeries.setData(data);
-            chart.timeScale().fitContent();
-        })
-        .catch(err => {
-            console.error("Error:", err);
-            container.innerHTML = "<p style='text-align:center; padding-top:20px;'>Error al cargar el gráfico.</p>";
-        });
-</script>
+    # La Gráfica Profesional
+    html += "<div id='chart' style='margin-top:30px; background:white; padding:20px; border-radius:8px;'></div>"
+    html += f"""
+    <script>
+        var options = {{
+            series: [{{ data: {series_json} }}],
+            chart: {{ type: 'candlestick', height: 350 }},
+            title: {{ text: 'Histórico Últimos 30 días', align: 'left' }},
+            xaxis: {{ type: 'category' }}
+        }};
+        var chart = new ApexCharts(document.querySelector("#chart"), options);
+        chart.render();
+    </script>
     """
     html += "</div></body></html>"
     return HTMLResponse(html)
 
-# 1. Función de procesamiento robusta
-async def get_bvc_data(ticker: str):
-    try:
-        historico = await obtener_historico_optimizado(ticker) # Asegúrate de que este nombre sea correcto
-        if not historico:
-            return []
-            
-        datos_limpios = []
-        for fila in historico:
-            try:
-                def limpiar(val):
-                    if val is None: return 0.0
-                    return float(str(val).replace('.', '').replace(',', '.'))
-
-                # Depuración: Si la fecha es rara, capturamos el error aquí
-                fecha_str = str(fila.get('FEC', ''))
-                fecha_iso = datetime.strptime(fecha_str, "%d-%b-%y").strftime("%Y-%m-%d")
-
-                datos_limpios.append({
-                    "time": fecha_iso,
-                    "open": limpiar(fila.get('PRECIO_APERT', 0)),
-                    "high": limpiar(fila.get('PRECIO_MAX', 0)),
-                    "low": limpiar(fila.get('PRECIO_MIN', 0)),
-                    "close": limpiar(fila.get('PRECIO_CIE', 0))
-                })
-            except Exception as e:
-                # Si una fila está corrupta, imprimimos el error en logs y seguimos
-                print(f"Error procesando fila {fila}: {e}")
-                continue
-        
-        return sorted(datos_limpios, key=lambda x: x['time'])
-    except Exception as e:
-        print(f"Error crítico en get_bvc_data: {e}")
-        return []
-
-# 2. ÚNICO ENDPOINT (Asegúrate de que solo exista este)
-@app.get("/api/v1/bvc-data/{ticker}")
-async def api_datos_limpios(ticker: str):
-    datos = await get_bvc_data(ticker)
-    return datos
-
-async def obtener_historico_optimizado(simbolo: str):
+async def obtener_historico(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    file_path = os.path.join(CACHE_DIR, f"{simbolo}.json")
-    if os.path.exists(file_path):
-        with open(file_path, 'r') as f: return json.load(f)
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
-            datos = r.json().get('cur_hist_mov_emisora', [])
-            if datos:
-                with open(file_path, 'w') as f: json.dump(datos, f)
-            return datos
-    except: return []
-
+    async with httpx.AsyncClient() as client:
+        # Hacemos la petición igualita a la de la página
+        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
+        datos = r.json()
+        return datos.get('cur_hist_mov_emisora', [])
+        
 if __name__ == "__main__":
+    # Render asigna el puerto automáticamente
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("servidor:app", host="0.0.0.0", port=port)
