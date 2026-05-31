@@ -267,7 +267,7 @@ def procesar_historico_para_grafica(historico):
         })
     return datos_limpios
 
-    
+
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
     datos_bolsa = await obtener_datos_bvc()
@@ -323,40 +323,46 @@ async def ver_detalle(simbolo: str):
     html += "</div></body></html>"
     return HTMLResponse(html)
 
-
+# 1. Función de procesamiento robusta
 async def get_bvc_data(ticker: str):
-    # Traemos los datos crudos usando tu función existente
-    historico = await obtener_historico(ticker)
-    datos_limpios = []
-    
-    for fila in historico:
-        try:
-            # Función de limpieza interna para formato venezolano
-            def limpiar(val):
-                if not val: return 0.0
-                return float(str(val).replace('.', '').replace(',', '.'))
-
-            # Transformación de fecha a formato ISO (YYYY-MM-DD)
-            fecha_raw = fila.get('FEC', '')
-            fecha_iso = datetime.strptime(str(fecha_raw), "%d-%b-%y").strftime("%Y-%m-%d")
-
-            datos_limpios.append({
-                "time": fecha_iso,
-                "open": limpiar(fila.get('PRECIO_APERT', 0)),
-                "high": limpiar(fila.get('PRECIO_MAX', 0)),
-                "low": limpiar(fila.get('PRECIO_MIN', 0)),
-                "close": limpiar(fila.get('PRECIO_CIE', 0))
-            })
-        except Exception:
-            continue
+    try:
+        historico = await obtener_historico_optimizado(ticker) # Asegúrate de que este nombre sea correcto
+        if not historico:
+            return []
             
-    # Ordenamos cronológicamente
-    return sorted(datos_limpios, key=lambda x: x['time'])
+        datos_limpios = []
+        for fila in historico:
+            try:
+                def limpiar(val):
+                    if val is None: return 0.0
+                    return float(str(val).replace('.', '').replace(',', '.'))
 
-# Nuevo Endpoint para que el Frontend consuma datos limpios
+                # Depuración: Si la fecha es rara, capturamos el error aquí
+                fecha_str = str(fila.get('FEC', ''))
+                fecha_iso = datetime.strptime(fecha_str, "%d-%b-%y").strftime("%Y-%m-%d")
+
+                datos_limpios.append({
+                    "time": fecha_iso,
+                    "open": limpiar(fila.get('PRECIO_APERT', 0)),
+                    "high": limpiar(fila.get('PRECIO_MAX', 0)),
+                    "low": limpiar(fila.get('PRECIO_MIN', 0)),
+                    "close": limpiar(fila.get('PRECIO_CIE', 0))
+                })
+            except Exception as e:
+                # Si una fila está corrupta, imprimimos el error en logs y seguimos
+                print(f"Error procesando fila {fila}: {e}")
+                continue
+        
+        return sorted(datos_limpios, key=lambda x: x['time'])
+    except Exception as e:
+        print(f"Error crítico en get_bvc_data: {e}")
+        return []
+
+# 2. ÚNICO ENDPOINT (Asegúrate de que solo exista este)
 @app.get("/api/v1/bvc-data/{ticker}")
 async def api_datos_limpios(ticker: str):
-    return await get_bvc_data(ticker)
+    datos = await get_bvc_data(ticker)
+    return datos
 
 async def obtener_historico_optimizado(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
