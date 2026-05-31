@@ -312,19 +312,28 @@ async def ver_detalle(simbolo: str):
     """
 
     html += f"""
+    html += f"""
     <script>
         const fullOHLC = {ohlc_json};
         const fullVol = {vol_json};
 
+        // Gráfica de Velas: SIN eje X (labels ocultos)
         var optionsOHLC = {{ 
             series: [{{ data: fullOHLC.slice(-30) }}], 
             chart: {{ id: 'candlestick', height: 300, type: 'candlestick' }},
-            xaxis: {{ type: 'category' }}
+            xaxis: {{ type: 'category', labels: {{ show: false }} }}
         }};
 
+        // Gráfica de Volumen: CON eje X visible
         var optionsVol = {{ 
             series: [{{ name: 'Volumen', data: fullVol.slice(-30) }}],
-            chart: {{ id: 'volume', height: 150, type: 'bar', brush: {{ target: 'candlestick', enabled: true }} }},
+            chart: {{ 
+                id: 'volume', 
+                height: 150, 
+                type: 'bar', 
+                brush: {{ target: 'candlestick', enabled: true }},
+                selection: {{ enabled: true }} 
+            }},
             xaxis: {{ type: 'category' }}
         }};
 
@@ -334,9 +343,13 @@ async def ver_detalle(simbolo: str):
         chartOHLC.render();
         chartVol.render();
 
+        // Función para actualizar ambos gráficos a la vez
         function updateData(days) {{
-            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-days) }}]);
-            chartVol.updateSeries([{{ data: fullVol.slice(-days) }}]);
+            const newDataOHLC = fullOHLC.slice(-days);
+            const newDataVol = fullVol.slice(-days);
+
+            chartOHLC.updateSeries([{{ data: newDataOHLC }}]);
+            chartVol.updateSeries([{{ data: newDataVol }}]);
         }}
     </script>
     """
