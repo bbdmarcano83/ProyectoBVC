@@ -269,6 +269,9 @@ def procesar_historico_para_grafica(historico):
     return datos_limpios
 
 @app.get("/detalle/{simbolo}")
+# --- REEMPLAZA DESDE AQUÍ HASTA EL FINAL DE TU ARCHIVO ---
+
+@app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
@@ -310,8 +313,8 @@ async def ver_detalle(simbolo: str):
             borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
         }});
 
-        // La carga asíncrona profesional
-        fetch('/api/datos/{simbolo}')
+        // Llamada al endpoint correcto que definimos abajo
+        fetch('/api/v1/bvc-data/{simbolo}')
             .then(res => res.json())
             .then(data => {{
                 candleSeries.setData(data);
@@ -322,45 +325,38 @@ async def ver_detalle(simbolo: str):
     """
     html += "</div></body></html>"
     return HTMLResponse(html)
-    
-@app.get("/api/datos/{simbolo}")
-async def api_datos(simbolo: str):
-    historico = await obtener_historico_optimizado(simbolo)
-    # Usamos la función que ya tenías para limpiar
-    return procesar_historico_para_grafica(historico)
 
-import json
-import os
-import httpx
+@app.get("/api/v1/bvc-data/{ticker}")
+async def get_bvc_data(ticker: str):
+    historico = await obtener_historico_optimizado(ticker)
+    datos_limpios = []
+    for fila in historico:
+        try:
+            fecha_obj = datetime.strptime(str(fila['FECHA']), "%d-%b-%y")
+            datos_limpios.append({
+                "time": fecha_obj.strftime("%Y-%m-%d"),
+                "open": float(fila.get('OPEN', 0)),
+                "high": float(fila.get('HIGH', 0)),
+                "low": float(fila.get('LOW', 0)),
+                "close": float(fila.get('CLOSE', 0))
+            })
+        except: continue
+    return datos_limpios
 
-HISTORICO_CACHE_FILE = 'historico_bolsa.json'
-
-# --- BLOQUE ÚNICO Y DEFINITIVO ---
 async def obtener_historico_optimizado(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
     file_path = os.path.join(CACHE_DIR, f"{simbolo}.json")
-
-    # Si existe en caché, lo devolvemos
     if os.path.exists(file_path):
-        with open(file_path, 'r') as f:
-            return json.load(f)
-
-    # Si no, consultamos a la BVC
+        with open(file_path, 'r') as f: return json.load(f)
     try:
         async with httpx.AsyncClient() as client:
             r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
             datos = r.json().get('cur_hist_mov_emisora', [])
-            
-            # Guardamos en caché para la próxima
             if datos:
-                with open(file_path, 'w') as f:
-                    json.dump(datos, f)
+                with open(file_path, 'w') as f: json.dump(datos, f)
             return datos
-    except Exception as e:
-        print(f"Error consultando BVC: {e}")
-        return []
+    except: return []
 
 if __name__ == "__main__":
-    # Render asigna el puerto automáticamente
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("servidor:app", host="0.0.0.0", port=port)
