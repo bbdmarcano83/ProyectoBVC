@@ -292,30 +292,32 @@ async def ver_detalle(simbolo: str):
     </div>
     """
     
-    # GRÁFICA (Lightweight Charts)
+    # GRÁFICA (Lightweight Charts - Cirugía de carga aplicada)
     html += f"""
     <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px; margin-top: 20px;'></div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
-        const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{
-            width: document.getElementById('chart-container').offsetWidth,
-            height: 500,
-            layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }},
-            grid: {{ vertLines: {{ color: '#eeeeee' }}, horzLines: {{ color: '#eeeeee' }} }},
-            crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
-            timeScale: {{ visible: true, timeVisible: true }}
-        }});
+        window.addEventListener('load', function() {{
+            const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{
+                width: document.getElementById('chart-container').offsetWidth,
+                height: 500,
+                layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }},
+                grid: {{ vertLines: {{ color: '#eeeeee' }}, horzLines: {{ color: '#eeeeee' }} }},
+                crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
+                timeScale: {{ visible: true, timeVisible: true }}
+            }});
 
-        const candleSeries = chart.addCandlestickSeries({{
-            upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
-            wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-        }});
+            const candleSeries = chart.addCandlestickSeries({{
+                upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
+                wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+            }});
 
-        const chartData = {ohlc_json};
-        candleSeries.setData(chartData);
-        
-        window.addEventListener('resize', () => {{
-            chart.applyOptions({{ width: document.getElementById('chart-container').offsetWidth }});
+            const chartData = {ohlc_json};
+            candleSeries.setData(chartData);
+            
+            window.addEventListener('resize', () => {{
+                chart.applyOptions({{ width: document.getElementById('chart-container').offsetWidth }});
+            }});
         }});
     </script>
     """
