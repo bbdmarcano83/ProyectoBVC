@@ -295,38 +295,32 @@ async def ver_detalle(simbolo: str):
     # GRÁFICA (Lightweight Charts - Cirugía de carga aplicada)
   # GRÁFICA: Inyección directa de datos al navegador
     html += f"""
-    <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px; margin-top: 20px;'></div>
+    <div id='chart-container' style='width: 100%; height: 500px; background: white;'></div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
-        // 1. Inicializamos el gráfico
         const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{
             width: document.getElementById('chart-container').offsetWidth,
             height: 500,
-            layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }},
-            grid: {{ vertLines: {{ color: '#f0f0f0' }}, horzLines: {{ color: '#f0f0f0' }} }},
-            timeScale: {{ visible: true, timeVisible: true }}
+            layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }}
         }});
 
-        // 2. Configuramos las velas
-        const candleSeries = chart.addCandlestickSeries({{
-            upColor: '#26a69a', downColor: '#ef5350', 
-            borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-        }});
+        const candleSeries = chart.addCandlestickSeries();
+        
+        // 1. Inyectamos la data bruta
+        const rawData = {ohlc_json};
+        
+        // 2. Traductor: Nos aseguramos que cada dato tenga el formato time, open, high, low, close
+        // Esto corrige si el formato de fecha de Python no es ISO
+        const cleanData = rawData.map(item => ({{
+            time: item.time, 
+            open: parseFloat(item.open),
+            high: parseFloat(item.high),
+            low: parseFloat(item.low),
+            close: parseFloat(item.close)
+        }}));
 
-        // 3. Cargamos la data desde Python de forma segura
-        const chartData = {ohlc_json};
-        console.log("Datos cargados:", chartData); // Esto te dirá en F12 si los datos están bien
-
-        if (Array.isArray(chartData) && chartData.length > 0) {{
-            candleSeries.setData(chartData);
-        }} else {{
-            console.error("Los datos están vacíos o mal formados");
-        }}
-
-        // 4. Adaptabilidad
-        window.addEventListener('resize', () => {{
-            chart.applyOptions({{ width: document.getElementById('chart-container').offsetWidth }});
-        }});
+        console.log("Data limpia y lista:", cleanData);
+        candleSeries.setData(cleanData);
     </script>
     """
     
