@@ -269,12 +269,6 @@ async def ver_detalle(simbolo: str):
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    historico = await obtener_historico_optimizado(simbolo)
-    datos_grafica = procesar_historico_para_grafica(historico)
-    
-    # Importante: ohlc_json es un string que el navegador leerá como un objeto
-    ohlc_json = json.dumps(datos_grafica)
-
     var_f = float(activo.get('VAR_REL', 0))
     color_var = "green" if var_f > 0 else ("red" if var_f < 0 else "#3498db")
 
@@ -292,41 +286,41 @@ async def ver_detalle(simbolo: str):
     </div>
     """
     
-    # Inyección quirúrgica del script con sintaxis verificada
     html += f"""
     <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px;'></div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
-        (function() {{
-            const rawData = {ohlc_json};
-            const cleanData = rawData.filter(item => 
-                item.time && item.open != null && item.high != null && item.low != null && item.close != null
-            ).map(item => ({{
-                time: item.time,
-                open: parseFloat(item.open),
-                high: parseFloat(item.high),
-                low: parseFloat(item.low),
-                close: parseFloat(item.close)
-            }}));
+        const container = document.getElementById('chart-container');
+        const chart = LightweightCharts.createChart(container, {{
+            width: container.clientWidth,
+            height: 500,
+            layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }},
+            grid: {{ vertLines: {{ color: '#f0f0f0' }}, horzLines: {{ color: '#f0f0f0' }} }}
+        }});
+        
+        const candleSeries = chart.addCandlestickSeries({{
+            upColor: '#26a69a', downColor: '#ef5350',
+            borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+        }});
 
-            const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{
-                width: document.getElementById('chart-container').offsetWidth,
-                height: 500,
-                layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }}
-            }});
-
-            const candleSeries = chart.addCandlestickSeries();
-            if (cleanData.length > 0) {{
-                candleSeries.setData(cleanData);
-            }}
-        }})();
+        // La carga asíncrona profesional
+        fetch('/api/datos/{simbolo}')
+            .then(res => res.json())
+            .then(data => {{
+                candleSeries.setData(data);
+                chart.timeScale().fitContent();
+            }})
+            .catch(err => console.error("Error al cargar datos:", err));
     </script>
     """
-    
     html += "</div></body></html>"
     return HTMLResponse(html)
     
-      
+@app.get("/api/datos/{simbolo}")
+async def api_datos(simbolo: str):
+    historico = await obtener_historico_optimizado(simbolo)
+    # Usamos la función que ya tenías para limpiar
+    return procesar_historico_para_grafica(historico)
 
 import json
 import os
