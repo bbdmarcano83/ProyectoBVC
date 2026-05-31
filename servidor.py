@@ -314,7 +314,7 @@ async def ver_detalle(simbolo: str):
     # HTML y JS integrado para la gráfica
     html += f"""
     <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px; margin-top: 20px;'></div>
-    <script src='https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js'></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
         const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{
             width: document.getElementById('chart-container').offsetWidth,
@@ -330,8 +330,8 @@ async def ver_detalle(simbolo: str):
             wickUpColor: '#26a69a', wickDownColor: '#ef5350'
         }});
 
-        const data = {ohlc_json};
-        candleSeries.setData(data);
+        const chartData = {ohlc_json};
+        candleSeries.setData(chatData);
         
         // Ajuste automático al tamaño de la pantalla
         window.addEventListener('resize', () => {{
