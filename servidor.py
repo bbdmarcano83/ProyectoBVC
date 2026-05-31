@@ -297,10 +297,14 @@ async def ver_detalle(simbolo: str):
     """
     
     html += f"""
-    <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px;'></div>
+    <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px;'>
+        Cargando datos del mercado...
+    </div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
         const container = document.getElementById('chart-container');
+        
+        // Inicialización del gráfico
         const chart = LightweightCharts.createChart(container, {{
             width: container.clientWidth,
             height: 500,
@@ -313,14 +317,31 @@ async def ver_detalle(simbolo: str):
             borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
         }});
 
-        // Llamada al endpoint correcto que definimos abajo
-        fetch('/api/v1/bvc-data/{simbolo}')
-            .then(res => res.json())
-            .then(data => {{
-                candleSeries.setData(data);
-                chart.timeScale().fitContent();
-            }})
-            .catch(err => console.error("Error al cargar datos:", err));
+        // Observador de redimensionamiento
+        new ResizeObserver(() => {{
+            chart.applyOptions({{ width: container.clientWidth }});
+        }}).observe(container);
+
+        // Función de carga con validación de datos
+        function cargarDatosGrafica(ticker) {{
+            fetch('/api/v1/bvc-data/' + ticker)
+                .then(res => res.json())
+                .then(data => {{
+                    if (!Array.isArray(data) || data.length === 0) {{
+                        container.innerHTML = "<p style='text-align:center; padding-top:20px;'>No hay datos históricos disponibles.</p>";
+                        return;
+                    }}
+                    container.innerHTML = ""; 
+                    candleSeries.setData(data);
+                    chart.timeScale().fitContent();
+                }})
+                .catch(err => {{
+                    console.error("Error:", err);
+                    container.innerHTML = "<p style='text-align:center; padding-top:20px;'>Error al cargar el gráfico.</p>";
+                }});
+        }}
+
+        cargarDatosGrafica('{simbolo}');
     </script>
     """
     html += "</div></body></html>"
