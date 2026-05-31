@@ -302,52 +302,53 @@ async def ver_detalle(simbolo: str):
     # esté alineada exactamente con el resto del código 
     # de tu función ver_detalle (usualmente 4 espacios).
     
+    # 1. Botones de Control
     html += """
-    <div style='margin: 15px 0; text-align: center;'>
-        <button onclick="updateData(30)" class='btn'>1 Mes</button>
-        <button onclick="updateData(90)" class='btn'>3 Meses</button>
-        <button onclick="updateData(365)" class='btn'>1 Año</button>
+    <div style='margin: 15px 0; text-align: center; font-family: sans-serif;'>
+        <button onclick="updateData(1)" class='btn'>1D</button>
+        <button onclick="updateData(7)" class='btn'>1W</button>
+        <button onclick="updateData(30)" class='btn'>1M</button>
+        <button onclick="updateData(90)" class='btn'>3M</button>
+        <button onclick="updateData(180)" class='btn'>6M</button>
+        <button onclick="updateData(365)" class='btn'>1Y</button>
         <button onclick="updateData(9999)" class='btn'>Todo</button>
     </div>
     <div id='chart-ohlc'></div>
     <div id='chart-vol'></div>
     """
 
+    # 2. Lógica JavaScript Dinámica
     html += f"""
     <script>
         const fullOHLC = {ohlc_json};
         const fullVol = {vol_json};
 
+        function updateData(days) {{
+            const count = (days === 9999) ? fullOHLC.length : days;
+            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-count) }}]);
+            chartVol.updateSeries([{{ data: fullVol.slice(-count) }}]);
+        }}
+
         var optionsOHLC = {{ 
             series: [{{ data: fullOHLC.slice(-30) }}], 
-            chart: {{ id: 'candlestick', height: 300, type: 'candlestick' }},
+            chart: {{ id: 'candlestick', height: 350, type: 'candlestick' }},
             xaxis: {{ type: 'category', labels: {{ show: false }} }}
         }};
 
         var optionsVol = {{ 
             series: [{{ name: 'Volumen', data: fullVol.slice(-30) }}],
             chart: {{ 
-                id: 'volume', 
-                height: 150, 
-                type: 'bar', 
+                id: 'volume', height: 150, type: 'bar', 
                 brush: {{ target: 'candlestick', enabled: true }},
                 selection: {{ enabled: true }} 
             }},
-            xaxis: {{ type: 'category' }}
+            xaxis: {{ type: 'category', tickAmount: 10 }}
         }};
 
         var chartOHLC = new ApexCharts(document.querySelector("#chart-ohlc"), optionsOHLC);
         var chartVol = new ApexCharts(document.querySelector("#chart-vol"), optionsVol);
-        
         chartOHLC.render();
         chartVol.render();
-
-        function updateData(days) {{
-            const newDataOHLC = fullOHLC.slice(-days);
-            const newDataVol = fullVol.slice(-days);
-            chartOHLC.updateSeries([{{ data: newDataOHLC }}]);
-            chartVol.updateSeries([{{ data: newDataVol }}]);
-        }}
     </script>
     """
     
