@@ -247,20 +247,26 @@ def procesar_historico_para_grafica(historico):
     ohlc_data = []
     volume_data = []
     
-    # 1. Tomamos todo el histórico disponible (o los que quieras)
-    # 2. El [::-1] invierte el orden para que lo viejo quede a la izquierda
-    for mov in historico[::-1]: 
+    # Invertimos el orden para procesar cronológicamente (Viejo -> Nuevo)
+    data_ordenada = historico[::-1]
+    
+    for mov in data_ordenada:
         try:
             fec = mov.get('FEC')
-            ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
-            maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
-            mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
-            cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
-            vol = float(mov.get('PRECIO_VOL', '0').replace('.', '').replace(',', '.')) # Asegúrate de que sea PRECIO_VOL o VOLUMEN según tu JSON
+            # Limpieza segura de precios
+            ap = float(str(mov.get('PRECIO_APERT', '0')).replace('.', '').replace(',', '.'))
+            maxi = float(str(mov.get('PRECIO_MAX', '0')).replace('.', '').replace(',', '.'))
+            mini = float(str(mov.get('PRECIO_MIN', '0')).replace('.', '').replace(',', '.'))
+            cie = float(str(mov.get('PRECIO_CIE', '0')).replace('.', '').replace(',', '.'))
+            
+            # CORRECCIÓN DE VOLUMEN: La BVC suele usar 'VOLUMEN_TITULOS' o 'CANT_TITULOS'
+            # Vamos a intentar buscar varias llaves posibles
+            vol = float(str(mov.get('VOLUMEN', mov.get('CANT_TITULOS', 0))).replace('.', '').replace(',', '.'))
             
             ohlc_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
             volume_data.append({"x": fec, "y": vol})
-        except: continue
+        except Exception as e:
+            continue
     return ohlc_data, volume_data
 
 @app.get("/detalle/{simbolo}")
@@ -325,13 +331,14 @@ async def ver_detalle(simbolo: str):
 
         function updateData(days) {{
             const count = (days === 9999) ? fullOHLC.length : days;
-            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-count) }}]);
-            chartVol.updateSeries([{{ data: fullVol.slice(-count) }}]);
+            const displayCount = (count < 60) ? 60 : count;
+            chartOHLC.updateSeries([{ data: fullOHLC.slice(-displayCount) }]);
+            chartVol.updateSeries([{ data: fullVol.slice(-displayCount) }]);
         }}
 
         var optionsOHLC = {{ 
             series: [{{ data: fullOHLC.slice(-30) }}], 
-            chart: {{ id: 'candlestick', height: 350, type: 'candlestick' }},
+            chart: {{ id: 'candlestick', height: 400, type: 'candlestick' }},
             xaxis: {{ type: 'category', labels: {{ show: false }} }}
         }};
 
