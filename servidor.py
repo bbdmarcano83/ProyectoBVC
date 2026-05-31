@@ -331,10 +331,9 @@ async def ver_detalle(simbolo: str):
 
         function updateData(days) {{
             const count = (days === 9999) ? fullOHLC.length : days;
-            const displayCount = (count < 30) ? 30 : count;
             
-            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-displayCount) }}]);
-            chartVol.updateSeries([{{ data: fullVol.slice(-displayCount) }}]);
+            chartOHLC.updateSeries([{ data: fullOHLC.slice(-count) }]);
+            chartVol.updateSeries([{ data: fullVol.slice(-count) }]);
         }}
 
         var optionsOHLC = {{ 
