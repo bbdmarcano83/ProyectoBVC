@@ -273,7 +273,7 @@ async def ver_detalle(simbolo: str):
     datos_grafica = procesar_historico_para_grafica(historico)
     
     ohlc_json = json.dumps(datos_grafica)
-    vol_json = json.dumps(volume_data)
+    
 
     var_f = float(activo.get('VAR_REL', 0))
     color_var = "green" if var_f > 0 else ("red" if var_f < 0 else "#3498db")
