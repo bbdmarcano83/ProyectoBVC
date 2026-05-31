@@ -273,12 +273,11 @@ async def ver_detalle(simbolo: str):
     datos_grafica = procesar_historico_para_grafica(historico)
     
     ohlc_json = json.dumps(datos_grafica)
-    
 
     var_f = float(activo.get('VAR_REL', 0))
     color_var = "green" if var_f > 0 else ("red" if var_f < 0 else "#3498db")
 
-    html = f"<html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body><div class='container'>"
+    html = f"<html><head>{CSS_STYLE}</head><body><div class='container'>"
     html += f"<div style='display:flex; justify-content:space-between; align-items:center;'><h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
     html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a></div>"
     
@@ -293,25 +292,7 @@ async def ver_detalle(simbolo: str):
     </div>
     """
     
-    
-    
-    # 1. BOTONES DE TEMPORALIDAD (HTML)
-    html += """
-    <div style='margin: 15px 0; text-align: center; font-family: sans-serif;'>
-        <button onclick="updateData(1)" class='btn'>1D</button>
-        <button onclick="updateData(7)" class='btn'>1W</button>
-        <button onclick="updateData(30)" class='btn'>1M</button>
-        <button onclick="updateData(90)" class='btn'>3M</button>
-        <button onclick="updateData(180)" class='btn'>6M</button>
-        <button onclick="updateData(365)" class='btn'>1Y</button>
-        <button onclick="updateData(9999)" class='btn'>Todo</button>
-    </div>
-    <div id='chart-ohlc'></div>
-    <div id='chart-vol'></div>
-    """
-
-    # 2. LÓGICA JAVASCRIPT (Usando dobles llaves {{ }} para proteger a Python)
-    # HTML y JS integrado para la gráfica
+    # GRÁFICA (Lightweight Charts)
     html += f"""
     <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px; margin-top: 20px;'></div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
@@ -331,16 +312,14 @@ async def ver_detalle(simbolo: str):
         }});
 
         const chartData = {ohlc_json};
-        candleSeries.setData(chatData);
+        candleSeries.setData(chartData);
         
-        // Ajuste automático al tamaño de la pantalla
         window.addEventListener('resize', () => {{
             chart.applyOptions({{ width: document.getElementById('chart-container').offsetWidth }});
         }});
     </script>
     """
     
-    # Asegúrate de que aquí termina tu función y devuelves el HTML
     html += "</div></body></html>"
     return HTMLResponse(html)
     
