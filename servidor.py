@@ -270,9 +270,9 @@ async def ver_detalle(simbolo: str):
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
     historico = await obtener_historico_optimizado(simbolo)
-    ohlc_data, volume_data = procesar_historico_para_grafica(historico)
+    datos_grafica = procesar_historico_para_grafica(historico)
     
-    ohlc_json = json.dumps(ohlc_data)
+    ohlc_json = json.dumps(datos_grafica)
     vol_json = json.dumps(volume_data)
 
     var_f = float(activo.get('VAR_REL', 0))
