@@ -309,7 +309,7 @@ html += """
     <div id='chart-vol'></div>
     """
 
-    html += f"""
+html += f"""
     <script>
         const fullOHLC = {ohlc_json};
         const fullVol = {vol_json};
