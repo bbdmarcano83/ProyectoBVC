@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 import json
 import os
-
+from datetime import datetime
 app = FastAPI()
 
 # --- INYECCIÓN QUIRÚRGICA: Definición de la carpeta de caché para evitar el error 500 ---
@@ -182,7 +182,6 @@ async def ver_pizarra():
     return HTMLResponse(html)
     
 @app.get("/portafolio")
-@app.get("/portafolio")
 async def ver_portafolio():
     datos_bolsa = await obtener_datos_bvc()
     portafolio = cargar_portafolio()
@@ -268,9 +267,7 @@ def procesar_historico_para_grafica(historico):
         })
     return datos_limpios
 
-@app.get("/detalle/{simbolo}")
-# --- REEMPLAZA DESDE AQUÍ HASTA EL FINAL DE TU ARCHIVO ---
-
+    
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
     datos_bolsa = await obtener_datos_bvc()
@@ -279,37 +276,23 @@ async def ver_detalle(simbolo: str):
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    var_f = float(activo.get('VAR_REL', 0))
-    color_var = "green" if var_f > 0 else ("red" if var_f < 0 else "#3498db")
-
     html = f"<html><head>{CSS_STYLE}</head><body><div class='container'>"
-    html += f"<div style='display:flex; justify-content:space-between; align-items:center;'><h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
-    html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a></div>"
+    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
+    html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a>"
     
     html += f"""
-    <div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 20px 0;'>
-        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #2c3e50;'><strong>Precio Actual:</strong><br><span style='font-size:1.3em;'>{activo.get('PRECIO', '0')} Bs</span></div>
-        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #bdc3c7;'><strong>Precio Anterior:</strong><br><span style='font-size:1.3em;'>{activo.get('PRECIO_ANT', '0')} Bs</span></div>
-        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #2ecc71;'><strong>Compra (BID):</strong><br><span style='font-size:1.3em; color:green;'>{activo.get('PRE_CMP_1', '0')} Bs</span></div>
-        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #e74c3c;'><strong>Venta (ASK):</strong><br><span style='font-size:1.3em; color:red;'>{activo.get('PRE_VTA_1', '0')} Bs</span></div>
-        <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid {color_var};'><strong>Variación:</strong><br><span style='font-size:1.3em; color:{color_var};'>{var_f}%</span></div>
-    </div>
-    """
-    
-    html += f"""
-    <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px;'>
+    <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px; margin-top: 20px;'>
         Cargando datos del mercado...
     </div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
         const container = document.getElementById('chart-container');
-        
-        // Inicialización del gráfico
         const chart = LightweightCharts.createChart(container, {{
             width: container.clientWidth,
             height: 500,
             layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }},
-            grid: {{ vertLines: {{ color: '#f0f0f0' }}, horzLines: {{ color: '#f0f0f0' }} }}
+            grid: {{ vertLines: {{ color: '#e1e1e1' }}, horzLines: {{ color: '#e1e1e1' }} }},
+            crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }}
         }});
         
         const candleSeries = chart.addCandlestickSeries({{
@@ -317,52 +300,63 @@ async def ver_detalle(simbolo: str):
             borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
         }});
 
-        // Observador de redimensionamiento
         new ResizeObserver(() => {{
             chart.applyOptions({{ width: container.clientWidth }});
         }}).observe(container);
 
-        // Función de carga con validación de datos
-        function cargarDatosGrafica(ticker) {{
-            fetch('/api/v1/bvc-data/' + ticker)
-                .then(res => res.json())
-                .then(data => {{
-                    if (!Array.isArray(data) || data.length === 0) {{
-                        container.innerHTML = "<p style='text-align:center; padding-top:20px;'>No hay datos históricos disponibles.</p>";
-                        return;
-                    }}
-                    container.innerHTML = ""; 
-                    candleSeries.setData(data);
-                    chart.timeScale().fitContent();
-                }})
-                .catch(err => {{
-                    console.error("Error:", err);
-                    container.innerHTML = "<p style='text-align:center; padding-top:20px;'>Error al cargar el gráfico.</p>";
-                }});
-        }}
-
-        cargarDatosGrafica('{simbolo}');
+        fetch('/api/v1/bvc-data/{simbolo}')
+            .then(res => res.json())
+            .then(data => {{
+                if (!Array.isArray(data) || data.length === 0) {{
+                    container.innerHTML = "<p style='text-align:center; padding-top:20px;'>No hay datos históricos disponibles.</p>";
+                    return;
+                }}
+                container.innerHTML = ""; 
+                candleSeries.setData(data);
+                chart.timeScale().fitContent();
+            }})
+            .catch(err => {{
+                container.innerHTML = "<p style='text-align:center; padding-top:20px;'>Error al cargar el gráfico.</p>";
+            }});
     </script>
     """
     html += "</div></body></html>"
     return HTMLResponse(html)
 
-@app.get("/api/v1/bvc-data/{ticker}")
+
 async def get_bvc_data(ticker: str):
-    historico = await obtener_historico_optimizado(ticker)
+    # Traemos los datos crudos usando tu función existente
+    historico = await obtener_historico(ticker)
     datos_limpios = []
+    
     for fila in historico:
         try:
-            fecha_obj = datetime.strptime(str(fila['FECHA']), "%d-%b-%y")
+            # Función de limpieza interna para formato venezolano
+            def limpiar(val):
+                if not val: return 0.0
+                return float(str(val).replace('.', '').replace(',', '.'))
+
+            # Transformación de fecha a formato ISO (YYYY-MM-DD)
+            fecha_raw = fila.get('FEC', '')
+            fecha_iso = datetime.strptime(str(fecha_raw), "%d-%b-%y").strftime("%Y-%m-%d")
+
             datos_limpios.append({
-                "time": fecha_obj.strftime("%Y-%m-%d"),
-                "open": float(fila.get('OPEN', 0)),
-                "high": float(fila.get('HIGH', 0)),
-                "low": float(fila.get('LOW', 0)),
-                "close": float(fila.get('CLOSE', 0))
+                "time": fecha_iso,
+                "open": limpiar(fila.get('PRECIO_APERT', 0)),
+                "high": limpiar(fila.get('PRECIO_MAX', 0)),
+                "low": limpiar(fila.get('PRECIO_MIN', 0)),
+                "close": limpiar(fila.get('PRECIO_CIE', 0))
             })
-        except: continue
-    return datos_limpios
+        except Exception:
+            continue
+            
+    # Ordenamos cronológicamente
+    return sorted(datos_limpios, key=lambda x: x['time'])
+
+# Nuevo Endpoint para que el Frontend consuma datos limpios
+@app.get("/api/v1/bvc-data/{ticker}")
+async def api_datos_limpios(ticker: str):
+    return await get_bvc_data(ticker)
 
 async def obtener_historico_optimizado(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
