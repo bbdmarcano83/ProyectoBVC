@@ -272,6 +272,7 @@ async def ver_detalle(simbolo: str):
     historico = await obtener_historico_optimizado(simbolo)
     datos_grafica = procesar_historico_para_grafica(historico)
     
+    # Importante: ohlc_json es un string que el navegador leerá como un objeto
     ohlc_json = json.dumps(datos_grafica)
 
     var_f = float(activo.get('VAR_REL', 0))
@@ -281,7 +282,6 @@ async def ver_detalle(simbolo: str):
     html += f"<div style='display:flex; justify-content:space-between; align-items:center;'><h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
     html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a></div>"
     
-    # DATOS TÉCNICOS PROFESIONALES
     html += f"""
     <div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 20px 0;'>
         <div style='background:#ffffff; padding:15px; border-radius:8px; border-left: 5px solid #2c3e50;'><strong>Precio Actual:</strong><br><span style='font-size:1.3em;'>{activo.get('PRECIO', '0')} Bs</span></div>
@@ -292,35 +292,34 @@ async def ver_detalle(simbolo: str):
     </div>
     """
     
-    # GRÁFICA (Lightweight Charts - Cirugía de carga aplicada)
-  # GRÁFICA: Inyección directa de datos al navegador
+    # Inyección quirúrgica del script con sintaxis verificada
     html += f"""
-    <div id='chart-container' style='width: 100%; height: 500px; background: white;'></div>
+    <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px;'></div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
-        const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{
-            width: document.getElementById('chart-container').offsetWidth,
-            height: 500,
-            layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }}
-        }});
+        (function() {{
+            const rawData = {ohlc_json};
+            const cleanData = rawData.filter(item => 
+                item.time && item.open != null && item.high != null && item.low != null && item.close != null
+            ).map(item => ({{
+                time: item.time,
+                open: parseFloat(item.open),
+                high: parseFloat(item.high),
+                low: parseFloat(item.low),
+                close: parseFloat(item.close)
+            }}));
 
-        const candleSeries = chart.addCandlestickSeries();
-        
-        // 1. Inyectamos la data bruta
-        const rawData = {ohlc_json};
-        
-        // 2. Traductor: Nos aseguramos que cada dato tenga el formato time, open, high, low, close
-        // Esto corrige si el formato de fecha de Python no es ISO
-        const cleanData = rawData.map(item => ({{
-            time: item.time, 
-            open: parseFloat(item.open),
-            high: parseFloat(item.high),
-            low: parseFloat(item.low),
-            close: parseFloat(item.close)
-        }}));
+            const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{
+                width: document.getElementById('chart-container').offsetWidth,
+                height: 500,
+                layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }}
+            }});
 
-        console.log("Data limpia y lista:", cleanData);
-        candleSeries.setData(cleanData);
+            const candleSeries = chart.addCandlestickSeries();
+            if (cleanData.length > 0) {{
+                candleSeries.setData(cleanData);
+            }}
+        }})();
     </script>
     """
     
