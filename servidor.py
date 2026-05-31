@@ -332,8 +332,9 @@ async def ver_detalle(simbolo: str):
         function updateData(days) {{
             const count = (days === 9999) ? fullOHLC.length : days;
             
-            chartOHLC.updateSeries([{ data: fullOHLC.slice(-count) }]);
-            chartVol.updateSeries([{ data: fullVol.slice(-count) }]);
+            // Fíjate en el uso de dobles llaves {{ }} para los objetos de JS
+            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-count) }}]);
+            chartVol.updateSeries([{{ data: fullVol.slice(-count) }}]);
         }}
 
         var optionsOHLC = {{ 
