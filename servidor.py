@@ -244,22 +244,29 @@ async def ver_portafolio():
 
 import json # Asegúrate de tener este import arriba en tu archivo
 
+from datetime import datetime
+
 def procesar_historico_para_grafica(historico):
-    data_final = []
-    # Usamos todo el historial
-    for mov in historico: 
+    datos_limpios = []
+    for fila in historico:
+        # Convertir fecha de "01-APR-20" a "2020-04-01"
         try:
-            # Formato estricto para Lightweight Charts
-            data_final.append({
-                "time": mov.get('FEC'), 
-                "open": float(str(mov.get('PRECIO_APERT', '0')).replace('.', '').replace(',', '.')),
-                "high": float(str(mov.get('PRECIO_MAX', '0')).replace('.', '').replace(',', '.')),
-                "low": float(str(mov.get('PRECIO_MIN', '0')).replace('.', '').replace(',', '.')),
-                "close": float(str(mov.get('PRECIO_CIE', '0')).replace('.', '').replace(',', '.'))
-            })
-        except: continue
-    # Ordenar por fecha (de más viejo a más nuevo)
-    return sorted(data_final, key=lambda x: x['time'])
+            # Asumimos que el formato que llega es DD-MON-YY
+            fecha_str = str(fila.get('FECHA', ''))
+            # Ajusta el formato de entrada según lo que venga de tu fuente
+            fecha_obj = datetime.strptime(fecha_str, "%d-%b-%y")
+            fecha_iso = fecha_obj.strftime("%Y-%m-%d")
+        except:
+            fecha_iso = "2026-01-01" # Fallback si falla la conversión
+
+        datos_limpios.append({
+            "time": fecha_iso,
+            "open": float(fila.get('OPEN', 0)),
+            "high": float(fila.get('HIGH', 0)),
+            "low": float(fila.get('LOW', 0)),
+            "close": float(fila.get('CLOSE', 0))
+        })
+    return datos_limpios
 
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
