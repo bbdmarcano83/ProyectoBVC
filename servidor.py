@@ -246,14 +246,18 @@ import json # Asegúrate de tener este import arriba en tu archivo
 def procesar_historico_para_grafica(historico):
     ohlc_data = []
     volume_data = []
-    for mov in historico[:30]:
+    
+    # 1. Tomamos todo el histórico disponible (o los que quieras)
+    # 2. El [::-1] invierte el orden para que lo viejo quede a la izquierda
+    for mov in historico[::-1]: 
         try:
             fec = mov.get('FEC')
             ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
             maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
             mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
             cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
-            vol = float(mov.get('VOLUMEN', '0').replace('.', '').replace(',', '.'))
+            vol = float(mov.get('PRECIO_VOL', '0').replace('.', '').replace(',', '.')) # Asegúrate de que sea PRECIO_VOL o VOLUMEN según tu JSON
+            
             ohlc_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
             volume_data.append({"x": fec, "y": vol})
         except: continue
@@ -295,27 +299,40 @@ async def ver_detalle(simbolo: str):
     # GRÁFICA COMBINADA PROFESIONAL
     html += "<div id='chart-ohlc'></div><div id='chart-vol'></div>"
     html += f"""
-    <script>
-        var optionsOHLC = {{ 
-            series: [{{ data: {ohlc_json} }}], 
-            chart: {{ id: 'candlestick', height: 300, type: 'candlestick' }}, 
-            plotOptions: {{ 
-                candlestick: {{ 
-                    colors: {{ upward: '#2ecc71', downward: '#e74c3c' }} 
-                }} 
-            }},
-            xaxis: {{ type: 'category' }}
-        }};
-        
-        var optionsVol = {{ 
-            series: [{{ name: 'Volumen', data: {vol_json} }}], 
-            chart: {{ id: 'volume', height: 150, type: 'bar', brush: {{ target: 'candlestick', enabled: true }}, selection: {{ enabled: true }} }}, 
-            colors: ['#7f8c8d'] 
-        }};
-        
-        new ApexCharts(document.querySelector("#chart-ohlc"), optionsOHLC).render();
-        new ApexCharts(document.querySelector("#chart-vol"), optionsVol).render();
-    </script>
+    <div style='margin: 15px 0; text-align: center;'>
+    <button onclick="updateData(30)" class='btn'>1 Mes</button>
+    <button onclick="updateData(90)" class='btn'>3 Meses</button>
+    <button onclick="updateData(365)" class='btn'>1 Año</button>
+    <button onclick="updateData(9999)" class='btn'>Todo</button>
+</div>
+
+<script>
+    // Los datos ya vienen de Python en orden [Viejo -> Nuevo]
+    const fullOHLC = {ohlc_json}; 
+    const fullVol = {vol_json};
+
+    var optionsOHLC = { 
+        series: [{ data: fullOHLC.slice(-30) }], 
+        chart: { id: 'candlestick', height: 300, type: 'candlestick' },
+        xaxis: { type: 'category' } // Sin reversed, porque Python ya los ordenó
+    };
+
+    var optionsVol = { 
+        series: [{ name: 'Volumen', data: fullVol.slice(-30) }],
+        chart: { id: 'volume', height: 150, type: 'bar', brush: { target: 'candlestick', enabled: true } },
+        xaxis: { type: 'category' }
+    };
+
+    var chartOHLC = new ApexCharts(document.querySelector("#chart-ohlc"), optionsOHLC);
+    var chartVol = new ApexCharts(document.querySelector("#chart-vol"), optionsVol);
+    chartOHLC.render();
+    chartVol.render();
+
+    function updateData(days) {
+        chartOHLC.updateSeries([{ data: fullOHLC.slice(-days) }]);
+        chartVol.updateSeries([{ data: fullVol.slice(-days) }]);
+    }
+</script>
     """
 
     html += "</div></body></html>"
