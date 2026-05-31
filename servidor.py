@@ -243,31 +243,23 @@ async def ver_portafolio():
     
 
 import json # Asegúrate de tener este import arriba en tu archivo
+
 def procesar_historico_para_grafica(historico):
-    ohlc_data = []
-    volume_data = []
-    
-    # Invertimos el orden para procesar cronológicamente (Viejo -> Nuevo)
-    data_ordenada = historico[::-1]
-    
-    for mov in data_ordenada:
+    data_final = []
+    # Usamos todo el historial
+    for mov in historico: 
         try:
-            fec = mov.get('FEC')
-            # Limpieza segura de precios
-            ap = float(str(mov.get('PRECIO_APERT', '0')).replace('.', '').replace(',', '.'))
-            maxi = float(str(mov.get('PRECIO_MAX', '0')).replace('.', '').replace(',', '.'))
-            mini = float(str(mov.get('PRECIO_MIN', '0')).replace('.', '').replace(',', '.'))
-            cie = float(str(mov.get('PRECIO_CIE', '0')).replace('.', '').replace(',', '.'))
-            
-            # CORRECCIÓN DE VOLUMEN: La BVC suele usar 'VOLUMEN_TITULOS' o 'CANT_TITULOS'
-            # Vamos a intentar buscar varias llaves posibles
-            vol = float(str(mov.get('VOLUMEN', mov.get('CANT_TITULOS', 0))).replace('.', '').replace(',', '.'))
-            
-            ohlc_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
-            volume_data.append({"x": fec, "y": vol})
-        except Exception as e:
-            continue
-    return ohlc_data, volume_data
+            # Formato estricto para Lightweight Charts
+            data_final.append({
+                "time": mov.get('FEC'), 
+                "open": float(str(mov.get('PRECIO_APERT', '0')).replace('.', '').replace(',', '.')),
+                "high": float(str(mov.get('PRECIO_MAX', '0')).replace('.', '').replace(',', '.')),
+                "low": float(str(mov.get('PRECIO_MIN', '0')).replace('.', '').replace(',', '.')),
+                "close": float(str(mov.get('PRECIO_CIE', '0')).replace('.', '').replace(',', '.'))
+            })
+        except: continue
+    # Ordenar por fecha (de más viejo a más nuevo)
+    return sorted(data_final, key=lambda x: x['time'])
 
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
@@ -301,12 +293,7 @@ async def ver_detalle(simbolo: str):
     </div>
     """
     
-    # GRÁFICA COMBINADA PROFESIONAL
-    # GRÁFICA COMBINADA PROFESIONAL
     
-# IMPORTANTE: Asegúrate de que esta línea 'html +=' 
-    # esté alineada exactamente con el resto del código 
-    # de tu función ver_detalle (usualmente 4 espacios).
     
     # 1. BOTONES DE TEMPORALIDAD (HTML)
     html += """
@@ -324,39 +311,32 @@ async def ver_detalle(simbolo: str):
     """
 
     # 2. LÓGICA JAVASCRIPT (Usando dobles llaves {{ }} para proteger a Python)
+    # HTML y JS integrado para la gráfica
     html += f"""
+    <div id='chart-container' style='width: 100%; height: 500px; background: white; border-radius: 8px; margin-top: 20px;'></div>
+    <script src='https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js'></script>
     <script>
-        const fullOHLC = {ohlc_json};
-        const fullVol = {vol_json};
+        const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{
+            width: document.getElementById('chart-container').offsetWidth,
+            height: 500,
+            layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }},
+            grid: {{ vertLines: {{ color: '#eeeeee' }}, horzLines: {{ color: '#eeeeee' }} }},
+            crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
+            timeScale: {{ visible: true, timeVisible: true }}
+        }});
 
-        function updateData(days) {{
-            const count = (days === 9999) ? fullOHLC.length : days;
-            
-            // Fíjate en el uso de dobles llaves {{ }} para los objetos de JS
-            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-count) }}]);
-            chartVol.updateSeries([{{ data: fullVol.slice(-count) }}]);
-        }}
+        const candleSeries = chart.addCandlestickSeries({{
+            upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
+            wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+        }});
 
-        var optionsOHLC = {{ 
-            series: [{{ data: fullOHLC.slice(-30) }}], 
-            chart: {{ id: 'candlestick', height: 350, type: 'candlestick' }},
-            xaxis: {{ type: 'category', labels: {{ show: false }} }}
-        }};
-
-        var optionsVol = {{ 
-            series: [{{ name: 'Volumen', data: fullVol.slice(-30) }}],
-            chart: {{ 
-                id: 'volume', height: 150, type: 'bar', 
-                brush: {{ target: 'candlestick', enabled: true }},
-                selection: {{ enabled: true }} 
-            }},
-            xaxis: {{ type: 'category', tickAmount: 10 }}
-        }};
-
-        var chartOHLC = new ApexCharts(document.querySelector("#chart-ohlc"), optionsOHLC);
-        var chartVol = new ApexCharts(document.querySelector("#chart-vol"), optionsVol);
-        chartOHLC.render();
-        chartVol.render();
+        const data = {ohlc_json};
+        candleSeries.setData(data);
+        
+        // Ajuste automático al tamaño de la pantalla
+        window.addEventListener('resize', () => {{
+            chart.applyOptions({{ width: document.getElementById('chart-container').offsetWidth }});
+        }});
     </script>
     """
     
