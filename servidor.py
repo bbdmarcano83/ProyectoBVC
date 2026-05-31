@@ -298,7 +298,11 @@ async def ver_detalle(simbolo: str):
     # GRÁFICA COMBINADA PROFESIONAL
     # GRÁFICA COMBINADA PROFESIONAL
     
-html += """
+# IMPORTANTE: Asegúrate de que esta línea 'html +=' 
+    # esté alineada exactamente con el resto del código 
+    # de tu función ver_detalle (usualmente 4 espacios).
+    
+    html += """
     <div style='margin: 15px 0; text-align: center;'>
         <button onclick="updateData(30)" class='btn'>1 Mes</button>
         <button onclick="updateData(90)" class='btn'>3 Meses</button>
@@ -309,7 +313,7 @@ html += """
     <div id='chart-vol'></div>
     """
 
-html += f"""
+    html += f"""
     <script>
         const fullOHLC = {ohlc_json};
         const fullVol = {vol_json};
@@ -339,8 +343,10 @@ html += f"""
         chartVol.render();
 
         function updateData(days) {{
-            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-days) }}]);
-            chartVol.updateSeries([{{ data: fullVol.slice(-days) }}]);
+            const newDataOHLC = fullOHLC.slice(-days);
+            const newDataVol = fullVol.slice(-days);
+            chartOHLC.updateSeries([{{ data: newDataOHLC }}]);
+            chartVol.updateSeries([{{ data: newDataVol }}]);
         }}
     </script>
     """
