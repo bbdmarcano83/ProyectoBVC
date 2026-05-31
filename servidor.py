@@ -285,64 +285,48 @@ async def ver_detalle(simbolo: str):
         Cargando datos del mercado...
     </div>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <script>
-    // ... dentro de tu <script> en ver_detalle
+   <script>
+    // 1. Identificamos el contenedor
+    const container = document.getElementById('chart-container');
+    
+    // 2. Inicializamos el gráfico (Solo una vez)
+    const chart = LightweightCharts.createChart(container, {
+        width: container.clientWidth,
+        height: 500,
+        layout: { background: { type: 'solid', color: '#ffffff' } },
+        grid: { vertLines: { color: '#e1e1e1' }, horzLines: { color: '#e1e1e1' } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+    });
+    
+    // 3. Añadimos la serie
+    const candleSeries = chart.addCandlestickSeries({
+        upColor: '#26a69a', downColor: '#ef5350',
+        borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+    });
+
+    // 4. Observador de tamaño
+    new ResizeObserver(() => {
+        chart.applyOptions({ width: container.clientWidth });
+    }).observe(container);
+
+    // 5. Fetch único
     fetch('/api/v1/bvc-data/{simbolo}')
         .then(res => res.json())
         .then(data => {
-            console.log("Datos recibidos:", data); // Esto te ayudará a ver en consola si llegan bien
-            if (!data || data.length === 0) {
-                container.innerHTML = "<p style='text-align:center;'>No hay datos para mostrar.</p>";
+            console.log("Datos recibidos:", data);
+            if (!Array.isArray(data) || data.length === 0) {
+                container.innerHTML = "<p style='text-align:center; padding-top:20px;'>No hay datos disponibles.</p>";
                 return;
             }
-            container.innerHTML = ""; // Limpiamos el texto "Cargando..."
-            
-            // Creamos la serie si no existe
-            const candleSeries = chart.addCandlestickSeries({
-                upColor: '#26a69a', downColor: '#ef5350',
-                borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-            });
-            
+            // Importante: No borres el contenedor entero, solo cargamos los datos
             candleSeries.setData(data);
             chart.timeScale().fitContent();
         })
         .catch(err => {
             console.error("Error:", err);
-            container.innerHTML = "<p style='text-align:center;'>Error al cargar el gráfico.</p>";
+            container.innerHTML = "<p style='text-align:center; padding-top:20px;'>Error al cargar el gráfico.</p>";
         });
-        const container = document.getElementById('chart-container');
-        const chart = LightweightCharts.createChart(container, {{
-            width: container.clientWidth,
-            height: 500,
-            layout: {{ background: {{ type: 'solid', color: '#ffffff' }} }},
-            grid: {{ vertLines: {{ color: '#e1e1e1' }}, horzLines: {{ color: '#e1e1e1' }} }},
-            crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }}
-        }});
-        
-        const candleSeries = chart.addCandlestickSeries({{
-            upColor: '#26a69a', downColor: '#ef5350',
-            borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-        }});
-
-        new ResizeObserver(() => {{
-            chart.applyOptions({{ width: container.clientWidth }});
-        }}).observe(container);
-
-        fetch('/api/v1/bvc-data/{simbolo}')
-            .then(res => res.json())
-            .then(data => {{
-                if (!Array.isArray(data) || data.length === 0) {{
-                    container.innerHTML = "<p style='text-align:center; padding-top:20px;'>No hay datos históricos disponibles.</p>";
-                    return;
-                }}
-                container.innerHTML = ""; 
-                candleSeries.setData(data);
-                chart.timeScale().fitContent();
-            }})
-            .catch(err => {{
-                container.innerHTML = "<p style='text-align:center; padding-top:20px;'>Error al cargar el gráfico.</p>";
-            }});
-    </script>
+</script>
     """
     html += "</div></body></html>"
     return HTMLResponse(html)
