@@ -308,7 +308,7 @@ async def ver_detalle(simbolo: str):
     # esté alineada exactamente con el resto del código 
     # de tu función ver_detalle (usualmente 4 espacios).
     
-    # 1. Botones de Control
+    # 1. BOTONES DE TEMPORALIDAD (HTML)
     html += """
     <div style='margin: 15px 0; text-align: center; font-family: sans-serif;'>
         <button onclick="updateData(1)" class='btn'>1D</button>
@@ -323,7 +323,7 @@ async def ver_detalle(simbolo: str):
     <div id='chart-vol'></div>
     """
 
-    # 2. Lógica JavaScript Dinámica
+    # 2. LÓGICA JAVASCRIPT (Usando dobles llaves {{ }} para proteger a Python)
     html += f"""
     <script>
         const fullOHLC = {ohlc_json};
@@ -331,14 +331,15 @@ async def ver_detalle(simbolo: str):
 
         function updateData(days) {{
             const count = (days === 9999) ? fullOHLC.length : days;
-            const displayCount = (count < 60) ? 60 : count;
-            chartOHLC.updateSeries([{ data: fullOHLC.slice(-displayCount) }]);
-            chartVol.updateSeries([{ data: fullVol.slice(-displayCount) }]);
+            const displayCount = (count < 30) ? 30 : count;
+            
+            chartOHLC.updateSeries([{{ data: fullOHLC.slice(-displayCount) }}]);
+            chartVol.updateSeries([{{ data: fullVol.slice(-displayCount) }}]);
         }}
 
         var optionsOHLC = {{ 
             series: [{{ data: fullOHLC.slice(-30) }}], 
-            chart: {{ id: 'candlestick', height: 400, type: 'candlestick' }},
+            chart: {{ id: 'candlestick', height: 350, type: 'candlestick' }},
             xaxis: {{ type: 'category', labels: {{ show: false }} }}
         }};
 
