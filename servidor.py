@@ -304,7 +304,7 @@ async def ver_detalle(simbolo: str):
                     colors: {{ upward: '#2ecc71', downward: '#e74c3c' }} 
                 }} 
             }},
-            xaxis: {{ type: 'category', reversed: false }}
+            xaxis: {{ type: 'category' }}
         }};
         
         var optionsVol = {{ 
