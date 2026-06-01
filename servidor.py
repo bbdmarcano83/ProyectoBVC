@@ -241,64 +241,57 @@ async def ver_portafolio():
 async def ver_detalle(simbolo: str):
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
-    
-    if not activo:
-        return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
+    if not activo: return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    historico = await obtener_historico_optimizado(simbolo)
+    historico = await obtener_historico(simbolo)
     
-    # Lógica de datos original + Vela Viva
-    datos_grafica = []
-    for fila in historico:
-        datos_grafica.append({"x": fila.get('FEC'), "y": float(str(fila.get('PRECIO_CIE', '0')).replace(',', '.'))})
+    # Lógica de colores bursátiles
+    var = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
+    color_var = "green" if var > 0 else ("red" if var < 0 else "blue")
     
-    datos_grafica.append({"x": "HOY", "y": float(str(activo.get('PRECIO', '0')).replace(',', '.'))})
-    datos_json = json.dumps(datos_grafica)
-
-    # HTML con todo integrado: CSS, Tarjeta, Gráfica y Order Book
+    # Procesar gráfica
+    series_data = []
+    for mov in historico[:30]: 
+        try:
+            series_data.append({"x": mov.get('FEC'), "y": [float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.')), float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.')), float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.')), float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))]})
+        except: continue
+    series_data.append({"x": "HOY", "y": [float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.').replace(' ', ''))]*4})
+    
     html = f"""
-    <html>
-    <head>
-        <style>
-            body {{ background-color: #121212; color: #e0e0e0; font-family: sans-serif; padding: 20px; }}
-            .container {{ max-width: 900px; margin: auto; }}
-            .btn {{ background: #333; color: white; padding: 10px; text-decoration: none; border-radius: 5px; display: inline-block; margin-bottom: 15px; }}
-            .header-card {{ background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #444; box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin-bottom: 20px; }}
-            .stats-grid {{ display: flex; gap: 20px; margin-top: 10px; }}
-            .order-book {{ margin-top: 20px; background: #1a1a1a; padding: 15px; border-radius: 8px; border: 1px solid #333; }}
-            table {{ width: 100%; border-collapse: collapse; }}
-            th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #333; }}
-        </style>
-    </head>
-    <body>
-        <div class='container'>
-            <a href='/' class='btn'>« Volver a Pizarra</a>
-            
-            <div class='header-card'>
-                <h2>{activo.get('DESC_SIMB', simbolo)}</h2>
-                <div class='stats-grid'>
-                    <p>Precio: <b>{activo.get('PRECIO')}</b></p>
-                    <p>Var: <b>{activo.get('VAR_REL')}%</b></p>
-                    <p>Bid: {activo.get('PRE_CMP_1')} | Ask: {activo.get('PRE_VTA_1')}</p>
-                </div>
+    <html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
+    <style>
+        .header-card {{ background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #444; box-shadow: 5px 5px 15px rgba(0,0,0,0.5); margin-bottom: 20px; color: white; }}
+        .var-box {{ display: inline-block; padding: 5px 10px; border-radius: 5px; color: white; background: {color_var}; }}
+        .order-book {{ background: #1a1a1a; padding: 20px; border-radius: 12px; border: 1px solid #333; color: white; }}
+        .bid {{ color: #2ecc71; font-weight: bold; }}
+        .ask {{ color: #e74c3c; font-weight: bold; }}
+        table {{ width: 100%; border-collapse: collapse; text-align: center; margin-top: 10px; }}
+        th {{ color: #bdc3c7; font-size: 12px; text-transform: uppercase; padding: 10px; }}
+        td {{ padding: 10px; }}
+    </style></head><body><div class='container'>
+        <a href='/' class='btn'>« Volver a Pizarra</a>
+        
+        <div class='header-card'>
+            <h2>{activo.get('DESC_SIMB', simbolo)}</h2>
+            <div style='display:flex; gap:30px;'>
+                <p>Precio: <b>{activo.get('PRECIO')}</b></p>
+                <p>Variación: <span class='var-box'>{activo.get('VAR_REL')}%</span></p>
             </div>
-
-            <canvas id='myChart'></canvas>
-
-            <div class='order-book'>
-                <h3>Order Book</h3>
-                <table>
-                    <tr><th>Precio Compra</th><th>Vol. Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>
-                    <tr><td>{activo.get('PRE_CMP_1')}</td><td>{activo.get('VOL_CMP_1')}</td><td>{activo.get('PRE_VTA_1')}</td><td>{activo.get('VOL_VTA_1')}</td></tr>
-                </table>
-            </div>
-
-            <script>
-                // Tu lógica de gráfica original aquí. Usa la variable datos_json que ya definimos arriba
-            </script>
         </div>
-    </body>
-    </html>
+        
+        <div id='chart' style='background:white; padding:10px; border-radius:8px;'></div>
+        
+        <div class='order-book'>
+            <h3>Order Book</h3>
+            <table>
+                <tr><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>
+                <tr><td>{activo.get('VOL_CMP_1')}</td><td class='bid'>{activo.get('PRE_CMP_1')}</td><td class='ask'>{activo.get('PRE_VTA_1')}</td><td>{activo.get('VOL_VTA_1')}</td></tr>
+            </table>
+        </div>
+        <script>
+            new ApexCharts(document.querySelector("#chart"), {{ series: [{{ data: {json.dumps(series_data)} }}], chart: {{ type: 'candlestick', height: 350 }}, xaxis: {{ type: 'category' }} }}).render();
+        </script>
+    </div></body></html>
     """
     return HTMLResponse(html)
 
