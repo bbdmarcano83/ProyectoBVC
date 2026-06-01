@@ -282,30 +282,23 @@ async def ver_portafolio():
 async def ver_detalle(simbolo: str):
     activo = await obtener_detalle_especifico(simbolo)
     
-    # Protección anti-error 500
-    if not isinstance(activo, dict) or 'cur_encab_simb_rv' not in activo:
-        print(f"DEBUG: El activo {simbolo} devolvió: {activo}") # ESTO ES LO QUE NECESITAMOS VER
-        return HTMLResponse(f"<h1>Sin datos. Contenido recibido: {activo}</h1><a href='/'>Volver</a>")
-    # Extracción segura
-    encab = activo.get('cur_encab_simb_rv', [{}])[0]
-    cap = activo.get('cur_cap_simb_rv', [{}])[0]
-    lib = activo.get('cur_con_lib_ord_rv', [{}])[0]
-    
-    # Extracción segura del IBC
-    ibc_data = activo.get('CUR_IBC', [])
-    ultimo_ibc = ibc_data[-1].get('PRECIO', '---') if ibc_data else "---"
-    
-    # Limpieza de datos técnicos
-    def safe_get(dic, key, default="-"):
-        return dic.get(key) if dic.get(key) is not None else default
+    # Si activo falla, no rompemos: usamos diccionario vacío
+    if not isinstance(activo, dict):
+        activo = {}
 
-    var_val = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
+    # Lógica de cálculo de color para la variación
+    try:
+        var_val = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
+    except:
+        var_val = 0.0
     col = "green" if var_val > 0 else ("red" if var_val < 0 else "blue")
-    
+
+    # Gráfica: obtenemos histórico y le sumamos la vela de 'HOY'
     historico = await obtener_historico(simbolo)
-    # Aquí están tus 60 velas:
     series_data = [{"x": m.get('FEC'), "y": [float(m.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))]} for m in historico[:60]]
-    series_data.append({"x": "HOY", "y": [float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.').replace(' ', ''))]*4})
+    
+    precio_hoy = float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.').replace(' ', '') or 0)
+    series_data.append({"x": "HOY", "y": [precio_hoy]*4})
 
     html = f"""
     <html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
@@ -317,20 +310,20 @@ async def ver_detalle(simbolo: str):
         td {{ padding: 10px; border: 1px solid #333; text-align: center; }}
     </style></head><body>
     
-    <div class='ibc-bar'>ÍNDICE BURSÁTIL CARACAS (IBC): {ultimo_ibc}</div>
+    <div class='ibc-bar'>ÍNDICE BURSÁTIL CARACAS (IBC): {activo.get('IBC', '---')}</div>
     <div class='container'>
         <a href='/' class='btn'>« Volver a Pizarra</a>
         <div class='card'>
-            <h2>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h2>
-            <p>Precio: <b>{activo.get('PRECIO')}</b> | Var: <span style='color:{col}'>{activo.get('VAR_REL')}%</span></p>
-            <p>Cap. Bs: {float(str(cap.get('CAPITALI_BS', 0)) or 0):,.2f}</p>
+            <h2>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h2>
+            <p>Precio: <b>{activo.get('PRECIO', '0')}</b> | Var: <span style='color:{col}'>{activo.get('VAR_REL', '0')}%</span></p>
+            <p>Cap. Bs: {float(str(activo.get('CAPITALI_BS', 0)) or 0):,.2f} | Volumen: {activo.get('VOLUMEN', '0')}</p>
         </div>
         <div id='chart' style='background:white; padding:15px; border-radius:12px; margin:20px 0;'></div>
         <div class='card'>
             <h3>Libro de Órdenes</h3>
             <table>
                 <tr><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>
-                {''.join([f"<tr><td class='bid'>{lib.get(f'VOL_CMP_{i+1}', '-')}</td><td class='bid'>{lib.get(f'PRE_CMP_{i+1}', '-')}</td><td class='ask'>{lib.get(f'PRE_VTA_{i+1}', '-')}</td><td class='ask'>{lib.get(f'VOL_VTA_{i+1}', '-')}</td></tr>" for i in range(6)])}
+                {''.join([f"<tr><td class='bid'>{activo.get(f'VOL_CMP_{i+1}', '-')}</td><td class='bid'>{activo.get(f'PRE_CMP_{i+1}', '-')}</td><td class='ask'>{activo.get(f'PRE_VTA_{i+1}', '-')}</td><td class='ask'>{activo.get(f'VOL_VTA_{i+1}', '-')}</td></tr>" for i in range(6)])}
             </table>
         </div>
     </div>
