@@ -42,12 +42,24 @@ def formatear_numero(valor):
         return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return valor  # Si no es un número (como el guion), lo devuelve igual
-async def obtener_detalle_especifico(simbolo: str):
+
+async def obtener_detalle_especifico(simbolo):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    # Cambiamos los headers para ser más "humanos" y evitar el rechazo
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.bolsadecaracas.com/",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
     async with httpx.AsyncClient() as client:
-        # Esta es la acción que trae todo el JSON detallado que me mostraste
-        r = await client.post(url, data={'action': 'get_detalle_simbolo', 'simbolo': simbolo})
-        return r.json()
+        # Añadimos 'action' y el 'simbolo' tal cual ellos lo esperan
+        data = {'action': 'get_detalle_simbolo', 'simbolo': simbolo}
+        try:
+            r = await client.post(url, data=data, headers=headers, timeout=10.0)
+            return r.json()
+        except Exception as e:
+            print(f"Error en la llamada: {e}")
+            return None
 
 async def obtener_datos_bvc():
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
