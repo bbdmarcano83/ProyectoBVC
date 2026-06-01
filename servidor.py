@@ -282,18 +282,18 @@ async def ver_portafolio():
 async def ver_detalle(simbolo: str):
     activo = await obtener_detalle_especifico(simbolo)
     
-    # Si activo falla, no rompemos: usamos diccionario vacío
+    # Blindaje contra errores: si no hay datos, tratamos a 'activo' como vacío
     if not isinstance(activo, dict):
         activo = {}
 
-    # Lógica de cálculo de color para la variación
+    # Cálculo seguro de color
     try:
-        var_val = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
+        var_rel = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
     except:
-        var_val = 0.0
-    col = "green" if var_val > 0 else ("red" if var_val < 0 else "blue")
+        var_rel = 0.0
+    col = "green" if var_rel > 0 else ("red" if var_rel < 0 else "blue")
 
-    # Gráfica: obtenemos histórico y le sumamos la vela de 'HOY'
+    # Gráfica: mantenemos tu lógica intacta
     historico = await obtener_historico(simbolo)
     series_data = [{"x": m.get('FEC'), "y": [float(m.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))]} for m in historico[:60]]
     
@@ -304,10 +304,10 @@ async def ver_detalle(simbolo: str):
     <html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
     <style>
         .ibc-bar {{ background: #000; color: #fff; padding: 15px; text-align: center; font-size: 18px; font-weight: bold; border-bottom: 3px solid #f1c40f; margin-bottom: 20px; }}
-        .card {{ background: #1e1e1e; padding: 20px; border-radius: 15px; border: 1px solid #444; color: white; }}
+        .card {{ background: #1e1e1e; padding: 20px; border-radius: 15px; border: 1px solid #444; color: white; margin-bottom: 15px; }}
         .bid {{ color: #2ecc71; }} .ask {{ color: #e74c3c; }}
         table {{ width: 100%; border-collapse: collapse; background: #1a1a1a; color: white; }}
-        td {{ padding: 10px; border: 1px solid #333; text-align: center; }}
+        td, th {{ padding: 10px; border: 1px solid #333; text-align: center; }}
     </style></head><body>
     
     <div class='ibc-bar'>ÍNDICE BURSÁTIL CARACAS (IBC): {activo.get('IBC', '---')}</div>
@@ -316,14 +316,14 @@ async def ver_detalle(simbolo: str):
         <div class='card'>
             <h2>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h2>
             <p>Precio: <b>{activo.get('PRECIO', '0')}</b> | Var: <span style='color:{col}'>{activo.get('VAR_REL', '0')}%</span></p>
-            <p>Cap. Bs: {float(str(activo.get('CAPITALI_BS', 0)) or 0):,.2f} | Volumen: {activo.get('VOLUMEN', '0')}</p>
+            <p>Volumen: {activo.get('VOLUMEN', '0')} | Efectivo: {activo.get('MONTO_EFECTIVO', '0')}</p>
         </div>
         <div id='chart' style='background:white; padding:15px; border-radius:12px; margin:20px 0;'></div>
         <div class='card'>
-            <h3>Libro de Órdenes</h3>
+            <h3>Libro de Órdenes (Profundidad)</h3>
             <table>
                 <tr><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>
-                {''.join([f"<tr><td class='bid'>{activo.get(f'VOL_CMP_{i+1}', '-')}</td><td class='bid'>{activo.get(f'PRE_CMP_{i+1}', '-')}</td><td class='ask'>{activo.get(f'PRE_VTA_{i+1}', '-')}</td><td class='ask'>{activo.get(f'VOL_VTA_{i+1}', '-')}</td></tr>" for i in range(6)])}
+                {''.join([f"<tr><td class='bid'>{activo.get(f'VOL_CMP_{i}', '-')}</td><td class='bid'>{activo.get(f'PRE_CMP_{i}', '-')}</td><td class='ask'>{activo.get(f'PRE_VTA_{i}', '-')}</td><td class='ask'>{activo.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
             </table>
         </div>
     </div>
