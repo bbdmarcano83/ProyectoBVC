@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
@@ -239,63 +238,63 @@ async def ver_portafolio():
     return HTMLResponse(html)
     
 
-import json # Asegúrate de tener este import arriba en tu archivo
-
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
+    # 1. Obtenemos datos de la pizarra (que ya están en memoria)
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
     
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    # 1. Obtenemos el histórico
-    historico = await obtener_historico(simbolo)
+    # 2. Obtenemos histórico de la bolsa (el pasado)
+    historico = await obtener_historico_optimizado(simbolo)
     
-    # 2. Procesamos los datos para la gráfica (formato necesario para ApexCharts)
-    series_data = []
-    for mov in historico[:30]: # Tomamos los últimos 30 días
-        fec = mov.get('FEC')
-        # Limpiamos los números (quitamos puntos de miles, cambiamos coma por punto)
-        ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
-        maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
-        mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
-        cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
-        series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
+    # 3. Procesamos histórico y fusionamos con la Pizarra (el presente)
+    datos_grafica = []
+    for fila in historico:
+        try:
+            datos_grafica.append({
+                "time": datetime.strptime(str(fila.get('FEC')), "%d-%b-%y").strftime("%Y-%m-%d"),
+                "open": float(str(fila.get('PRECIO_APERT', '0')).replace('.', '').replace(',', '.')),
+                "high": float(str(fila.get('PRECIO_MAX', '0')).replace('.', '').replace(',', '.')),
+                "low": float(str(fila.get('PRECIO_MIN', '0')).replace('.', '').replace(',', '.')),
+                "close": float(str(fila.get('PRECIO_CIE', '0')).replace('.', '').replace(',', '.'))
+            })
+        except: continue
+    
+    # Aquí está la "Vela Viva": Añadimos el precio actual de tu pizarra principal
+    precio_actual = float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.'))
+    datos_grafica.append({
+        "time": datetime.now().strftime("%Y-%m-%d"),
+        "open": datos_grafica[-1]['close'] if datos_grafica else precio_actual, 
+        "high": precio_actual,
+        "low": precio_actual,
+        "close": precio_actual
+    })
 
-    # Convertimos la lista de Python a formato que JS entiende
-    series_json = json.dumps(series_data)
+    datos_json = json.dumps(datos_grafica)
 
-    # 3. Construimos el HTML
-    html = f"<html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body><div class='container'>"
-    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
-    html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a>"
-    
-    # Tabla de datos actuales
-    html += f"""
-    <table style='margin-top:20px;'>
-        <tr><th colspan='2'>Datos Técnicos de {simbolo}</th></tr>
-        <tr><td>Precio Último</td><td>{activo.get('PRECIO', 'N/A')} Bs</td></tr>
-        <tr><td>Volumen</td><td>{activo.get('VOLUMEN', 'N/A')}</td></tr>
-        <tr><td>Variación</td><td>{activo.get('VAR_REL', 'N/A')}%</td></tr>
-    </table>
+    # 4. Renderizamos con la misma gráfica que ya tenías
+    html = f"""
+    <html>
+    <head>{CSS_STYLE}</head>
+    <body>
+        <div class='container'>
+            <h1>{activo.get('DESC_SIMB', simbolo)}</h1>
+            <a href='/' class='btn'>« Volver a Pizarra</a>
+            <div id='chart-container' style='width: 100%; height: 500px;'></div>
+            <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+            <script>
+                const container = document.getElementById('chart-container');
+                const chart = LightweightCharts.createChart(container, {{ width: container.clientWidth, height: 500 }});
+                const series = chart.addCandlestickSeries();
+                series.setData({datos_json});
+            </script>
+        </div>
+    </body>
+    </html>
     """
-    
-    # La Gráfica Profesional
-    html += "<div id='chart' style='margin-top:30px; background:white; padding:20px; border-radius:8px;'></div>"
-    html += f"""
-    <script>
-        var options = {{
-            series: [{{ data: {series_json} }}],
-            chart: {{ type: 'candlestick', height: 350 }},
-            title: {{ text: 'Histórico Últimos 30 días', align: 'left' }},
-            xaxis: {{ type: 'category' }}
-        }};
-        var chart = new ApexCharts(document.querySelector("#chart"), options);
-        chart.render();
-    </script>
-    """
-    html += "</div></body></html>"
     return HTMLResponse(html)
 
 async def obtener_historico(simbolo: str):
