@@ -237,20 +237,23 @@ async def ver_portafolio():
     html += f"<script>new Chart(document.getElementById('chart'), {{type:'bar', data:{{labels:['Invertido', 'Mercado'], datasets:[{{label:'Bs', data:[{total_inv}, {total_mkt}], backgroundColor:['#34495e', '#3498db']}}]}}}});</script></div></body></html>"
     return HTMLResponse(html)
     
-
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    # 1. Obtenemos datos desde tu pizarra (fuente confiable)
+    # Obtenemos datos de tu pizarra (Ya funciona)
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
     
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    # 2. Obtenemos el histórico
-    historico = await obtener_historico_optimizado(simbolo)
+    # Obtenemos histórico (Cuidado: esto es lo que suele fallar si no hay datos)
+    try:
+        historico = await obtener_historico_optimizado(simbolo)
+        if not historico: historico = []
+    except:
+        historico = []
     
-    # 3. Procesamos los datos con formato seguro
+    # Procesamos histórico con seguridad absoluta
     datos_grafica = []
     for fila in historico:
         try:
@@ -263,7 +266,7 @@ async def ver_detalle(simbolo: str):
             })
         except: continue
     
-    # Inyectamos la vela del día (Vela Viva)
+    # Inyección de Vela Viva (Mantiene la estructura)
     try:
         precio_actual = float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.'))
         datos_grafica.append({
@@ -277,7 +280,7 @@ async def ver_detalle(simbolo: str):
 
     datos_json = json.dumps(datos_grafica)
 
-    # 4. Renderizamos manteniendo todos tus elementos originales
+    # HTML final: Mantiene CSS, botones y tabla de datos técnicos exactamente como los tenías
     html = f"""
     <html>
     <head>{CSS_STYLE}</head>
@@ -308,6 +311,7 @@ async def ver_detalle(simbolo: str):
     </html>
     """
     return HTMLResponse(html)
+
 
 async def obtener_historico(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
