@@ -278,56 +278,59 @@ async def ver_portafolio():
     html += f"<script>new Chart(document.getElementById('chart'), {{type:'bar', data:{{labels:['Invertido', 'Mercado'], datasets:[{{label:'Bs', data:[{total_inv}, {total_mkt}], backgroundColor:['#34495e', '#3498db']}}]}}}});</script></div></body></html>"
     return HTMLResponse(html)
     
+
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    # Llamada a la estructura jerárquica original
-    activo = await obtener_detalle_especifico(simbolo)
+    # Intentamos obtener los datos
+    raw_data = await obtener_detalle_especifico(simbolo)
     
-    # Validamos que sea una lista (según tu estructura original)
-    if not isinstance(activo, list) or len(activo) == 0:
-        return HTMLResponse("<h1>Error: Datos no recibidos o símbolo inválido</h1>")
+    # Si raw_data es una lista, tomamos el primer elemento, si no, usamos el objeto directamente
+    activo = raw_data[0] if isinstance(raw_data, list) and len(raw_data) > 0 else (raw_data if isinstance(raw_data, dict) else {})
+    
+    # Si después de esto está vacío, mostramos qué llegó para depurar
+    if not activo:
+        return HTMLResponse(f"<h1>Error: No se recibieron datos técnicos. Respuesta recibida: {raw_data}</h1>")
 
-    # Mapeo a los bloques jerárquicos confirmados
-    data = activo[0]
-    encab = data.get('cur_encab_simb_rv', {})
-    cap = data.get('cur_capitalizacion', {})
-    libro = data.get('cur_libro_ordenes', [])
-    ibc_val = data.get('IBC', '---') 
+    # Mapeo de seguridad (usamos .get para que si falta algo ponga '-')
+    encab = activo.get('cur_encab_simb_rv', {})
+    cap = activo.get('cur_capitalizacion', {})
+    libro = activo.get('cur_libro_ordenes', [])
+    ibc_val = activo.get('IBC', '---')
 
-    # Histórico para la gráfica (mantenemos la lógica de 60 velas)
-    historico = await obtener_historico(simbolo)
-    # ... (lógica de historico ya confirmada anteriormente)
+    # Histórico (si falla, dejamos la lista vacía para no romper la página)
+    try:
+        historico = await obtener_historico(simbolo)
+    except:
+        historico = []
+    
+    series_data = [{"x": m.get('FEC'), "y": [float(m.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))]} for m in historico[:60]]
+    precio_hoy = float(str(encab.get('PRECIO', '0')).replace('.', '').replace(',', '.').replace(' ', '') or 0)
+    series_data.append({"x": "HOY", "y": [precio_hoy]*4})
 
     html = f"""
-    <html><head>{CSS_STYLE}</head><body>
-    <div class='ibc-top' style='background:#000; color:#fff; text-align:center; padding:10px;'>IBC: {ibc_val}</div>
-    
-    <div class='container'>
-        <a href='/'>« Volver</a>
-        
-        <div class='card'>
-            <h2>{encab.get('DESC_SIMB', '-')} ({encab.get('COD_SIMB', simbolo)})</h2>
-            <p>Precio: {encab.get('PRECIO', '-')} | Var: {encab.get('VAR_REL', '-')}% | Abs: {encab.get('VAR_ABS', '-')}</p>
-            <p>Hora: {encab.get('HORA', '-')}</p>
-        </div>
-
-        <div class='card'>
-            <p>Cap. en Bs: {cap.get('CAPITALI_BS', '-')} | Acciones: {cap.get('TOTAL_ACCIONES', '-')}</p>
-            <p>Volumen: {cap.get('VOLUMEN', '-')} | Efectivo: {cap.get('MONTO_EFECTIVO', '-')} | Negoc: {cap.get('CANT_NEGOC_DES', '-')}</p>
-        </div>
-
-        <div class='card'>
-            <h3>Profundidad de Mercado</h3>
+    <html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head>
+    <body style='background:#000; color:#fff;'>
+        <div style='background:#2c3e50; padding:15px; text-align:center; font-weight:bold;'>IBC: {ibc_val}</div>
+        <div style='padding:20px;'>
+            <a href='/'>« Volver</a>
+            <div style='background:#1a1a1a; padding:20px; border-radius:10px;'>
+                <h2>{encab.get('DESC_SIMB', 'Activo')}</h2>
+                <p>Precio: {encab.get('PRECIO', '-')} | Var: {encab.get('VAR_REL', '-')}%</p>
+                <p>Vol: {cap.get('VOLUMEN', '-')} | Efectivo: {cap.get('MONTO_EFECTIVO', '-')}</p>
+            </div>
+            <div id='chart' style='background:#fff; margin:20px 0;'></div>
             <table>
                 <tr><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>
-                {''.join([f"<tr><td>{o.get('VOL_CMP', '-')}</td><td>{o.get('PRE_CMP', '-')}</td><td>{o.get('PRE_VTA', '-')}</td><td>{o.get('VOL_VTA', '-')}</td></tr>" for o in libro[:6]])}
+                {''.join([f"<tr><td>{o.get('VOL_CMP', '-')}</td><td>{o.get('PRE_CMP', '-')}</td><td>{o.get('PRE_VTA', '-')}</td><td>{o.get('VOL_VTA', '-')}</td></tr>" for o in (libro if isinstance(libro, list) else [])[:6]])}
             </table>
         </div>
-    </div>
+        <script>
+            var options = {{ series: [{{ data: {series_data} }}], chart: {{ type: 'candlestick', height: 350 }} }};
+            new ApexCharts(document.querySelector("#chart"), options).render();
+        </script>
     </body></html>
     """
     return HTMLResponse(html)
-
      
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
