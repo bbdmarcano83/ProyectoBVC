@@ -266,9 +266,9 @@ async def ver_detalle(simbolo: str):
     activo = await obtener_detalle_especifico(simbolo)
     
     # Protección anti-error 500
-    if not isinstance(activo, dict) or 'cur_encab_simb_rv' not in activo: 
-        return HTMLResponse("<h1>Datos no disponibles para este activo</h1><a href='/'>Volver</a>")
-
+    if not isinstance(activo, dict) or 'cur_encab_simb_rv' not in activo:
+        print(f"DEBUG: El activo {simbolo} devolvió: {activo}") # ESTO ES LO QUE NECESITAMOS VER
+        return HTMLResponse(f"<h1>Sin datos. Contenido recibido: {activo}</h1><a href='/'>Volver</a>")
     # Extracción segura
     encab = activo.get('cur_encab_simb_rv', [{}])[0]
     cap = activo.get('cur_cap_simb_rv', [{}])[0]
