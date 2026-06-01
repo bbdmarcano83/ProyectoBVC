@@ -281,51 +281,64 @@ async def ver_portafolio():
 
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    # Intentamos obtener los datos
-    raw_data = await obtener_detalle_especifico(simbolo)
+    full_data = await obtener_detalle_especifico(simbolo)
+    data = full_data.get('response', {})
+    ibc_data = await obtener_ibc()
     
-    # Si raw_data es una lista, tomamos el primer elemento, si no, usamos el objeto directamente
-    activo = raw_data[0] if isinstance(raw_data, list) and len(raw_data) > 0 else (raw_data if isinstance(raw_data, dict) else {})
+    # Extracción de todos los bloques de datos técnicos
+    encab = data.get('cur_encab_simb_rv', [{}])[0]
+    cap = data.get('cur_cap_simb_rv', [{}])[0]
+    libro = data.get('cur_con_lib_ord_rv', [{}])[0]
     
-    # Si después de esto está vacío, mostramos qué llegó para depurar
-    if not activo:
-        return HTMLResponse(f"<h1>Error: No se recibieron datos técnicos. Respuesta recibida: {raw_data}</h1>")
-
-    # Mapeo de seguridad (usamos .get para que si falta algo ponga '-')
-    encab = activo.get('cur_encab_simb_rv', {})
-    cap = activo.get('cur_capitalizacion', {})
-    libro = activo.get('cur_libro_ordenes', [])
-    ibc_val = activo.get('IBC', '---')
-
-    # Histórico (si falla, dejamos la lista vacía para no romper la página)
-    try:
-        historico = await obtener_historico(simbolo)
-    except:
-        historico = []
+    # Lógica de semáforo
+    var_abs = float(str(encab.get('VAR_ABS', '0')).replace(',', '.'))
+    color_var = "#2ecc71" if var_abs > 0 else ("#e74c3c" if var_abs < 0 else "#3498db")
     
-    series_data = [{"x": m.get('FEC'), "y": [float(m.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))]} for m in historico[:60]]
-    precio_hoy = float(str(encab.get('PRECIO', '0')).replace('.', '').replace(',', '.').replace(' ', '') or 0)
-    series_data.append({"x": "HOY", "y": [precio_hoy]*4})
-
     html = f"""
-    <html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head>
-    <body style='background:#000; color:#fff;'>
-        <div style='background:#2c3e50; padding:15px; text-align:center; font-weight:bold;'>IBC: {ibc_val}</div>
-        <div style='padding:20px;'>
-            <a href='/'>« Volver</a>
-            <div style='background:#1a1a1a; padding:20px; border-radius:10px;'>
-                <h2>{encab.get('DESC_SIMB', 'Activo')}</h2>
-                <p>Precio: {encab.get('PRECIO', '-')} | Var: {encab.get('VAR_REL', '-')}%</p>
-                <p>Vol: {cap.get('VOLUMEN', '-')} | Efectivo: {cap.get('MONTO_EFECTIVO', '-')}</p>
+    <html><head>{CSS_STYLE}
+    <script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
+    <style>
+        .data-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }}
+        .card {{ background: #1a1a1a; padding: 15px; border-radius: 8px; border: 1px solid #333; }}
+        .label {{ color: #888; font-size: 12px; }}
+        .value {{ color: #fff; font-size: 14px; font-weight: bold; }}
+    </style>
+    </head>
+    <body style='background:#000; color:#fff; font-family:sans-serif;'>
+        <div style='background:#2c3e50; padding:10px; text-align:center;'>IBC: {ibc_data[-1].get('PRECIO', '---')}</div>
+        
+        <div style='max-width:900px; margin:auto; padding:20px;'>
+            <a href='/' style='color:#3498db; text-decoration:none;'>« Volver a la Pizarra</a>
+            
+            <div class='card' style='margin:20px 0;'>
+                <h1>{encab.get('DESC_SIMB', '-')} ({encab.get('COD_SIMB', '-')})</h1>
+                <div style='font-size:28px; color:{color_var};'>{encab.get('PRECIO', '-')}</div>
+                <div>Var: {encab.get('VAR_REL', '-')} % | Var. Abs: {encab.get('VAR_ABS', '-')}</div>
             </div>
-            <div id='chart' style='background:#fff; margin:20px 0;'></div>
-            <table>
-                <tr><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>
-                {''.join([f"<tr><td>{o.get('VOL_CMP', '-')}</td><td>{o.get('PRE_CMP', '-')}</td><td>{o.get('PRE_VTA', '-')}</td><td>{o.get('VOL_VTA', '-')}</td></tr>" for o in (libro if isinstance(libro, list) else [])[:6]])}
-            </table>
+
+            <div class='data-grid'>
+                <div class='card'><div class='label'>Capitalización Bs</div><div class='value'>{cap.get('CAPITALI_BS', '-')}</div></div>
+                <div class='card'><div class='label'>Acciones Circulantes</div><div class='value'>{cap.get('ACC_CIRCUL', '-')}</div></div>
+                <div class='card'><div class='label'>Volumen Acumulado</div><div class='value'>{encab.get('VOLUMEN', '-')}</div></div>
+                <div class='card'><div class='label'>Precio Promedio</div><div class='value'>{encab.get('PRE_PROM', '-')}</div></div>
+            </div>
+
+            <div id='chart' class='card' style='padding:0;'></div>
+
+            <div class='card' style='margin-top:20px;'>
+                <h3>Profundidad de Mercado</h3>
+                <table style='width:100%; border-collapse:collapse; text-align:center;'>
+                    <tr style='background:#222;'><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>
+                    {''.join([f"<tr><td style='color:#2ecc71;'>{libro.get(f'VOL_CMP_{i}', '-')}</td><td style='color:#2ecc71;'>{libro.get(f'PRE_CMP_{i}', '-')}</td><td style='color:#e74c3c;'>{libro.get(f'PRE_VTA_{i}', '-')}</td><td style='color:#e74c3c;'>{libro.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
+                </table>
+            </div>
         </div>
         <script>
-            var options = {{ series: [{{ data: {series_data} }}], chart: {{ type: 'candlestick', height: 350 }} }};
+            var options = {{
+                series: [{{ name: 'Precio', type: 'candlestick', data: [] }}, {{ name: 'Volumen', type: 'column', data: [] }}],
+                chart: {{ height: 350, type: 'line', background: '#1a1a1a' }},
+                yaxis: [{{ title: {{ text: 'Precio' }} }}, {{ title: {{ text: 'Vol' }}, opposite: true }}]
+            }};
             new ApexCharts(document.querySelector("#chart"), options).render();
         </script>
     </body></html>
