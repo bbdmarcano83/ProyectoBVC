@@ -45,21 +45,26 @@ def formatear_numero(valor):
 
 async def obtener_detalle_especifico(simbolo):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    # Cambiamos los headers para ser más "humanos" y evitar el rechazo
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://www.bolsadecaracas.com/",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
+    
     async with httpx.AsyncClient() as client:
-        # Añadimos 'action' y el 'simbolo' tal cual ellos lo esperan
-        data = {'action': 'get_detalle_simbolo', 'simbolo': simbolo}
-        try:
-            r = await client.post(url, data=data, headers=headers, timeout=10.0)
-            return r.json()
-        except Exception as e:
-            print(f"Error en la llamada: {e}")
-            return None
+        # Replicamos la misma estructura exacta que la pizarra
+        # Primero pedimos el detalle específico
+        r = await client.post(url, data={'action': 'get_detalle_simbolo', 'simbolo': simbolo}, headers=headers)
+        
+        # Si la bolsa nos devuelve 0, es que el símbolo está cerrado o no existe el detalle extendido
+        # Entonces, devolvemos al menos lo básico que sí tenemos en la pizarra
+        data = r.json()
+        
+        # Aquí está el truco: si la bolsa devuelve 0, intentamos recuperar al menos 
+        # la info básica desde la pizarra general
+        if data == 0:
+            datos_pizarra = await obtener_datos_bvc()
+            # Buscamos en los datos de la pizarra si el símbolo existe allí
+            for item in datos_pizarra:
+                if item.get('COD_SIMB') == simbolo:
+                    return item # Devolvemos lo que sí sabemos de la pizarra
+        return data
 
 async def obtener_datos_bvc():
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
