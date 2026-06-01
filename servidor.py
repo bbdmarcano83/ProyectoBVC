@@ -4,6 +4,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 import json
 import os
+from datetime import datetime, timedelta
+from fastapi import Query
 
 app = FastAPI()
 CONFIG_FILE = 'config.json'
@@ -33,6 +35,30 @@ def cargar_portafolio():
 
 def guardar_portafolio(data):
     with open('portafolio.json', 'w') as f: json.dump(data, f)
+
+def agrupar_datos_semanales(datos_diarios):
+    # datos_diarios debe ser una lista de diccionarios con: 'fecha', 'open', 'high', 'low', 'close'
+    # Primero ordenamos por fecha
+    datos_diarios.sort(key=lambda x: x['fecha'])
+    
+    datos_semanales = []
+    # Agrupamos por semana usando la función isocalendar (año y número de semana)
+    grupos = {}
+    
+    for dia in datos_diarios:
+        f = datetime.strptime(dia['fecha'], "%Y-%m-%d")
+        year, week, _ = f.isocalendar()
+        key = (year, week)
+        
+        if key not in grupos:
+            grupos[key] = {'open': dia['open'], 'high': dia['high'], 'low': dia['low'], 'close': dia['close'], 'fecha': dia['fecha']}
+        else:
+            # Actualizamos: Open se mantiene el primero, High es el máximo, Low el mínimo, Close el último
+            grupos[key]['high'] = max(grupos[key]['high'], dia['high'])
+            grupos[key]['low'] = min(grupos[key]['low'], dia['low'])
+            grupos[key]['close'] = dia['close']
+            
+    return list(grupos.values())
 
 import httpx
 def formatear_numero(valor):
@@ -242,53 +268,54 @@ async def ver_portafolio():
 import json # Asegúrate de tener este import arriba en tu archivo
 
 @app.get("/detalle/{simbolo}")
-async def ver_detalle(simbolo: str):
+async def ver_detalle(simbolo: str, periodo: str = Query("diario")):
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
     
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    # 1. Obtenemos el histórico
+    # Obtenemos histórico crudo
     historico = await obtener_historico(simbolo)
     
-    # 2. Procesamos los datos para la gráfica (formato necesario para ApexCharts)
+    # Preparamos datos para la gráfica
+    if periodo == "semanal":
+        datos_procesados = agrupar_datos_semanales(historico)
+        titulo_grafica = "Histórico Semanal"
+    else:
+        datos_procesados = historico
+        titulo_grafica = "Histórico Diario"
+
+    # Convertimos a formato que ApexCharts entiende
     series_data = []
-    for mov in historico[:30]: # Tomamos los últimos 30 días
-        fec = mov.get('FEC')
-        # Limpiamos los números (quitamos puntos de miles, cambiamos coma por punto)
-        ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
-        maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
-        mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
-        cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
+    for mov in datos_procesados:
+        fec = mov.get('FEC') or mov.get('fecha')
+        # Limpieza segura de números
+        def limpiar(val):
+            return float(str(val).replace('.', '').replace(',', '.'))
+        
+        ap = limpiar(mov.get('PRECIO_APERT', mov.get('open')))
+        maxi = limpiar(mov.get('PRECIO_MAX', mov.get('high')))
+        mini = limpiar(mov.get('PRECIO_MIN', mov.get('low')))
+        cie = limpiar(mov.get('PRECIO_CIE', mov.get('close')))
         series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
 
-    # Convertimos la lista de Python a formato que JS entiende
     series_json = json.dumps(series_data)
 
-    # 3. Construimos el HTML
+    # --- HTML DE LA PÁGINA ---
     html = f"<html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body><div class='container'>"
-    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
-    html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a>"
+    html += f"<h1>{simbolo}</h1>"
+    # BOTONES DE SELECCIÓN
+    html += f"<a href='/detalle/{simbolo}?periodo=diario' class='btn'>Diario</a> "
+    html += f"<a href='/detalle/{simbolo}?periodo=semanal' class='btn' style='background:#27ae60;'>Semanal</a>"
     
-    # Tabla de datos actuales
-    html += f"""
-    <table style='margin-top:20px;'>
-        <tr><th colspan='2'>Datos Técnicos de {simbolo}</th></tr>
-        <tr><td>Precio Último</td><td>{activo.get('PRECIO', 'N/A')} Bs</td></tr>
-        <tr><td>Volumen</td><td>{activo.get('VOLUMEN', 'N/A')}</td></tr>
-        <tr><td>Variación</td><td>{activo.get('VAR_REL', 'N/A')}%</td></tr>
-    </table>
-    """
-    
-    # La Gráfica Profesional
-    html += "<div id='chart' style='margin-top:30px; background:white; padding:20px; border-radius:8px;'></div>"
+    html += "<div id='chart'></div>"
     html += f"""
     <script>
         var options = {{
             series: [{{ data: {series_json} }}],
             chart: {{ type: 'candlestick', height: 350 }},
-            title: {{ text: 'Histórico Últimos 30 días', align: 'left' }},
+            title: {{ text: '{titulo_grafica}', align: 'left' }},
             xaxis: {{ type: 'category' }}
         }};
         var chart = new ApexCharts(document.querySelector("#chart"), options);
@@ -297,6 +324,7 @@ async def ver_detalle(simbolo: str):
     """
     html += "</div></body></html>"
     return HTMLResponse(html)
+
 
 async def obtener_historico(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
