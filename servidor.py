@@ -49,7 +49,7 @@ async def obtener_detalle_especifico(simbolo: str):
         r = await client.post(url, data={'action': 'get_detalle_simbolo', 'simbolo': simbolo})
         return r.json()
 
- async def obtener_datos_bvc():
+async def obtener_datos_bvc():
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
     headers = {"User-Agent": "Mozilla/5.0"} # Añadimos cabecera básica por seguridad
     
