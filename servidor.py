@@ -263,39 +263,41 @@ async def ver_portafolio():
     
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    # Llamada directa a la fuente detallada de la BVC
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    async with httpx.AsyncClient() as client:
-        r = await client.post(url, data={'action': 'get_detalle_simbolo', 'simbolo': simbolo})
-        activo = r.json()
-
-    if not activo or 'cur_encab_simb_rv' not in activo: 
+    activo = await obtener_detalle_especifico(simbolo)
+    
+    # Protección anti-error 500
+    if not isinstance(activo, dict) or 'cur_encab_simb_rv' not in activo: 
         return HTMLResponse("<h1>Datos no disponibles para este activo</h1><a href='/'>Volver</a>")
 
+    # Extracción segura
     encab = activo.get('cur_encab_simb_rv', [{}])[0]
     cap = activo.get('cur_cap_simb_rv', [{}])[0]
     lib = activo.get('cur_con_lib_ord_rv', [{}])[0]
+    
+    # Extracción segura del IBC
     ibc_data = activo.get('CUR_IBC', [])
     ultimo_ibc = ibc_data[-1].get('PRECIO', '---') if ibc_data else "---"
     
+    # Limpieza de datos técnicos
+    def safe_get(dic, key, default="-"):
+        return dic.get(key) if dic.get(key) is not None else default
+
     var_val = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
     col = "green" if var_val > 0 else ("red" if var_val < 0 else "blue")
     
     historico = await obtener_historico(simbolo)
-    series_data = [{"x": m.get('FEC'), "y": [float(m.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))]} for m in historico[:30]]
+    # Aquí están tus 60 velas:
+    series_data = [{"x": m.get('FEC'), "y": [float(m.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))]} for m in historico[:60]]
     series_data.append({"x": "HOY", "y": [float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.').replace(' ', ''))]*4})
 
     html = f"""
     <html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
     <style>
-        .ibc-bar {{ background: #000; color: #fff; padding: 12px; text-align: center; font-weight: bold; border-bottom: 2px solid #3498db; margin-bottom: 20px; }}
-        .card {{ background: #1e1e1e; padding: 20px; border-radius: 15px; border: 1px solid #444; box-shadow: 8px 8px 20px rgba(0,0,0,0.6); margin-bottom: 20px; color: white; }}
-        .bid {{ color: #2ecc71; font-weight: bold; }} .ask {{ color: #e74c3c; font-weight: bold; }}
-        .val-box {{ padding: 4px 10px; border-radius: 6px; color: white; background: {col}; font-weight: bold; }}
-        .grid-data {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }}
-        table {{ width: 100%; border-collapse: collapse; background: #1a1a1a; color: white; border-radius: 10px; overflow: hidden; }}
-        th {{ background: #333; padding: 12px; text-transform: uppercase; font-size: 12px; }}
-        td {{ padding: 10px; border-bottom: 1px solid #333; text-align: center; }}
+        .ibc-bar {{ background: #000; color: #fff; padding: 15px; text-align: center; font-size: 18px; font-weight: bold; border-bottom: 3px solid #f1c40f; margin-bottom: 20px; }}
+        .card {{ background: #1e1e1e; padding: 20px; border-radius: 15px; border: 1px solid #444; color: white; }}
+        .bid {{ color: #2ecc71; }} .ask {{ color: #e74c3c; }}
+        table {{ width: 100%; border-collapse: collapse; background: #1a1a1a; color: white; }}
+        td {{ padding: 10px; border: 1px solid #333; text-align: center; }}
     </style></head><body>
     
     <div class='ibc-bar'>ÍNDICE BURSÁTIL CARACAS (IBC): {ultimo_ibc}</div>
@@ -303,16 +305,10 @@ async def ver_detalle(simbolo: str):
         <a href='/' class='btn'>« Volver a Pizarra</a>
         <div class='card'>
             <h2>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h2>
-            <div class='grid-data'>
-                <p>Precio Actual: <b>{activo.get('PRECIO')}</b></p>
-                <p>Variación: <span class='val-box'>{activo.get('VAR_REL')}%</span></p>
-                <p>Moneda: {encab.get('MONEDA', 'Bs')}</p>
-                <p>Acciones Circ: {int(float(str(encab.get('ACC_CIRC', 0)))):,}</p>
-                <p>Cap. (Bs): {float(str(cap.get('CAPITALI_BS', 0)) or 0):,.2f}</p>
-                <p>Cap. (US): {float(str(cap.get('CAPITALI_US', 0)) or 0):,.2f}</p>
-            </div>
+            <p>Precio: <b>{activo.get('PRECIO')}</b> | Var: <span style='color:{col}'>{activo.get('VAR_REL')}%</span></p>
+            <p>Cap. Bs: {float(str(cap.get('CAPITALI_BS', 0)) or 0):,.2f}</p>
         </div>
-        <div id='chart' style='background:white; padding:15px; border-radius:12px; margin-bottom:20px;'></div>
+        <div id='chart' style='background:white; padding:15px; border-radius:12px; margin:20px 0;'></div>
         <div class='card'>
             <h3>Libro de Órdenes</h3>
             <table>
