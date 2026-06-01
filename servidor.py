@@ -42,7 +42,14 @@ def formatear_numero(valor):
         return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return valor  # Si no es un número (como el guion), lo devuelve igual
-async def obtener_datos_bvc():
+async def obtener_detalle_especifico(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    async with httpx.AsyncClient() as client:
+        # Esta es la acción que trae todo el JSON detallado que me mostraste
+        r = await client.post(url, data={'action': 'get_detalle_simbolo', 'simbolo': simbolo})
+        return r.json()
+
+ async def obtener_datos_bvc():
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
     headers = {"User-Agent": "Mozilla/5.0"} # Añadimos cabecera básica por seguridad
     
@@ -66,6 +73,14 @@ async def obtener_datos_bvc():
                 item.update(mapa_detalle[simbolo])
         
         return datos_resumen
+
+async def obtener_historico(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    async with httpx.AsyncClient() as client:
+        # Hacemos la petición igualita a la de la página
+        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
+        datos = r.json()
+        return datos.get('cur_hist_mov_emisora', [])
 
 CSS_STYLE = """
 <style>
@@ -239,22 +254,24 @@ async def ver_portafolio():
     
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    datos_bolsa = await obtener_datos_bvc()
-    activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
-    if not activo: return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
+    # Llamada directa a la fuente detallada de la BVC
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    async with httpx.AsyncClient() as client:
+        r = await client.post(url, data={'action': 'get_detalle_simbolo', 'simbolo': simbolo})
+        activo = r.json()
 
-    # Extraer bloques de datos
+    if not activo or 'cur_encab_simb_rv' not in activo: 
+        return HTMLResponse("<h1>Datos no disponibles para este activo</h1><a href='/'>Volver</a>")
+
     encab = activo.get('cur_encab_simb_rv', [{}])[0]
     cap = activo.get('cur_cap_simb_rv', [{}])[0]
     lib = activo.get('cur_con_lib_ord_rv', [{}])[0]
     ibc_data = activo.get('CUR_IBC', [])
     ultimo_ibc = ibc_data[-1].get('PRECIO', '---') if ibc_data else "---"
     
-    # Lógica de colores semáforo
     var_val = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
     col = "green" if var_val > 0 else ("red" if var_val < 0 else "blue")
     
-    # Gráfica: Últimos 30 días + Vela Viva de hoy
     historico = await obtener_historico(simbolo)
     series_data = [{"x": m.get('FEC'), "y": [float(m.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.')), float(m.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))]} for m in historico[:30]]
     series_data.append({"x": "HOY", "y": [float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.').replace(' ', ''))]*4})
@@ -273,10 +290,8 @@ async def ver_detalle(simbolo: str):
     </style></head><body>
     
     <div class='ibc-bar'>ÍNDICE BURSÁTIL CARACAS (IBC): {ultimo_ibc}</div>
-    
     <div class='container'>
         <a href='/' class='btn'>« Volver a Pizarra</a>
-        
         <div class='card'>
             <h2>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h2>
             <div class='grid-data'>
@@ -288,9 +303,7 @@ async def ver_detalle(simbolo: str):
                 <p>Cap. (US): {float(str(cap.get('CAPITALI_US', 0)) or 0):,.2f}</p>
             </div>
         </div>
-
         <div id='chart' style='background:white; padding:15px; border-radius:12px; margin-bottom:20px;'></div>
-
         <div class='card'>
             <h3>Libro de Órdenes</h3>
             <table>
@@ -298,19 +311,17 @@ async def ver_detalle(simbolo: str):
                 {''.join([f"<tr><td class='bid'>{lib.get(f'VOL_CMP_{i+1}', '-')}</td><td class='bid'>{lib.get(f'PRE_CMP_{i+1}', '-')}</td><td class='ask'>{lib.get(f'PRE_VTA_{i+1}', '-')}</td><td class='ask'>{lib.get(f'VOL_VTA_{i+1}', '-')}</td></tr>" for i in range(6)])}
             </table>
         </div>
-    </div></body></html>
+    </div>
+    <script>
+        var options = {{ series: [{{ data: {series_data} }}], chart: {{ type: 'candlestick', height: 350 }}, xaxis: {{ type: 'datetime' }} }};
+        var chart = new ApexCharts(document.querySelector("#chart"), options);
+        chart.render();
+    </script>
+    </body></html>
     """
     return HTMLResponse(html)
 
-
-async def obtener_historico(simbolo: str):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    async with httpx.AsyncClient() as client:
-        # Hacemos la petición igualita a la de la página
-        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
-        datos = r.json()
-        return datos.get('cur_hist_mov_emisora', [])
-        
+     
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
     port = int(os.environ.get("PORT", 8000))
