@@ -240,17 +240,17 @@ async def ver_portafolio():
 
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    # 1. Obtenemos datos de la pizarra (que ya están en memoria)
+    # 1. Obtenemos datos desde tu pizarra (fuente confiable)
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
     
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    # 2. Obtenemos histórico de la bolsa (el pasado)
+    # 2. Obtenemos el histórico
     historico = await obtener_historico_optimizado(simbolo)
     
-    # 3. Procesamos histórico y fusionamos con la Pizarra (el presente)
+    # 3. Procesamos los datos con formato seguro
     datos_grafica = []
     for fila in historico:
         try:
@@ -263,19 +263,21 @@ async def ver_detalle(simbolo: str):
             })
         except: continue
     
-    # Aquí está la "Vela Viva": Añadimos el precio actual de tu pizarra principal
-    precio_actual = float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.'))
-    datos_grafica.append({
-        "time": datetime.now().strftime("%Y-%m-%d"),
-        "open": datos_grafica[-1]['close'] if datos_grafica else precio_actual, 
-        "high": precio_actual,
-        "low": precio_actual,
-        "close": precio_actual
-    })
+    # Inyectamos la vela del día (Vela Viva)
+    try:
+        precio_actual = float(str(activo.get('PRECIO', '0')).replace('.', '').replace(',', '.'))
+        datos_grafica.append({
+            "time": datetime.now().strftime("%Y-%m-%d"),
+            "open": datos_grafica[-1]['close'] if datos_grafica else precio_actual, 
+            "high": precio_actual,
+            "low": precio_actual,
+            "close": precio_actual
+        })
+    except: pass
 
     datos_json = json.dumps(datos_grafica)
 
-    # 4. Renderizamos con la misma gráfica que ya tenías
+    # 4. Renderizamos manteniendo todos tus elementos originales
     html = f"""
     <html>
     <head>{CSS_STYLE}</head>
@@ -283,11 +285,21 @@ async def ver_detalle(simbolo: str):
         <div class='container'>
             <h1>{activo.get('DESC_SIMB', simbolo)}</h1>
             <a href='/' class='btn'>« Volver a Pizarra</a>
-            <div id='chart-container' style='width: 100%; height: 500px;'></div>
+            
+            <div id='chart-container' style='width: 100%; height: 400px; margin-bottom: 20px;'></div>
+            
+            <div class='data-card'>
+                <h3>Datos Técnicos en Tiempo Real</h3>
+                <table>
+                    <tr><th>Precio Actual</th><td>{activo.get('PRECIO')}</td><th>Variación</th><td>{activo.get('VAR_REL')}</td></tr>
+                    <tr><th>Compra</th><td>{activo.get('PRE_CMP_1')}</td><th>Venta</th><td>{activo.get('PRE_VTA_1')}</td></tr>
+                    <tr><th>Vol. Compra</th><td>{activo.get('VOL_CMP_1')}</td><th>Vol. Venta</th><td>{activo.get('VOL_VTA_1')}</td></tr>
+                </table>
+            </div>
+
             <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
             <script>
-                const container = document.getElementById('chart-container');
-                const chart = LightweightCharts.createChart(container, {{ width: container.clientWidth, height: 500 }});
+                const chart = LightweightCharts.createChart(document.getElementById('chart-container'), {{ width: 800, height: 400 }});
                 const series = chart.addCandlestickSeries();
                 series.setData({datos_json});
             </script>
