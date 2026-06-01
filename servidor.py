@@ -268,46 +268,34 @@ async def ver_portafolio():
 import json # Asegúrate de tener este import arriba en tu archivo
 
 @app.get("/detalle/{simbolo}")
-async def ver_detalle(simbolo: str, periodo: str = Query("diario")):
+async def ver_detalle(simbolo: str):
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
     
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
-    # Obtenemos histórico crudo
     historico = await obtener_historico(simbolo)
     
-    # Preparamos datos para la gráfica
-    if periodo == "semanal":
-        datos_procesados = agrupar_datos_semanales(historico)
-        titulo_grafica = "Histórico Semanal"
-    else:
-        datos_procesados = historico
-        titulo_grafica = "Histórico Diario"
-
-    # Convertimos a formato que ApexCharts entiende
+    # Preparamos los datos tal como ApexCharts los necesita (Fecha, Open, High, Low, Close)
     series_data = []
-    for mov in datos_procesados:
-        fec = mov.get('FEC') or mov.get('fecha')
-        # Limpieza segura de números
-        def limpiar(val):
-            return float(str(val).replace('.', '').replace(',', '.'))
-        
-        ap = limpiar(mov.get('PRECIO_APERT', mov.get('open')))
-        maxi = limpiar(mov.get('PRECIO_MAX', mov.get('high')))
-        mini = limpiar(mov.get('PRECIO_MIN', mov.get('low')))
-        cie = limpiar(mov.get('PRECIO_CIE', mov.get('close')))
-        series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
+    for mov in historico:
+        # Ajusta aquí los nombres si en tu JSON vienen diferentes (ej: 'FEC', 'PRECIO_APERT')
+        series_data.append({
+            "x": mov.get('fecha'), 
+            "y": [mov.get('open'), mov.get('high'), mov.get('low'), mov.get('close')]
+        })
 
     series_json = json.dumps(series_data)
 
-    # --- HTML DE LA PÁGINA ---
-    html = f"<html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body><div class='container'>"
+    # Construcción del HTML
+    html = f"<html><head><script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body>"
+    # BOTÓN VOLVER
+    html += f"<a href='/'>« Volver a Pizarra</a>"
+    # DATOS TÉCNICOS
     html += f"<h1>{simbolo}</h1>"
-    # BOTONES DE SELECCIÓN
-    html += f"<a href='/detalle/{simbolo}?periodo=diario' class='btn'>Diario</a> "
-    html += f"<a href='/detalle/{simbolo}?periodo=semanal' class='btn' style='background:#27ae60;'>Semanal</a>"
+    html += f"<p>Precio Último: {activo.get('PRECIO_CIE', 'N/A')}</p>"
+    html += f"<p>Variación: {activo.get('VAR', 'N/A')}%</p>"
     
     html += "<div id='chart'></div>"
     html += f"""
@@ -315,16 +303,14 @@ async def ver_detalle(simbolo: str, periodo: str = Query("diario")):
         var options = {{
             series: [{{ data: {series_json} }}],
             chart: {{ type: 'candlestick', height: 350 }},
-            title: {{ text: '{titulo_grafica}', align: 'left' }},
             xaxis: {{ type: 'category' }}
         }};
         var chart = new ApexCharts(document.querySelector("#chart"), options);
         chart.render();
     </script>
-    """
-    html += "</div></body></html>"
+    </body></html>"""
+    
     return HTMLResponse(html)
-
 
 async def obtener_historico(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
