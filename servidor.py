@@ -277,33 +277,27 @@ async def ver_detalle(simbolo: str):
 
     historico = await obtener_historico(simbolo)
     
-    # Preparamos los datos tal como ApexCharts los necesita (Fecha, Open, High, Low, Close)
+    # Preparar datos para ApexCharts
     series_data = []
     for mov in historico:
-        # Ajusta aquí los nombres si en tu JSON vienen diferentes (ej: 'FEC', 'PRECIO_APERT')
         series_data.append({
-            "x": mov.get('fecha'), 
-            "y": [mov.get('open'), mov.get('high'), mov.get('low'), mov.get('close')]
+            "x": mov['FEC'], 
+            "y": [float(mov['PRECIO_APERT']), float(mov['PRECIO_MAX']), float(mov['PRECIO_MIN']), float(mov['PRECIO_CIE'])]
         })
 
     series_json = json.dumps(series_data)
 
-    # Construcción del HTML
     html = f"<html><head><script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body>"
-    # BOTÓN VOLVER
-    html += f"<a href='/'>« Volver a Pizarra</a>"
-    # DATOS TÉCNICOS
-    html += f"<h1>{simbolo}</h1>"
-    html += f"<p>Precio Último: {activo.get('PRECIO_CIE', 'N/A')}</p>"
-    html += f"<p>Variación: {activo.get('VAR', 'N/A')}%</p>"
+    html += f"<a href='/'>Volver a Pizarra</a>"
+    html += f"<h1>{simbolo} - {activo.get('NOMBRE', '')}</h1>"
+    html += f"<p>Precio: {activo.get('PRECIO_CIE')} | Var: {activo.get('VAR')}%</p>"
     
     html += "<div id='chart'></div>"
     html += f"""
     <script>
         var options = {{
             series: [{{ data: {series_json} }}],
-            chart: {{ type: 'candlestick', height: 350 }},
-            xaxis: {{ type: 'category' }}
+            chart: {{ type: 'candlestick', height: 350 }}
         }};
         var chart = new ApexCharts(document.querySelector("#chart"), options);
         chart.render();
