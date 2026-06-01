@@ -143,15 +143,24 @@ async def ver_pizarra():
     
     for item in datos_bolsa:
         simb = item.get('COD_SIMB')
-        p_compra = float(item.get('PRE_CMP_1', 0))
-        p_venta = float(item.get('PRE_VTA_1', 0))
-        v_compra = item.get('VOL_CMP_1', 0)
-        v_venta = item.get('VOL_VTA_1', 0)
-        p_ult = float(item.get('PRECIO', 0))
-        tit = item.get('VOLUMEN', 0)
-        vol_trans = float(item.get('MONTO_EFECTIVO', 0))
-        var_porc = float(item.get('VAR_REL', 0))
-        var_bs = float(item.get('VAR_ABS', 0))
+        
+        # Usamos una función auxiliar para asegurar que siempre sea un número
+        def limpiar_num(val):
+            try:
+                if val is None: return 0.0
+                return float(str(val).replace(',', '.'))
+            except:
+                return 0.0
+
+        p_compra = limpiar_num(item.get('PRE_CMP_1'))
+        p_venta = limpiar_num(item.get('PRE_VTA_1'))
+        v_compra = item.get('VOL_CMP_1') or 0
+        v_venta = item.get('VOL_VTA_1') or 0
+        p_ult = limpiar_num(item.get('PRECIO'))
+        tit = item.get('VOLUMEN') or 0
+        vol_trans = limpiar_num(item.get('MONTO_EFECTIVO'))
+        var_porc = limpiar_num(item.get('VAR_REL'))
+        var_bs = limpiar_num(item.get('VAR_ABS'))
         logo_url = item.get('ICON', '')
 
         if var_porc > 0: icono, color = "▲", "green"
