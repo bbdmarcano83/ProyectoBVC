@@ -43,28 +43,6 @@ def formatear_numero(valor):
     except:
         return valor  # Si no es un número (como el guion), lo devuelve igual
 
-async def obtener_detalle_especifico(simbolo):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    
-    async with httpx.AsyncClient() as client:
-        # Replicamos la misma estructura exacta que la pizarra
-        # Primero pedimos el detalle específico
-        r = await client.post(url, data={'action': 'get_detalle_simbolo', 'simbolo': simbolo}, headers=headers)
-        
-        # Si la bolsa nos devuelve 0, es que el símbolo está cerrado o no existe el detalle extendido
-        # Entonces, devolvemos al menos lo básico que sí tenemos en la pizarra
-        data = r.json()
-        
-        # Aquí está el truco: si la bolsa devuelve 0, intentamos recuperar al menos 
-        # la info básica desde la pizarra general
-        if data == 0:
-            datos_pizarra = await obtener_datos_bvc()
-            # Buscamos en los datos de la pizarra si el símbolo existe allí
-            for item in datos_pizarra:
-                if item.get('COD_SIMB') == simbolo:
-                    return item # Devolvemos lo que sí sabemos de la pizarra
-        return data
 
 async def obtener_datos_bvc():
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
@@ -91,30 +69,24 @@ async def obtener_datos_bvc():
         
         return datos_resumen
 
-async def obtener_historico(simbolo: str):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    async with httpx.AsyncClient() as client:
-        # Hacemos la petición igualita a la de la página
-        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
-        datos = r.json()
-        return datos.get('cur_hist_mov_emisora', [])
 
-        # Función para obtener el IBC (Asegúrate de que tus datos estén en una variable global o fuente)
-async def obtener_ibc():
+        async def obtener_detalle_profundo(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
     headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        async with httpx.AsyncClient() as client:
-            # El IBC se obtiene mediante el action 'resumenMercadoRentaVariable' 
-            # o a veces mediante un 'get_indicadores'. 
-            # Probemos con el resumen general que ya tienes:
-            r = await client.post(url, data={'action': 'resumenMercadoRentaVariable'}, headers=headers)
-            data = r.json()
-            # Si el JSON viene con una llave 'response' o similar, ajustamos:
-            # Según tu captura, el IBC viene como una lista independiente.
-            return data.get('CUR_IBC', [{'PRECIO': '---'}])
-    except Exception:
-        return [{'PRECIO': '---'}]
+    payload = {'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'}
+    
+    async with httpx.AsyncClient() as client:
+        r = await client.post(url, data=payload, headers=headers)
+        return r.json().get('response', {})
+
+async def obtener_datos_grafica(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    payload = {'action': 'chartsData', 'indice': simbolo}
+    
+    async with httpx.AsyncClient() as client:
+        r = await client.post(url, data=payload, headers=headers)
+        return r.json() # Retorna la serie histórica cruda
 
 CSS_STYLE = """
 <style>
@@ -295,76 +267,23 @@ async def ver_portafolio():
     return HTMLResponse(html)
     
 
-@app.get("/detalle/{simbolo}")
-async def ver_detalle(simbolo: str):
-    # 1. Obtención de datos (Simulada según tu estructura)
-    full_data = await obtener_detalle_especifico(simbolo)
-    data = full_data.get('response', {})
-    ibc_data = await obtener_ibc()
+async def obtener_detalle_profundo(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    payload = {'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'}
     
-    encab = data.get('cur_encab_simb_rv', [{}])[0]
-    cap = data.get('cur_cap_simb_rv', [{}])[0]
-    libro = data.get('cur_con_lib_ord_rv', [{}])[0]
+    async with httpx.AsyncClient() as client:
+        r = await client.post(url, data=payload, headers=headers)
+        return r.json().get('response', {})
+
+async def obtener_datos_grafica(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    payload = {'action': 'chartsData', 'indice': simbolo}
     
-    # 2. Lógica de Semáforo
-    var_abs = float(str(encab.get('VAR_ABS', '0')).replace(',', '.'))
-    color_var = "#2ecc71" if var_abs > 0 else ("#e74c3c" if var_abs < 0 else "#3498db")
-    
-    # 3. HTML + CSS integrado (TODO en uno)
-    html = f"""
-    <html>
-    <head>
-        <script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
-        <style>
-            body {{ background: #000; color: #fff; font-family: sans-serif; margin: 0; padding: 20px; }}
-            .container {{ max-width: 900px; margin: auto; }}
-            .card {{ background: #121212; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
-            .grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
-            table {{ width: 100%; border-collapse: collapse; text-align: center; }}
-            th {{ background: #222; padding: 10px; }}
-            td {{ padding: 8px; border: 1px solid #333; }}
-        </style>
-    </head>
-    <body>
-        <div class='container'>
-            <a href='/' style='color:#3498db;'>« Volver a la Pizarra</a>
-            
-            <div style='text-align:center; margin:10px;'>IBC: {ibc_data[-1].get('PRECIO', '---') if ibc_data else '---'}</div>
-            
-            <div class='card'>
-                <h1>{encab.get('DESC_SIMB', 'Activo')} ({encab.get('COD_SIMB', '-')})</h1>
-                <h2 style='color:{color_var}; font-size:30px;'>{encab.get('PRECIO', '-')}</h2>
-                <p>Variación: {encab.get('VAR_REL', '-')} %</p>
-            </div>
-
-            <div class='grid'>
-                <div class='card'>Cap. Bs:<br><b>{cap.get('CAPITALI_BS', '-')}</b></div>
-                <div class='card'>Acciones Circulantes:<br><b>{cap.get('ACC_CIRCUL', '-')}</b></div>
-            </div>
-
-            <div id='chart' class='card' style='height:400px;'></div>
-
-            <div class='card'>
-                <h3>Profundidad de Mercado</h3>
-                <table>
-                    <tr><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>
-                    {''.join([f"<tr><td style='color:#2ecc71;'>{libro.get(f'VOL_CMP_{i}', '-')}</td><td style='color:#2ecc71;'>{libro.get(f'PRE_CMP_{i}', '-')}</td><td style='color:#e74c3c;'>{libro.get(f'PRE_VTA_{i}', '-')}</td><td style='color:#e74c3c;'>{libro.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
-                </table>
-            </div>
-        </div>
-        
-        <script>
-            var options = {{
-                series: [{{ name: 'Precio', type: 'candlestick', data: [] }}, {{ name: 'Volumen', type: 'column', data: [] }}],
-                chart: {{ type: 'line', height: 350, background: '#121212' }},
-                yaxis: [{{ title: {{ text: 'Precio' }}, decimalsInFloat: 2 }}, {{ title: {{ text: 'Vol' }}, opposite: true }}]
-            }};
-            new ApexCharts(document.querySelector("#chart"), options).render();
-        </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html)
+    async with httpx.AsyncClient() as client:
+        r = await client.post(url, data=payload, headers=headers)
+        return r.json() # Retorna la serie histórica cruda
      
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
