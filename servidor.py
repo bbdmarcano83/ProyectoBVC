@@ -6,78 +6,41 @@ from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 app = FastAPI()
-CONFIG_FILE = 'config.json'
 
+# --- FUNCIONES BASE ---
 def cargar_config():
     if not os.path.exists('config.json'):
-        # Crea el archivo con un valor inicial si no existe
         with open('config.json', 'w') as f: json.dump({"tasa": 0.0}, f)
-    with open('config.json', 'r') as f: 
-        return json.load(f)
+    with open('config.json', 'r') as f: return json.load(f)
 
 def cargar_portafolio():
     if not os.path.exists('portafolio.json'):
-        # Crea el archivo con un diccionario vacío si no existe
         with open('portafolio.json', 'w') as f: json.dump({}, f)
-    with open('portafolio.json', 'r') as f: 
-        return json.load(f)
-
-def guardar_config(tasa):
-    with open(CONFIG_FILE, 'w') as f: json.dump({"tasa": tasa}, f)
-
-# Funciones de datos (sin cambios)
-def cargar_portafolio():
-    if os.path.exists('portafolio.json'):
-        with open('portafolio.json', 'r') as f: return json.load(f)
-    return {}
+    with open('portafolio.json', 'r') as f: return json.load(f)
 
 def guardar_portafolio(data):
     with open('portafolio.json', 'w') as f: json.dump(data, f)
 
-def formatear_numero(valor):
-    try:
-        # Convertimos a float, luego a string con formato de miles y 2 decimales
-        # El :.2f asegura 2 decimales, el : , añade separador de miles
-        num = float(valor)
-        return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except:
-        return valor  # Si no es un número (como el guion), lo devuelve igual
-
-
+# --- DATOS BVC (OPTMIZADOS) ---
 async def obtener_datos_bvc():
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    headers = {"User-Agent": "Mozilla/5.0"} # Añadimos cabecera básica por seguridad
-    
     async with httpx.AsyncClient() as client:
-        # 1. Traemos el resumen (Precio, Monto, Variación)
-        r1 = await client.post(url, data={'action': 'resumenMercadoRentaVariable'}, headers=headers)
-        datos_resumen = r1.json()
-        
-        # 2. Traemos el detalle (Compra, Venta, Volúmenes)
-        r2 = await client.post(url, data={'action': 'get_cotizaciones'}, headers=headers)
-        datos_detalle = r2.json().get('response', [])
-        
-        # 3. Creamos un diccionario para buscar rápido el detalle por símbolo
-        mapa_detalle = {item['COD_SIMB']: item for item in datos_detalle}
-        
-        # 4. Fusionamos los datos
-        for item in datos_resumen:
-            simbolo = item.get('COD_SIMB')
-            if simbolo in mapa_detalle:
-                # Esto añade los datos de compra/venta al item del resumen
-                item.update(mapa_detalle[simbolo])
-        
-        return datos_resumen
+        r1 = await client.post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'resumenMercadoRentaVariable'})
+        r2 = await client.post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'get_cotizaciones'})
+        datos = r1.json()
+        mapa = {item['COD_SIMB']: item for item in r2.json().get('response', [])}
+        for item in datos:
+            if item.get('COD_SIMB') in mapa: item.update(mapa[item['COD_SIMB']])
+        return datos
 
 async def obtener_detalle_profundo(simbolo: str):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    r = await httpx.AsyncClient().post(url, data={'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'})
+    r = await httpx.AsyncClient().post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'})
     return r.json().get('response', {})
 
-async def obtener_datos_grafica(simbolo: str):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    r = await httpx.AsyncClient().post(url, data={'action': 'chartsData', 'indice': simbolo})
-    return r.json()
+async def obtener_historico_apex(simbolo: str):
+    r = await httpx.AsyncClient().post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'})
+    raw = r.json().get('response', {}).get('cur_grf_anual_pre_rv', [])
+    # Formato para ApexCharts: x=fecha, y=precio
+    return [{"x": i['FEC'], "y": float(i['PRECIO_CIE'])} for i in raw]
 
 CSS_STYLE = """
 <style>
@@ -262,6 +225,7 @@ async def ver_detalle(simbolo: str):
     datos_pizarra = await obtener_datos_bvc()
     info_p = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
     detalle = await obtener_detalle_profundo(simbolo)
+    data_grafica = await obtener_historico_apex(simbolo)
     
     encab = detalle.get('cur_encab_simb_rv', [{}])[0]
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
@@ -272,45 +236,33 @@ async def ver_detalle(simbolo: str):
     return f"""
     <html>
     <head>
-        <script src="https://cdn.amcharts.com/lib/4/core.js"></script>
-        <script src="https://cdn.amcharts.com/lib/4/charts.js"></script>
-        <script src="https://cdn.amcharts.com/lib/4/themes/dark.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
         <style>
-            body {{ background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 20px; }}
-            .nav {{ margin-bottom: 20px; }}
-            .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; font-weight: bold; }}
+            body {{ background: #000; color: #fff; font-family: sans-serif; padding: 20px; }}
             .card {{ background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; }}
+            .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; }}
             .buy {{ color: #2ecc71; }} .sell {{ color: #e74c3c; }}
-            #chartdiv {{ width: 100%; height: 500px; background: #000; }}
-            .tabs {{ margin-bottom: 10px; text-align: right; }}
-            .tabs button {{ background: #222; border: 1px solid #444; color: #fff; padding: 5px 15px; cursor: pointer; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-            th {{ background: #222; padding: 10px; }} td {{ padding: 10px; text-align: center; border-bottom: 1px solid #222; }}
+            #chart {{ width: 100%; height: 400px; }}
         </style>
     </head>
     <body>
-        <div class='nav'><a href='/' class='btn-back'>« VOLVER</a></div>
-        
-        <div class='card'>
+        <a href='/' class='btn-back'>« VOLVER</a>
+        <div class='card' style='margin-top:20px;'>
             <h1>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h1>
             <p><strong>ISIN:</strong> {encab.get('COD_ISIN', 'N/A')} | <strong>Acciones:</strong> {encab.get('ACC_CIRC', '0')}</p>
             <p><strong>Cap. Mercado:</strong> {cap.get('CAPITALI_BS', '0')} MM Bs</p>
             <h2>Precio: {info_p.get('PRECIO', '0')} <span class='{var_color}'>({info_p.get('VAR', '0')}%)</span></h2>
         </div>
-
-        <div class='card'>
-            <div class='tabs'>
-                <button onclick="loadChart('1D')">1D</button><button onclick="loadChart('1S')">1S</button>
-                <button onclick="loadChart('1M')">1M</button><button onclick="loadChart('1A')">1A</button>
-            </div>
-            <div id="chartdiv"></div>
-        </div>
-
+        <div class='card'><div id="chart"></div></div>
         <h3>Profundidad de Mercado (6 Niveles)</h3>
-        <table>
+        <table style='width:100%; text-align:center;'>
             <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
             {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td class='buy'>{prof.get(f'PRE_CMP_{i}', '-')}</td><td class='sell'>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
         </table>
+        <script>
+            var options = {{ series: [{{ name: 'Precio', data: {data_grafica} }}], chart: {{ type: 'line', height: 400 }}, xaxis: {{ type: 'datetime' }} }};
+            new ApexCharts(document.querySelector("#chart"), options).render();
+        </script>
     </body>
     </html>
     """
