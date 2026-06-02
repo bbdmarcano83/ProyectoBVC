@@ -70,7 +70,7 @@ async def obtener_datos_bvc():
         return datos_resumen
 
 
-        async def obtener_detalle_profundo(simbolo: str):
+ async def obtener_detalle_profundo(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
     headers = {"User-Agent": "Mozilla/5.0"}
     payload = {'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'}
