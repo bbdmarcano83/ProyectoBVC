@@ -69,24 +69,15 @@ async def obtener_datos_bvc():
         
         return datos_resumen
 
-
 async def obtener_detalle_profundo(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    payload = {'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'}
-    
-    async with httpx.AsyncClient() as client:
-        r = await client.post(url, data=payload, headers=headers)
-        return r.json().get('response', {})
+    r = await httpx.AsyncClient().post(url, data={'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'})
+    return r.json().get('response', {})
 
 async def obtener_datos_grafica(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    payload = {'action': 'chartsData', 'indice': simbolo}
-    
-    async with httpx.AsyncClient() as client:
-        r = await client.post(url, data=payload, headers=headers)
-        return r.json() # Retorna la serie histórica cruda
+    r = await httpx.AsyncClient().post(url, data={'action': 'chartsData', 'indice': simbolo})
+    return r.json()
 
 CSS_STYLE = """
 <style>
@@ -266,60 +257,64 @@ async def ver_portafolio():
     html += f"<script>new Chart(document.getElementById('chart'), {{type:'bar', data:{{labels:['Invertido', 'Mercado'], datasets:[{{label:'Bs', data:[{total_inv}, {total_mkt}], backgroundColor:['#34495e', '#3498db']}}]}}}});</script></div></body></html>"
     return HTMLResponse(html)
     
-@app.get("/detalle/{simbolo}", response_class=HTMLResponse)
+@app.get("/detalle/{simbolo:path}", response_class=HTMLResponse)
 async def ver_detalle(simbolo: str):
-    # Obtener los datos profundos
+    # 1. Obtener datos
+    datos_pizarra = await obtener_datos_bvc()
+    info_p = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
     detalle = await obtener_detalle_profundo(simbolo)
     
     encab = detalle.get('cur_encab_simb_rv', [{}])[0]
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
+    
+    # 2. Formateador BVC (miles con punto, decimales con coma)
+    def f_num(val):
+        try: return f"{float(val):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except: return str(val)
 
-    # Lógica de semáforo (Simplificada para el diseño)
-    # Aquí puedes añadir la comparación contra el cierre anterior si lo deseas
+    # 3. HTML con el "Trading Desk"
     html = f"""
     <html>
     <head>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
-            body {{ background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 20px; }}
-            .card {{ background: #1a1a1a; padding: 20px; border-radius: 8px; border-left: 5px solid #3498db; }}
-            .btn-back {{ display: inline-block; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; margin-bottom: 20px; font-weight: bold; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-            th {{ background: #333; padding: 10px; }}
-            td {{ padding: 10px; text-align: center; border-bottom: 1px solid #333; }}
-            .buy {{ color: #2ecc71; font-weight: bold; }}
-            .sell {{ color: #e74c3c; font-weight: bold; }}
+            body {{ background: #000; color: #fff; font-family: sans-serif; padding: 20px; }}
+            .card {{ background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333; }}
+            .buy {{ color: #2ecc71; }} .sell {{ color: #e74c3c; }}
+            .btn-back {{ background: #3498db; padding: 10px; text-decoration: none; color: #fff; border-radius: 4px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+            th {{ background: #222; padding: 8px; }} td {{ text-align: center; padding: 8px; border-bottom: 1px solid #222; }}
         </style>
     </head>
     <body>
-        <a href='/' class='btn-back'>« VOLVER AL MERCADO</a>
-        
-        <div class='card'>
-            <h1>{encab.get('DESC_SIMB', 'Activo')} ({simbolo})</h1>
-            <p><strong>ISIN:</strong> {encab.get('COD_ISIN')} | <strong>Acciones Circ:</strong> {encab.get('ACC_CIRC')}</p>
-            <p><strong>Capitalización (Bs):</strong> {cap.get('CAPITALI_BS', '0.00')}</p>
+        <a href='/' class='btn-back'>« VOLVER</a>
+        <div class='card' style='margin-top:20px;'>
+            <h1>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h1>
+            <h2>Precio: {info_p.get('PRECIO', '0')} | Var: <span class='{('buy' if float(info_p.get('VAR', 0))>=0 else 'sell')}'>{info_p.get('VAR', '0')}%</span></h2>
+            <p>ISIN: {encab.get('COD_ISIN')} | Acciones: {encab.get('ACC_CIRC')} | Cap. Bs: {cap.get('CAPITALI_BS', '0')}</p>
         </div>
 
-        <h3>Profundidad de Mercado (6 Niveles)</h3>
+        <h3>Profundidad (6 Niveles)</h3>
         <table>
             <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
-    """
+            {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}')}</td><td class='buy'>{prof.get(f'PRE_CMP_{i}')}</td><td class='sell'>{prof.get(f'PRE_VTA_{i}')}</td><td>{prof.get(f'VOL_VTA_{i}')}</td></tr>" for i in range(1, 7)])}
+        </table>
 
-    # Generación de la tabla de 6 niveles con colores internacionales
-    for i in range(1, 7):
-        html += f"""
-            <tr>
-                <td>{prof.get(f'VOL_CMP_{i}', '-')}</td>
-                <td class='buy'>{prof.get(f'PRE_CMP_{i}', '-')}</td>
-                <td class='sell'>{prof.get(f'PRE_VTA_{i}', '-')}</td>
-                <td>{prof.get(f'VOL_VTA_{i}', '-')}</td>
-            </tr>
-        """
-    
-    html += "</table><div id='grafico' style='margin-top:30px; height:300px; border:1px solid #333;'><h3>Gráfica (Zona Técnica)</h3></div>"
-    html += "</body></html>"
-    
-    return HTMLResponse(content=html)
+        <h3>Gráfica Técnica</h3>
+        <canvas id="miGrafica" height="100"></canvas>
+        <script>
+            const ctx = document.getElementById('miGrafica').getContext('2d');
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{ labels: [], datasets: [{{ label: 'Precio', data: [], borderColor: '#3498db' }}] }},
+                options: {{ scales: {{ y: {{ beginAtZero: false }} }} }}
+            }});
+        </script>
+    </body>
+    </html>
+    """
+    return html
      
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
