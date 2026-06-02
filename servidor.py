@@ -230,10 +230,8 @@ async def ver_detalle(simbolo: str):
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
     
-    # Histórico invertido y procesado
     historico = await obtener_historico(simbolo)
     series_data = []
-    # Usamos reversed para corregir el orden de las fechas
     for mov in reversed(historico): 
         try:
             ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
@@ -283,36 +281,32 @@ async def ver_detalle(simbolo: str):
             <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
             {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td class='buy'>{prof.get(f'PRE_CMP_{i}', '-')}</td><td class='sell'>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
         </table>
-         <script>
-    var options = {
-        series: [{ data: {series_json} }],
-        chart: { 
-            type: 'candlestick', 
-            height: 400,
-            animations: { enabled: false } // Desactivado para mayor estabilidad
-        },
-        // EL AJUSTE CLAVE: autoScaleYaxis permite que la gráfica se "estire" al precio real
-        yaxis: { 
-            tooltip: { enabled: true },
-            labels: { formatter: function(val) { return val.toFixed(2); } }
-        },
-        xaxis: { 
-            type: 'category',
-            labels: { rotate: -45 }
-        }
-    };
-    var chart = new ApexCharts(document.querySelector("#chart"), options);
-    chart.render();
+        <script>
+            var options = {{
+                series: [{{ data: {series_json} }}],
+                chart: {{ 
+                    type: 'candlestick', 
+                    height: 400,
+                    animations: {{ enabled: false }} 
+                }},
+                yaxis: {{ 
+                    tooltip: {{ enabled: true }}, 
+                    labels: {{ formatter: function(val) {{ return val.toFixed(2); }} }} 
+                }},
+                xaxis: {{ 
+                    type: 'category',
+                    labels: {{ rotate: -45 }} 
+                }}
+            }};
+            var chart = new ApexCharts(document.querySelector("#chart"), options);
+            chart.render();
 
-    // Función para temporalidades reales
-    function updateRange(days) {
-        chart.updateOptions({
-            xaxis: {
-                range: days
-            }
-        });
-    }
-</script>
+            function updateRange(days) {{
+                chart.updateOptions({{
+                    xaxis: {{ range: days }}
+                }});
+            }}
+        </script>
     </body>
     </html>
     """
