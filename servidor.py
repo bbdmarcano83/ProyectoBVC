@@ -226,23 +226,22 @@ async def ver_detalle(simbolo: str):
     activo = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
     detalle = await obtener_detalle_profundo(simbolo)
     
-    # Datos técnicos del header
     encab = detalle.get('cur_encab_simb_rv', [{}])[0]
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
     
-    # Histórico usando la función que SÍ existe y SÍ funciona
+    # Histórico invertido y procesado
     historico = await obtener_historico(simbolo)
     series_data = []
-    for mov in historico: 
-        fec = mov.get('FEC')
+    # Usamos reversed para corregir el orden de las fechas
+    for mov in reversed(historico): 
         try:
-            # Tu lógica de limpieza de números venezolanos
             ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
             maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
             mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
             cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
-            series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
+            if maxi > 0:
+                series_data.append({"x": mov.get('FEC'), "y": [ap, maxi, mini, cie]})
         except: continue
 
     series_json = json.dumps(series_data)
@@ -256,7 +255,10 @@ async def ver_detalle(simbolo: str):
             body {{ background: #000; color: #fff; font-family: sans-serif; padding: 20px; }}
             .card {{ background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; }}
             .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; }}
+            .tabs {{ margin-bottom: 10px; }}
             .tabs button {{ background: #222; color: #fff; border: 1px solid #444; padding: 8px 15px; cursor: pointer; }}
+            .buy {{ color: #2ecc71; font-weight: bold; }}
+            .sell {{ color: #e74c3c; font-weight: bold; }}
             table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
             th {{ background: #222; padding: 10px; }} td {{ padding: 10px; text-align: center; border-bottom: 1px solid #222; }}
         </style>
@@ -279,10 +281,15 @@ async def ver_detalle(simbolo: str):
         <h3>Profundidad de Mercado</h3>
         <table>
             <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
-            {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td>{prof.get(f'PRE_CMP_{i}', '-')}</td><td>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
+            {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td class='buy'>{prof.get(f'PRE_CMP_{i}', '-')}</td><td class='sell'>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
         </table>
         <script>
-            var options = {{ series: [{{ data: {series_json} }}], chart: {{ type: 'candlestick', height: 400 }}, xaxis: {{ type: 'category' }} }};
+            var options = {{
+                series: [{{ data: {series_json} }}],
+                chart: {{ type: 'candlestick', height: 400 }},
+                yaxis: {{ labels: {{ formatter: function(val) {{ return val.toFixed(2); }} }} }},
+                xaxis: {{ type: 'category', labels: {{ rotate: -45 }} }}
+            }};
             var chart = new ApexCharts(document.querySelector("#chart"), options);
             chart.render();
             function updateRange(days) {{ chart.updateOptions({{ xaxis: {{ range: days }} }}); }}
