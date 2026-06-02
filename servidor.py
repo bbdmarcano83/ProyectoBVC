@@ -230,15 +230,17 @@ async def ver_detalle(simbolo: str):
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
     
+    # Histórico invertido y procesado
     historico = await obtener_historico(simbolo)
     series_data = []
+    # Usamos reversed para que la fecha más antigua sea la primera (cronológica)
     for mov in reversed(historico): 
         try:
             ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
             maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
             mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
             cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
-            if maxi > 0:
+            if maxi > 0: # Solo agregar velas válidas
                 series_data.append({"x": mov.get('FEC'), "y": [ap, maxi, mini, cie]})
         except: continue
 
@@ -253,8 +255,6 @@ async def ver_detalle(simbolo: str):
             body {{ background: #000; color: #fff; font-family: sans-serif; padding: 20px; }}
             .card {{ background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; }}
             .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; }}
-            .tabs {{ margin-bottom: 10px; }}
-            .tabs button {{ background: #222; color: #fff; border: 1px solid #444; padding: 8px 15px; cursor: pointer; }}
             .buy {{ color: #2ecc71; font-weight: bold; }}
             .sell {{ color: #e74c3c; font-weight: bold; }}
             table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
@@ -265,16 +265,10 @@ async def ver_detalle(simbolo: str):
         <a href='/' class='btn-back'>« VOLVER</a>
         <div class='card' style='margin-top:20px;'>
             <h1>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h1>
-            <p><strong>ISIN:</strong> {encab.get('COD_ISIN', 'N/A')} | <strong>Acciones:</strong> {encab.get('ACC_CIRC', '0')}</p>
-            <p><strong>Cap. Mercado:</strong> {cap.get('CAPITALI_BS', '0')} MM Bs</p>
             <h2>Precio: {activo.get('PRECIO', '0')} <span style='color:{var_color}'>({activo.get('VAR_REL', '0')}%)</span></h2>
         </div>
         <div class='card'>
-            <div class='tabs'>
-                <button onclick="updateRange(1)">1D</button><button onclick="updateRange(7)">1S</button>
-                <button onclick="updateRange(30)">1M</button><button onclick="updateRange(180)">6M</button>
-            </div>
-            <div id="chart"></div>
+            <div id="chart" style="background:#000; padding:10px;"></div>
         </div>
         <h3>Profundidad de Mercado</h3>
         <table>
@@ -284,28 +278,16 @@ async def ver_detalle(simbolo: str):
         <script>
             var options = {{
                 series: [{{ data: {series_json} }}],
-                chart: {{ 
-                    type: 'candlestick', 
-                    height: 400,
-                    animations: {{ enabled: false }} 
-                }},
+                chart: {{ type: 'candlestick', height: 400 }},
                 yaxis: {{ 
-                    tooltip: {{ enabled: true }}, 
+                    tooltip: {{ enabled: true }},
+                    forceNiceScale: true,
                     labels: {{ formatter: function(val) {{ return val.toFixed(2); }} }} 
                 }},
-                xaxis: {{ 
-                    type: 'category',
-                    labels: {{ rotate: -45 }} 
-                }}
+                xaxis: {{ type: 'category', labels: {{ rotate: -45 }} }}
             }};
             var chart = new ApexCharts(document.querySelector("#chart"), options);
             chart.render();
-
-            function updateRange(days) {{
-                chart.updateOptions({{
-                    xaxis: {{ range: days }}
-                }});
-            }}
         </script>
     </body>
     </html>
