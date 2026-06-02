@@ -266,24 +266,60 @@ async def ver_portafolio():
     html += f"<script>new Chart(document.getElementById('chart'), {{type:'bar', data:{{labels:['Invertido', 'Mercado'], datasets:[{{label:'Bs', data:[{total_inv}, {total_mkt}], backgroundColor:['#34495e', '#3498db']}}]}}}});</script></div></body></html>"
     return HTMLResponse(html)
     
-
-async def obtener_detalle_profundo(simbolo: str):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    payload = {'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'}
+@app.get("/detalle/{simbolo}", response_class=HTMLResponse)
+async def ver_detalle(simbolo: str):
+    # Obtener los datos profundos
+    detalle = await obtener_detalle_profundo(simbolo)
     
-    async with httpx.AsyncClient() as client:
-        r = await client.post(url, data=payload, headers=headers)
-        return r.json().get('response', {})
+    encab = detalle.get('cur_encab_simb_rv', [{}])[0]
+    cap = detalle.get('cur_cap_simb_rv', [{}])[0]
+    prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
 
-async def obtener_datos_grafica(simbolo: str):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    payload = {'action': 'chartsData', 'indice': simbolo}
+    # Lógica de semáforo (Simplificada para el diseño)
+    # Aquí puedes añadir la comparación contra el cierre anterior si lo deseas
+    html = f"""
+    <html>
+    <head>
+        <style>
+            body {{ background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 20px; }}
+            .card {{ background: #1a1a1a; padding: 20px; border-radius: 8px; border-left: 5px solid #3498db; }}
+            .btn-back {{ display: inline-block; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; margin-bottom: 20px; font-weight: bold; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th {{ background: #333; padding: 10px; }}
+            td {{ padding: 10px; text-align: center; border-bottom: 1px solid #333; }}
+            .buy {{ color: #2ecc71; font-weight: bold; }}
+            .sell {{ color: #e74c3c; font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <a href='/' class='btn-back'>« VOLVER AL MERCADO</a>
+        
+        <div class='card'>
+            <h1>{encab.get('DESC_SIMB', 'Activo')} ({simbolo})</h1>
+            <p><strong>ISIN:</strong> {encab.get('COD_ISIN')} | <strong>Acciones Circ:</strong> {encab.get('ACC_CIRC')}</p>
+            <p><strong>Capitalización (Bs):</strong> {cap.get('CAPITALI_BS', '0.00')}</p>
+        </div>
+
+        <h3>Profundidad de Mercado (6 Niveles)</h3>
+        <table>
+            <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
+    """
+
+    # Generación de la tabla de 6 niveles con colores internacionales
+    for i in range(1, 7):
+        html += f"""
+            <tr>
+                <td>{prof.get(f'VOL_CMP_{i}', '-')}</td>
+                <td class='buy'>{prof.get(f'PRE_CMP_{i}', '-')}</td>
+                <td class='sell'>{prof.get(f'PRE_VTA_{i}', '-')}</td>
+                <td>{prof.get(f'VOL_VTA_{i}', '-')}</td>
+            </tr>
+        """
     
-    async with httpx.AsyncClient() as client:
-        r = await client.post(url, data=payload, headers=headers)
-        return r.json() # Retorna la serie histórica cruda
+    html += "</table><div id='grafico' style='margin-top:30px; height:300px; border:1px solid #333;'><h3>Gráfica (Zona Técnica)</h3></div>"
+    html += "</body></html>"
+    
+    return HTMLResponse(content=html)
      
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
