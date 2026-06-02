@@ -223,62 +223,80 @@ async def ver_portafolio():
 @app.get("/detalle/{simbolo:path}", response_class=HTMLResponse)
 async def ver_detalle(simbolo: str):
     datos_pizarra = await obtener_datos_bvc()
-    info_p = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
+    activo = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
     detalle = await obtener_detalle_profundo(simbolo)
     
-    # Esta es la parte que ya tienes funcionando
+    # Datos para el header técnico
     encab = detalle.get('cur_encab_simb_rv', [{}])[0]
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
     
-    var_color = "buy" if float(info_p.get('VAR', 0) or 0) >= 0 else "sell"
+    # Histórico (Lógica antigua confiable)
+    historico = await obtener_historico(simbolo)
+    
+    # Procesamiento inicial para ApexCharts
+    series_data = []
+    for mov in historico: 
+        fec = mov.get('FEC')
+        try:
+            ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
+            maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
+            mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
+            cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
+            series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
+        except: continue
 
-    # Aquí comienza el HTML. Solo he modificado el bloque del script abajo.
+    series_json = json.dumps(series_data)
+    var_color = "green" if float(activo.get('VAR_REL', 0) or 0) >= 0 else "red"
+
     return f"""
     <html>
     <head>
         <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
         <style>
-            body {{ background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 20px; }}
-            .nav {{ margin-bottom: 20px; }}
-            .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; font-weight: bold; }}
+            body {{ background: #000; color: #fff; font-family: sans-serif; padding: 20px; }}
             .card {{ background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; }}
-            .buy {{ color: #2ecc71; }} .sell {{ color: #e74c3c; }}
-            #chart {{ width: 100%; height: 400px; background: #000; }}
+            .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; }}
+            .tabs button {{ background: #222; color: #fff; border: 1px solid #444; padding: 8px 15px; cursor: pointer; }}
             table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
             th {{ background: #222; padding: 10px; }} td {{ padding: 10px; text-align: center; border-bottom: 1px solid #222; }}
         </style>
     </head>
     <body>
-        <div class='nav'><a href='/' class='btn-back'>« VOLVER</a></div>
-        
-        <div class='card'>
+        <a href='/' class='btn-back'>« VOLVER</a>
+        <div class='card' style='margin-top:20px;'>
             <h1>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h1>
             <p><strong>ISIN:</strong> {encab.get('COD_ISIN', 'N/A')} | <strong>Acciones:</strong> {encab.get('ACC_CIRC', '0')}</p>
             <p><strong>Cap. Mercado:</strong> {cap.get('CAPITALI_BS', '0')} MM Bs</p>
-            <h2>Precio: {info_p.get('PRECIO', '0')} <span class='{var_color}'>({info_p.get('VAR', '0')}%)</span></h2>
+            <h2>Precio: {activo.get('PRECIO', '0')} <span style='color:{var_color}'>({activo.get('VAR_REL', '0')}%)</span></h2>
         </div>
 
         <div class='card'>
+            <div class='tabs'>
+                <button onclick="updateRange(1)">1D</button><button onclick="updateRange(7)">1S</button>
+                <button onclick="updateRange(30)">1M</button><button onclick="updateRange(180)">6M</button>
+            </div>
             <div id="chart"></div>
         </div>
 
-        <h3>Profundidad de Mercado (6 Niveles)</h3>
+        <h3>Profundidad de Mercado</h3>
         <table>
             <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
-            {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td class='buy'>{prof.get(f'PRE_CMP_{i}', '-')}</td><td class='sell'>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
+            {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td>{prof.get(f'PRE_CMP_{i}', '-')}</td><td>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
         </table>
 
         <script>
             var options = {{
-                series: [{{ name: 'Precio', data: {await obtener_historico_apex(simbolo)} }}],
-                chart: {{ type: 'line', height: 400, animations: {{ enabled: true }} }},
-                xaxis: {{ type: 'datetime', labels: {{ datetimeUTC: false }} }},
-                stroke: {{ curve: 'smooth', width: 3 }},
-                tooltip: {{ x: {{ format: 'dd MMM yyyy' }} }}
+                series: [{{ data: {series_json} }}],
+                chart: {{ type: 'candlestick', height: 400 }},
+                xaxis: {{ type: 'category' }}
             }};
             var chart = new ApexCharts(document.querySelector("#chart"), options);
             chart.render();
+
+            function updateRange(days) {{
+                chart.updateOptions({{ xaxis: {{ range: days }} }});
+            }}
         </script>
     </body>
     </html>
