@@ -220,7 +220,7 @@ async def ver_portafolio():
     html += f"<script>new Chart(document.getElementById('chart'), {{type:'bar', data:{{labels:['Invertido', 'Mercado'], datasets:[{{label:'Bs', data:[{total_inv}, {total_mkt}], backgroundColor:['#34495e', '#3498db']}}]}}}});</script></div></body></html>"
     return HTMLResponse(html)
 
-    @app.get("/detalle/{simbolo:path}", response_class=HTMLResponse)
+@app.get("/detalle/{simbolo:path}", response_class=HTMLResponse)
 async def ver_detalle(simbolo: str):
     datos_pizarra = await obtener_datos_bvc()
     activo = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
