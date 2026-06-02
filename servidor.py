@@ -259,7 +259,6 @@ async def ver_portafolio():
     
 @app.get("/detalle/{simbolo:path}", response_class=HTMLResponse)
 async def ver_detalle(simbolo: str):
-    # 1. Obtener datos
     datos_pizarra = await obtener_datos_bvc()
     info_p = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
     detalle = await obtener_detalle_profundo(simbolo)
@@ -268,53 +267,53 @@ async def ver_detalle(simbolo: str):
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
     
-    # 2. Formateador BVC (miles con punto, decimales con coma)
-    def f_num(val):
-        try: return f"{float(val):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except: return str(val)
+    var_color = "buy" if float(info_p.get('VAR', 0) or 0) >= 0 else "sell"
 
-    # 3. HTML con el "Trading Desk"
-    html = f"""
+    return f"""
     <html>
     <head>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.amcharts.com/lib/4/core.js"></script>
+        <script src="https://cdn.amcharts.com/lib/4/charts.js"></script>
+        <script src="https://cdn.amcharts.com/lib/4/themes/dark.js"></script>
         <style>
-            body {{ background: #000; color: #fff; font-family: sans-serif; padding: 20px; }}
-            .card {{ background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333; }}
+            body {{ background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 20px; }}
+            .nav {{ margin-bottom: 20px; }}
+            .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; font-weight: bold; }}
+            .card {{ background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; }}
             .buy {{ color: #2ecc71; }} .sell {{ color: #e74c3c; }}
-            .btn-back {{ background: #3498db; padding: 10px; text-decoration: none; color: #fff; border-radius: 4px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-            th {{ background: #222; padding: 8px; }} td {{ text-align: center; padding: 8px; border-bottom: 1px solid #222; }}
+            #chartdiv {{ width: 100%; height: 500px; background: #000; }}
+            .tabs {{ margin-bottom: 10px; text-align: right; }}
+            .tabs button {{ background: #222; border: 1px solid #444; color: #fff; padding: 5px 15px; cursor: pointer; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th {{ background: #222; padding: 10px; }} td {{ padding: 10px; text-align: center; border-bottom: 1px solid #222; }}
         </style>
     </head>
     <body>
-        <a href='/' class='btn-back'>« VOLVER</a>
-        <div class='card' style='margin-top:20px;'>
+        <div class='nav'><a href='/' class='btn-back'>« VOLVER</a></div>
+        
+        <div class='card'>
             <h1>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h1>
-            <h2>Precio: {info_p.get('PRECIO', '0')} | Var: <span class='{('buy' if float(info_p.get('VAR', 0))>=0 else 'sell')}'>{info_p.get('VAR', '0')}%</span></h2>
-            <p>ISIN: {encab.get('COD_ISIN')} | Acciones: {encab.get('ACC_CIRC')} | Cap. Bs: {cap.get('CAPITALI_BS', '0')}</p>
+            <p><strong>ISIN:</strong> {encab.get('COD_ISIN', 'N/A')} | <strong>Acciones:</strong> {encab.get('ACC_CIRC', '0')}</p>
+            <p><strong>Cap. Mercado:</strong> {cap.get('CAPITALI_BS', '0')} MM Bs</p>
+            <h2>Precio: {info_p.get('PRECIO', '0')} <span class='{var_color}'>({info_p.get('VAR', '0')}%)</span></h2>
         </div>
 
-        <h3>Profundidad (6 Niveles)</h3>
+        <div class='card'>
+            <div class='tabs'>
+                <button onclick="loadChart('1D')">1D</button><button onclick="loadChart('1S')">1S</button>
+                <button onclick="loadChart('1M')">1M</button><button onclick="loadChart('1A')">1A</button>
+            </div>
+            <div id="chartdiv"></div>
+        </div>
+
+        <h3>Profundidad de Mercado (6 Niveles)</h3>
         <table>
             <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
-            {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}')}</td><td class='buy'>{prof.get(f'PRE_CMP_{i}')}</td><td class='sell'>{prof.get(f'PRE_VTA_{i}')}</td><td>{prof.get(f'VOL_VTA_{i}')}</td></tr>" for i in range(1, 7)])}
+            {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td class='buy'>{prof.get(f'PRE_CMP_{i}', '-')}</td><td class='sell'>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
         </table>
-
-        <h3>Gráfica Técnica</h3>
-        <canvas id="miGrafica" height="100"></canvas>
-        <script>
-            const ctx = document.getElementById('miGrafica').getContext('2d');
-            new Chart(ctx, {{
-                type: 'line',
-                data: {{ labels: [], datasets: [{{ label: 'Precio', data: [], borderColor: '#3498db' }}] }},
-                options: {{ scales: {{ y: {{ beginAtZero: false }} }} }}
-            }});
-        </script>
     </body>
     </html>
     """
-    return html
      
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
