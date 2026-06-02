@@ -36,11 +36,11 @@ async def obtener_detalle_profundo(simbolo: str):
     r = await httpx.AsyncClient().post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'})
     return r.json().get('response', {})
 
-async def obtener_historico_apex(simbolo: str):
-    r = await httpx.AsyncClient().post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'})
-    raw = r.json().get('response', {}).get('cur_grf_anual_pre_rv', [])
-    # Formato para ApexCharts: x=fecha, y=precio
-    return [{"x": i['FEC'], "y": float(i['PRECIO_CIE'])} for i in raw]
+async def obtener_historico(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    async with httpx.AsyncClient() as client:
+        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
+        return r.json().get('cur_hist_mov_emisora', [])
 
 CSS_STYLE = """
 <style>
@@ -226,19 +226,18 @@ async def ver_detalle(simbolo: str):
     activo = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
     detalle = await obtener_detalle_profundo(simbolo)
     
-    # Datos para el header técnico
+    # Datos técnicos del header
     encab = detalle.get('cur_encab_simb_rv', [{}])[0]
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
     
-    # Histórico (Lógica antigua confiable)
+    # Histórico usando la función que SÍ existe y SÍ funciona
     historico = await obtener_historico(simbolo)
-    
-    # Procesamiento inicial para ApexCharts
     series_data = []
     for mov in historico: 
         fec = mov.get('FEC')
         try:
+            # Tu lógica de limpieza de números venezolanos
             ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
             maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
             mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
@@ -270,7 +269,6 @@ async def ver_detalle(simbolo: str):
             <p><strong>Cap. Mercado:</strong> {cap.get('CAPITALI_BS', '0')} MM Bs</p>
             <h2>Precio: {activo.get('PRECIO', '0')} <span style='color:{var_color}'>({activo.get('VAR_REL', '0')}%)</span></h2>
         </div>
-
         <div class='card'>
             <div class='tabs'>
                 <button onclick="updateRange(1)">1D</button><button onclick="updateRange(7)">1S</button>
@@ -278,25 +276,16 @@ async def ver_detalle(simbolo: str):
             </div>
             <div id="chart"></div>
         </div>
-
         <h3>Profundidad de Mercado</h3>
         <table>
             <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
             {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td>{prof.get(f'PRE_CMP_{i}', '-')}</td><td>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
         </table>
-
         <script>
-            var options = {{
-                series: [{{ data: {series_json} }}],
-                chart: {{ type: 'candlestick', height: 400 }},
-                xaxis: {{ type: 'category' }}
-            }};
+            var options = {{ series: [{{ data: {series_json} }}], chart: {{ type: 'candlestick', height: 400 }}, xaxis: {{ type: 'category' }} }};
             var chart = new ApexCharts(document.querySelector("#chart"), options);
             chart.render();
-
-            function updateRange(days) {{
-                chart.updateOptions({{ xaxis: {{ range: days }} }});
-            }}
+            function updateRange(days) {{ chart.updateOptions({{ xaxis: {{ range: days }} }}); }}
         </script>
     </body>
     </html>
