@@ -1,6 +1,7 @@
 import uvicorn
 import json
 import os
+import httpx
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -33,7 +34,6 @@ def cargar_portafolio():
 def guardar_portafolio(data):
     with open('portafolio.json', 'w') as f: json.dump(data, f)
 
-import httpx
 def formatear_numero(valor):
     try:
         # Convertimos a float, luego a string con formato de miles y 2 decimales
@@ -98,6 +98,23 @@ async def obtener_historico(simbolo: str):
         r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
         datos = r.json()
         return datos.get('cur_hist_mov_emisora', [])
+
+        # Función para obtener el IBC (Asegúrate de que tus datos estén en una variable global o fuente)
+async def obtener_ibc():
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        async with httpx.AsyncClient() as client:
+            # El IBC se obtiene mediante el action 'resumenMercadoRentaVariable' 
+            # o a veces mediante un 'get_indicadores'. 
+            # Probemos con el resumen general que ya tienes:
+            r = await client.post(url, data={'action': 'resumenMercadoRentaVariable'}, headers=headers)
+            data = r.json()
+            # Si el JSON viene con una llave 'response' o similar, ajustamos:
+            # Según tu captura, el IBC viene como una lista independiente.
+            return data.get('CUR_IBC', [{'PRECIO': '---'}])
+    except Exception:
+        return [{'PRECIO': '---'}]
 
 CSS_STYLE = """
 <style>
@@ -215,7 +232,6 @@ async def ver_pizarra():
     
     return HTMLResponse(html)
     
-@app.get("/portafolio")
 @app.get("/portafolio")
 async def ver_portafolio():
     datos_bolsa = await obtener_datos_bvc()
