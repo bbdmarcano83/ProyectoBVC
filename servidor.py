@@ -225,43 +225,60 @@ async def ver_detalle(simbolo: str):
     datos_pizarra = await obtener_datos_bvc()
     info_p = next((item for item in datos_pizarra if item.get('COD_SIMB') == simbolo), {})
     detalle = await obtener_detalle_profundo(simbolo)
-    data_grafica = await obtener_historico_apex(simbolo)
     
+    # Esta es la parte que ya tienes funcionando
     encab = detalle.get('cur_encab_simb_rv', [{}])[0]
     cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     prof = detalle.get('cur_con_lib_ord_rv', [{}])[0]
     
     var_color = "buy" if float(info_p.get('VAR', 0) or 0) >= 0 else "sell"
 
+    # Aquí comienza el HTML. Solo he modificado el bloque del script abajo.
     return f"""
     <html>
     <head>
         <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
         <style>
-            body {{ background: #000; color: #fff; font-family: sans-serif; padding: 20px; }}
+            body {{ background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 20px; }}
+            .nav {{ margin-bottom: 20px; }}
+            .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; font-weight: bold; }}
             .card {{ background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; }}
-            .btn-back {{ background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; }}
             .buy {{ color: #2ecc71; }} .sell {{ color: #e74c3c; }}
-            #chart {{ width: 100%; height: 400px; }}
+            #chart {{ width: 100%; height: 400px; background: #000; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th {{ background: #222; padding: 10px; }} td {{ padding: 10px; text-align: center; border-bottom: 1px solid #222; }}
         </style>
     </head>
     <body>
-        <a href='/' class='btn-back'>« VOLVER</a>
-        <div class='card' style='margin-top:20px;'>
+        <div class='nav'><a href='/' class='btn-back'>« VOLVER</a></div>
+        
+        <div class='card'>
             <h1>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h1>
             <p><strong>ISIN:</strong> {encab.get('COD_ISIN', 'N/A')} | <strong>Acciones:</strong> {encab.get('ACC_CIRC', '0')}</p>
             <p><strong>Cap. Mercado:</strong> {cap.get('CAPITALI_BS', '0')} MM Bs</p>
             <h2>Precio: {info_p.get('PRECIO', '0')} <span class='{var_color}'>({info_p.get('VAR', '0')}%)</span></h2>
         </div>
-        <div class='card'><div id="chart"></div></div>
+
+        <div class='card'>
+            <div id="chart"></div>
+        </div>
+
         <h3>Profundidad de Mercado (6 Niveles)</h3>
-        <table style='width:100%; text-align:center;'>
+        <table>
             <tr><th>Vol Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol Venta</th></tr>
             {''.join([f"<tr><td>{prof.get(f'VOL_CMP_{i}', '-')}</td><td class='buy'>{prof.get(f'PRE_CMP_{i}', '-')}</td><td class='sell'>{prof.get(f'PRE_VTA_{i}', '-')}</td><td>{prof.get(f'VOL_VTA_{i}', '-')}</td></tr>" for i in range(1, 7)])}
         </table>
+
         <script>
-            var options = {{ series: [{{ name: 'Precio', data: {data_grafica} }}], chart: {{ type: 'line', height: 400 }}, xaxis: {{ type: 'datetime' }} }};
-            new ApexCharts(document.querySelector("#chart"), options).render();
+            var options = {{
+                series: [{{ name: 'Precio', data: {await obtener_historico_apex(simbolo)} }}],
+                chart: {{ type: 'line', height: 400, animations: {{ enabled: true }} }},
+                xaxis: {{ type: 'datetime', labels: {{ datetimeUTC: false }} }},
+                stroke: {{ curve: 'smooth', width: 3 }},
+                tooltip: {{ x: {{ format: 'dd MMM yyyy' }} }}
+            }};
+            var chart = new ApexCharts(document.querySelector("#chart"), options);
+            chart.render();
         </script>
     </body>
     </html>
