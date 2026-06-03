@@ -280,47 +280,58 @@ async def ver_portafolio():
     html += f"<script>new Chart(document.getElementById('chart'), {{type:'bar', data:{{labels:['Invertido', 'Mercado'], datasets:[{{label:'Bs', data:[{total_inv}, {total_mkt}], backgroundColor:['#34495e', '#3498db']}}]}}}});</script></div></body></html>"
     return HTMLResponse(html)
     
-
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    # 1. Obtención de datos (Fusión de fuentes)
+    # 1. Obtención de datos
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), {})
     profundidad = await obtener_detalle_profundo(simbolo)
     historico = await obtener_historico(simbolo)
     
-    # Lógica de color semáforo para la variación
-    var_rel = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
-    color_var = "#00e676" if var_rel >= 0 else "#ff1744"
+    # Procesamiento seguro de gráfica
+    series_data = []
+    if historico:
+        for m in historico[:60]:
+            series_data.append({
+                "x": m.get('FEC', ''),
+                "y": [
+                    float(str(m.get('PRECIO_APERT', 0)).replace('.', '').replace(',', '.')),
+                    float(str(m.get('PRECIO_MAX', 0)).replace('.', '').replace(',', '.')),
+                    float(str(m.get('PRECIO_MIN', 0)).replace('.', '').replace(',', '.')),
+                    float(str(m.get('PRECIO_CIE', 0)).replace('.', '').replace(',', '.'))
+                ]
+            })
+    
+    # 2. Lógica de color semáforo
+    try:
+        var_rel = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
+    except:
+        var_rel = 0.0
+    color_var = "green" if var_rel >= 0 else "red"
 
-    # HTML Estructurado con diseño profesional Dark
-    html = f"<html><head>{CSS_STYLE}</head><body style='background:#000; color:#fff; font-family: sans-serif;'><div class='container' style='background:#111; padding:20px; border-radius:10px;'>"
+    # 3. Construcción HTML
+    html = f"<html><head>{CSS_STYLE}</head><body style='background:#000; color:#fff;'><div class='container' style='background:#111; padding:20px;'>"
     
-    # CABECERA: Título y Botón Volver profesional
-    html += f"""
-    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>
-        <h1 style='margin:0;'>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>
-        <a href='/' style='background:linear-gradient(145deg, #333, #111); color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; border:1px solid #555; font-weight:bold; box-shadow: 2px 2px 5px #000;'>« Volver a Pizarra</a>
-    </div>
-    """
+    # Cabecera con botón de retorno profesional
+    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
+    html += "<a href='/' class='btn' style='background:#444; padding:10px; text-decoration:none; color:white; border-radius:5px; display:inline-block; margin-bottom:20px;'>« Volver a Pizarra</a>"
     
-    # DATOS TÉCNICOS: Cuadros con relieve y semáforo
-    html += f"""<div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:20px;'>
-        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid #fff; box-shadow: inset 0 0 5px #000;'><b>Último:</b> {activo.get('PRECIO', 'N/A')}</div>
-        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid {color_var}; box-shadow: inset 0 0 5px #000;'><b>Variación:</b> {var_rel}%</div>
-        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid #555; box-shadow: inset 0 0 5px #000;'><b>ISIN:</b> {profundidad.get('ISIN', 'N/A')}</div>
-        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid #555; box-shadow: inset 0 0 5px #000;'><b>Acciones:</b> {profundidad.get('ACC_CIRC', 'N/A')}</div>
-        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid #555; box-shadow: inset 0 0 5px #000;'><b>Cap. Mercado:</b> {profundidad.get('CAPITALIZACION', 'N/A')} Bs</div>
+    # Cuadros con relieve (Datos Técnicos)
+    html += f"""<div style='display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; margin:20px 0;'>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Último Precio:</b> {activo.get('PRECIO', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px; color:{color_var};'><b>Variación:</b> {var_rel}%</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>ISIN:</b> {profundidad.get('ISIN', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Acciones:</b> {profundidad.get('ACC_CIRC', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Cap. Mercado:</b> {profundidad.get('CAPITALIZACION', 'N/A')} Bs</div>
     </div>"""
 
-    # GRÁFICA: La Reina (Fondo negro)
-    html += "<div id='chart' style='background:#000; border:1px solid #333; margin-bottom:20px; border-radius:5px;'></div>"
+    # Gráfica Dark
+    html += "<div id='chart' style='background:#000; border:1px solid #333;'></div>"
     
-    # PROFUNDIDAD: Tabla con colores internacionales (Finanzas)
-    html += "<h3 style='border-bottom:1px solid #444; padding-bottom:10px;'>Profundidad de Mercado (6 Niveles)</h3>"
-    html += "<table style='width:100%; border-collapse:collapse; text-align:center; color:#ddd;'>"
-    html += "<tr style='background:#222; color:#fff;'><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>"
-    
+    # Profundidad de Mercado (6 niveles)
+    html += "<h3 style='margin-top:20px;'>Profundidad de Mercado (6 Niveles)</h3>"
+    html += "<table style='width:100%; border-collapse:collapse; text-align:center; color:#fff;'>"
+    html += "<tr style='background:#333;'><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>"
     for i in range(1, 7):
         html += f"""<tr style='border-bottom:1px solid #222;'>
             <td style='color:#00e676;'>{profundidad.get(f'VOL_CMP_{i}', '-')}</td>
@@ -328,13 +339,17 @@ async def ver_detalle(simbolo: str):
             <td style='color:#ff1744;'>{profundidad.get(f'PRE_VTA_{i}', '-')}</td>
             <td style='color:#ff1744;'>{profundidad.get(f'VOL_VTA_{i}', '-')}</td>
         </tr>"""
-    html += "</table></div></body></html>"
+    html += "</table>"
     
-    # Script ApexCharts (Dark Mode)
+    # Script ApexCharts (Blindado)
     html += f"""<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
     <script>
-        var options = {{ series: [{{ data: {json.dumps(series_data)} }}], chart: {{ type: 'candlestick', height: 400, background: '#000', foreColor: '#fff' }}, theme: {{ mode: 'dark' }},
-        plotOptions: {{ candlestick: {{ colors: {{ upward: '#00e676', downward: '#ff1744' }} }} }} }};
+        var options = {{ 
+            series: [{{ data: {json.dumps(series_data)} }}], 
+            chart: {{ type: 'candlestick', height: 400, background: '#000', foreColor: '#fff' }}, 
+            theme: {{ mode: 'dark' }},
+            plotOptions: {{ candlestick: {{ colors: {{ upward: '#00e676', downward: '#ff1744' }} }} }} 
+        }};
         new ApexCharts(document.querySelector("#chart"), options).render();
     </script>"""
     
