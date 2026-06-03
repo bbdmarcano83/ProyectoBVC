@@ -308,12 +308,13 @@ async def ver_portafolio():
     
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
+    # 1. Obtención de datos
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), {})
-    profundidad = await obtener_detalle_profundo(simbolo) # Ya viene limpia y fusionada
+    profundidad = await obtener_detalle_profundo(simbolo)
     historico = await obtener_historico(simbolo)
-
-    # Procesamiento seguro de gráfica (INTACTO)
+    
+    # 2. Procesamiento de gráfica (Intacto)
     series_data = []
     if historico:
         for m in historico[:60]:
@@ -327,46 +328,47 @@ async def ver_detalle(simbolo: str):
                 ]
             })
     
-    # 2. Lógica de color semáforo
+    # 3. Lógica de color semáforo
     try:
         var_rel = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
     except:
         var_rel = 0.0
     color_var = "green" if var_rel >= 0 else "red"
 
-    # 3. Construcción HTML
+    # 4. Construcción HTML
     html = f"<html><head>{CSS_STYLE}</head><body style='background:#000; color:#fff;'><div class='container' style='background:#111; padding:20px;'>"
     
-    # Cabecera con botón de retorno profesional
-    html += f"<h1>{profundidad.get('DESC_SIMB', activo.get('DESC_SIMB', simbolo))} ({simbolo})</h1>"
+    # Cabecera con botón de retorno
+    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
     html += "<a href='/' class='btn' style='background:#444; padding:10px; text-decoration:none; color:white; border-radius:5px; display:inline-block; margin-bottom:20px;'>« Volver a Pizarra</a>"
     
-    # Cuadros con relieve (Datos Técnicos) - Rellenados quirúrgicamente
+    # Cuadros con relieve (Datos Técnicos)
+    # Verificado: 'profundidad' debe tener 'ISIN', 'ACC_CIRC', 'CAPITALIZACION'
     html += f"""<div style='display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; margin:20px 0;'>
         <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Último Precio:</b> {activo.get('PRECIO', 'N/A')}</div>
         <div style='border:1px solid #444; padding:10px; border-radius:8px; color:{color_var};'><b>Variación:</b> {var_rel}%</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>ISIN:</b> {encab.get('COD_ISIN', 'N/A')}</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Acciones:</b> {encab.get('ACC_CIRC', 'N/A')}</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Cap. Mercado:</b> {cap.get('CAPITALI_BS', 'N/A')} Bs</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>ISIN:</b> {profundidad.get('ISIN', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Acciones:</b> {profundidad.get('ACC_CIRC', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Cap. Mercado:</b> {profundidad.get('CAPITALIZACION', 'N/A')} Bs</div>
     </div>"""
 
-    # Gráfica Dark (INTACTA)
+    # Gráfica Dark (Intacta)
     html += "<div id='chart' style='background:#000; border:1px solid #333;'></div>"
     
-    # Profundidad de Mercado (6 niveles) - Rellenada quirúrgicamente
+    # Profundidad de Mercado (6 niveles)
     html += "<h3 style='margin-top:20px;'>Profundidad de Mercado (6 Niveles)</h3>"
     html += "<table style='width:100%; border-collapse:collapse; text-align:center; color:#fff;'>"
     html += "<tr style='background:#333;'><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>"
     for i in range(1, 7):
         html += f"""<tr style='border-bottom:1px solid #222;'>
-            <td style='color:#00e676;'>{prof.get(f'VOL_CMP_{i}', '-')}</td>
-            <td style='color:#00e676;'>{prof.get(f'PRE_CMP_{i}', '-')}</td>
-            <td style='color:#ff1744;'>{prof.get(f'PRE_VTA_{i}', '-')}</td>
-            <td style='color:#ff1744;'>{prof.get(f'VOL_VTA_{i}', '-')}</td>
+            <td style='color:#00e676;'>{profundidad.get(f'VOL_CMP_{i}', '-')}</td>
+            <td style='color:#00e676;'>{profundidad.get(f'PRE_CMP_{i}', '-')}</td>
+            <td style='color:#ff1744;'>{profundidad.get(f'PRE_VTA_{i}', '-')}</td>
+            <td style='color:#ff1744;'>{profundidad.get(f'VOL_VTA_{i}', '-')}</td>
         </tr>"""
     html += "</table>"
     
-    # Script ApexCharts (INTACTO)
+    # Script ApexCharts (Asegúrate de tener 'import json' al inicio del archivo)
     html += f"""<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
     <script>
         var options = {{ 
