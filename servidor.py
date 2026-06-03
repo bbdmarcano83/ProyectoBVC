@@ -1,46 +1,71 @@
+from fastapi import FastAPI, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 import json
 import os
-import httpx
-from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
 
 app = FastAPI()
+CONFIG_FILE = 'config.json'
 
-# --- FUNCIONES BASE ---
 def cargar_config():
     if not os.path.exists('config.json'):
+        # Crea el archivo con un valor inicial si no existe
         with open('config.json', 'w') as f: json.dump({"tasa": 0.0}, f)
-    with open('config.json', 'r') as f: return json.load(f)
+    with open('config.json', 'r') as f: 
+        return json.load(f)
 
 def cargar_portafolio():
     if not os.path.exists('portafolio.json'):
+        # Crea el archivo con un diccionario vacío si no existe
         with open('portafolio.json', 'w') as f: json.dump({}, f)
-    with open('portafolio.json', 'r') as f: return json.load(f)
+    with open('portafolio.json', 'r') as f: 
+        return json.load(f)
+
+def guardar_config(tasa):
+    with open(CONFIG_FILE, 'w') as f: json.dump({"tasa": tasa}, f)
+
+# Funciones de datos (sin cambios)
+def cargar_portafolio():
+    if os.path.exists('portafolio.json'):
+        with open('portafolio.json', 'r') as f: return json.load(f)
+    return {}
 
 def guardar_portafolio(data):
     with open('portafolio.json', 'w') as f: json.dump(data, f)
 
-# --- DATOS BVC (OPTMIZADOS) ---
+import httpx
+def formatear_numero(valor):
+    try:
+        # Convertimos a float, luego a string con formato de miles y 2 decimales
+        # El :.2f asegura 2 decimales, el : , añade separador de miles
+        num = float(valor)
+        return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except:
+        return valor  # Si no es un número (como el guion), lo devuelve igual
 async def obtener_datos_bvc():
-    async with httpx.AsyncClient() as client:
-        r1 = await client.post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'resumenMercadoRentaVariable'})
-        r2 = await client.post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'get_cotizaciones'})
-        datos = r1.json()
-        mapa = {item['COD_SIMB']: item for item in r2.json().get('response', [])}
-        for item in datos:
-            if item.get('COD_SIMB') in mapa: item.update(mapa[item['COD_SIMB']])
-        return datos
-
-async def obtener_detalle_profundo(simbolo: str):
-    r = await httpx.AsyncClient().post("https://www.bolsadecaracas.com/wp-admin/admin-ajax.php", data={'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'})
-    return r.json().get('response', {})
-
-async def obtener_historico(simbolo: str):
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    headers = {"User-Agent": "Mozilla/5.0"} # Añadimos cabecera básica por seguridad
+    
     async with httpx.AsyncClient() as client:
-        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
-        return r.json().get('cur_hist_mov_emisora', [])
+        # 1. Traemos el resumen (Precio, Monto, Variación)
+        r1 = await client.post(url, data={'action': 'resumenMercadoRentaVariable'}, headers=headers)
+        datos_resumen = r1.json()
+        
+        # 2. Traemos el detalle (Compra, Venta, Volúmenes)
+        r2 = await client.post(url, data={'action': 'get_cotizaciones'}, headers=headers)
+        datos_detalle = r2.json().get('response', [])
+        
+        # 3. Creamos un diccionario para buscar rápido el detalle por símbolo
+        mapa_detalle = {item['COD_SIMB']: item for item in datos_detalle}
+        
+        # 4. Fusionamos los datos
+        for item in datos_resumen:
+            simbolo = item.get('COD_SIMB')
+            if simbolo in mapa_detalle:
+                # Esto añade los datos de compra/venta al item del resumen
+                item.update(mapa_detalle[simbolo])
+        
+        return datos_resumen
 
 CSS_STYLE = """
 <style>
@@ -103,24 +128,15 @@ async def ver_pizarra():
     
     for item in datos_bolsa:
         simb = item.get('COD_SIMB')
-        
-        # Usamos una función auxiliar para asegurar que siempre sea un número
-        def limpiar_num(val):
-            try:
-                if val is None: return 0.0
-                return float(str(val).replace(',', '.'))
-            except:
-                return 0.0
-
-        p_compra = limpiar_num(item.get('PRE_CMP_1'))
-        p_venta = limpiar_num(item.get('PRE_VTA_1'))
-        v_compra = item.get('VOL_CMP_1') or 0
-        v_venta = item.get('VOL_VTA_1') or 0
-        p_ult = limpiar_num(item.get('PRECIO'))
-        tit = item.get('VOLUMEN') or 0
-        vol_trans = limpiar_num(item.get('MONTO_EFECTIVO'))
-        var_porc = limpiar_num(item.get('VAR_REL'))
-        var_bs = limpiar_num(item.get('VAR_ABS'))
+        p_compra = float(item.get('PRE_CMP_1', 0))
+        p_venta = float(item.get('PRE_VTA_1', 0))
+        v_compra = item.get('VOL_CMP_1', 0)
+        v_venta = item.get('VOL_VTA_1', 0)
+        p_ult = float(item.get('PRECIO', 0))
+        tit = item.get('VOLUMEN', 0)
+        vol_trans = float(item.get('MONTO_EFECTIVO', 0))
+        var_porc = float(item.get('VAR_REL', 0))
+        var_bs = float(item.get('VAR_ABS', 0))
         logo_url = item.get('ICON', '')
 
         if var_porc > 0: icono, color = "▲", "green"
@@ -158,6 +174,7 @@ async def ver_pizarra():
     
     return HTMLResponse(html)
     
+@app.get("/portafolio")
 @app.get("/portafolio")
 async def ver_portafolio():
     datos_bolsa = await obtener_datos_bvc()
@@ -219,62 +236,58 @@ async def ver_portafolio():
     html += "<div style='width:500px; margin:20px auto;'><canvas id='chart'></canvas></div>"
     html += f"<script>new Chart(document.getElementById('chart'), {{type:'bar', data:{{labels:['Invertido', 'Mercado'], datasets:[{{label:'Bs', data:[{total_inv}, {total_mkt}], backgroundColor:['#34495e', '#3498db']}}]}}}});</script></div></body></html>"
     return HTMLResponse(html)
+    
+
+import json # Asegúrate de tener este import arriba en tu archivo
 
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
     datos_bolsa = await obtener_datos_bvc()
-    # Buscamos el activo en la pizarra
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
-    # Obtenemos el detalle profundo (donde vienen los datos técnicos)
-    detalle = await obtener_detalle_profundo(simbolo)
-    
-    encab = detalle.get('cur_encab_simb_rv', [{}])[0]
-    cap = detalle.get('cur_cap_simb_rv', [{}])[0]
     
     if not activo:
         return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
 
+    # 1. Obtenemos el histórico
     historico = await obtener_historico(simbolo)
+    
+    # 2. Procesamos los datos para la gráfica (formato necesario para ApexCharts)
     series_data = []
-    for mov in historico: 
-        try:
-            fec = mov.get('FEC', '')
-            ap = float(str(mov.get('PRECIO_APERT', '0')).replace('.', '').replace(',', '.'))
-            maxi = float(str(mov.get('PRECIO_MAX', '0')).replace('.', '').replace(',', '.'))
-            mini = float(str(mov.get('PRECIO_MIN', '0')).replace('.', '').replace(',', '.'))
-            cie = float(str(mov.get('PRECIO_CIE', '0')).replace('.', '').replace(',', '.'))
-            if maxi > 0:
-                series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
-        except: continue
+    for mov in historico[:30]: # Tomamos los últimos 30 días
+        fec = mov.get('FEC')
+        # Limpiamos los números (quitamos puntos de miles, cambiamos coma por punto)
+        ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
+        maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
+        mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
+        cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
+        series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
 
+    # Convertimos la lista de Python a formato que JS entiende
     series_json = json.dumps(series_data)
 
+    # 3. Construimos el HTML
     html = f"<html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body><div class='container'>"
-    
-    # --- ENCABEZADO TÉCNICO ---
-    html += f"<h1>{encab.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
-    html += f"<p><strong>ISIN:</strong> {encab.get('COD_ISIN', 'N/A')} | "
-    html += f"<strong>Acciones Circulación:</strong> {encab.get('ACC_CIRC', '0')}</p>"
-    html += f"<p><strong>Capitalización de Mercado:</strong> {cap.get('CAPITALI_BS', '0')} MM Bs</p>"
-    
+    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
     html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a>"
     
     # Tabla de datos actuales
     html += f"""
     <table style='margin-top:20px;'>
-        <tr><th colspan='2'>Datos de Mercado</th></tr>
+        <tr><th colspan='2'>Datos Técnicos de {simbolo}</th></tr>
         <tr><td>Precio Último</td><td>{activo.get('PRECIO', 'N/A')} Bs</td></tr>
+        <tr><td>Volumen</td><td>{activo.get('VOLUMEN', 'N/A')}</td></tr>
         <tr><td>Variación</td><td>{activo.get('VAR_REL', 'N/A')}%</td></tr>
     </table>
     """
     
-    # Gráfica
+    # La Gráfica Profesional
     html += "<div id='chart' style='margin-top:30px; background:white; padding:20px; border-radius:8px;'></div>"
     html += f"""
     <script>
         var options = {{
             series: [{{ data: {series_json} }}],
             chart: {{ type: 'candlestick', height: 350 }},
+            title: {{ text: 'Histórico Últimos 30 días', align: 'left' }},
             xaxis: {{ type: 'category' }}
         }};
         var chart = new ApexCharts(document.querySelector("#chart"), options);
@@ -284,6 +297,14 @@ async def ver_detalle(simbolo: str):
     html += "</div></body></html>"
     return HTMLResponse(html)
 
+async def obtener_historico(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    async with httpx.AsyncClient() as client:
+        # Hacemos la petición igualita a la de la página
+        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
+        datos = r.json()
+        return datos.get('cur_hist_mov_emisora', [])
+        
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
     port = int(os.environ.get("PORT", 8000))
