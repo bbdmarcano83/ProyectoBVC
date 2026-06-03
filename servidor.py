@@ -308,63 +308,80 @@ async def ver_portafolio():
     
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    # 1. Recuperación de datos fusionados
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), {})
-    profundidad = await obtener_detalle_profundo(simbolo)
+    profundidad = await obtener_detalle_profundo(simbolo) # Ya viene limpia y fusionada
+    
+    # Extraer las partes específicas del JSON de profundidad
+    resp = profundidad_raw.get('response', {})
+    encab = resp.get('cur_encab_simb_rv', [{}])[0]
+    cap = resp.get('cur_cap_simb_rv', [{}])[0]
+    prof = resp.get('cur_con_lib_ord_rv', [{}])[0]
+    
     historico = await obtener_historico(simbolo)
     
-    # Fusionamos todo en un único objeto 'datos'
-    datos = {**activo, **profundidad}
+    # Procesamiento seguro de gráfica (INTACTO)
+    series_data = []
+    if historico:
+        for m in historico[:60]:
+            series_data.append({
+                "x": m.get('FEC', ''),
+                "y": [
+                    float(str(m.get('PRECIO_APERT', 0)).replace('.', '').replace(',', '.')),
+                    float(str(m.get('PRECIO_MAX', 0)).replace('.', '').replace(',', '.')),
+                    float(str(m.get('PRECIO_MIN', 0)).replace('.', '').replace(',', '.')),
+                    float(str(m.get('PRECIO_CIE', 0)).replace('.', '').replace(',', '.'))
+                ]
+            })
     
-    # 2. Procesamiento gráfica
-    series_data = [{"x": m.get('FEC'), "y": [float(str(m.get('PRECIO_APERT', 0)).replace('.', '').replace(',', '.')), float(str(m.get('PRECIO_MAX', 0)).replace('.', '').replace(',', '.')), float(str(m.get('PRECIO_MIN', 0)).replace('.', '').replace(',', '.')), float(str(m.get('PRECIO_CIE', 0)).replace('.', '').replace(',', '.'))]} for m in historico[:60]]
-    
-    var_rel = float(str(datos.get('VAR_REL', '0')).replace(',', '.'))
+    # 2. Lógica de color semáforo
+    try:
+        var_rel = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
+    except:
+        var_rel = 0.0
     color_var = "green" if var_rel >= 0 else "red"
 
-    # 3. Construcción del HTML Completo
+    # 3. Construcción HTML
     html = f"<html><head>{CSS_STYLE}</head><body style='background:#000; color:#fff;'><div class='container' style='background:#111; padding:20px;'>"
     
-    # CABECERA Y BOTÓN DE RETORNO (Fijo y visible)
-    html += f"<div style='display:flex; justify-content:space-between; align-items:center;'>"
-    html += f"<h1>{datos.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
-    html += "<a href='/' style='background:#444; padding:10px; text-decoration:none; color:white; border-radius:5px;'>« Volver a Pizarra</a>"
-    html += "</div>"
+    # Cabecera con botón de retorno profesional
+    html += f"<h1>{encab.get('DESC_SIMB', activo.get('DESC_SIMB', simbolo))} ({simbolo})</h1>"
+    html += "<a href='/' class='btn' style='background:#444; padding:10px; text-decoration:none; color:white; border-radius:5px; display:inline-block; margin-bottom:20px;'>« Volver a Pizarra</a>"
     
-    # DATOS TÉCNICOS (Precio, ISIN, Acciones, Capitalización)
+    # Cuadros con relieve (Datos Técnicos) - Rellenados quirúrgicamente
     html += f"""<div style='display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; margin:20px 0;'>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Último Precio:</b> {datos.get('PRECIO', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Último Precio:</b> {activo.get('PRECIO', 'N/A')}</div>
         <div style='border:1px solid #444; padding:10px; border-radius:8px; color:{color_var};'><b>Variación:</b> {var_rel}%</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>ISIN:</b> {datos.get('ISIN', 'N/A')}</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Acciones:</b> {datos.get('ACC_CIRC', 'N/A')}</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Cap. Mercado:</b> {datos.get('CAPITALIZACION', 'N/A')} Bs</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>ISIN:</b> {encab.get('COD_ISIN', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Acciones:</b> {encab.get('ACC_CIRC', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Cap. Mercado:</b> {cap.get('CAPITALI_BS', 'N/A')} Bs</div>
     </div>"""
 
-    # GRÁFICA (Intacta, fondo negro, 60 periodos)
+    # Gráfica Dark (INTACTA)
     html += "<div id='chart' style='background:#000; border:1px solid #333;'></div>"
     
-    # PROFUNDIDAD DE MERCADO (Tabla 6 niveles)
+    # Profundidad de Mercado (6 niveles) - Rellenada quirúrgicamente
     html += "<h3 style='margin-top:20px;'>Profundidad de Mercado (6 Niveles)</h3>"
     html += "<table style='width:100%; border-collapse:collapse; text-align:center; color:#fff;'>"
     html += "<tr style='background:#333;'><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>"
     for i in range(1, 7):
         html += f"""<tr style='border-bottom:1px solid #222;'>
-            <td style='color:#00e676;'>{datos.get(f'VOL_CMP_{i}', '-')}</td>
-            <td style='color:#00e676;'>{datos.get(f'PRE_CMP_{i}', '-')}</td>
-            <td style='color:#ff1744;'>{datos.get(f'PRE_VTA_{i}', '-')}</td>
-            <td style='color:#ff1744;'>{datos.get(f'VOL_VTA_{i}', '-')}</td>
+            <td style='color:#00e676;'>{prof.get(f'VOL_CMP_{i}', '-')}</td>
+            <td style='color:#00e676;'>{prof.get(f'PRE_CMP_{i}', '-')}</td>
+            <td style='color:#ff1744;'>{prof.get(f'PRE_VTA_{i}', '-')}</td>
+            <td style='color:#ff1744;'>{prof.get(f'VOL_VTA_{i}', '-')}</td>
         </tr>"""
     html += "</table>"
     
-    # TICKER (El que siempre acompaña abajo)
-    html += "<div class='ticker-wrap' style='margin-top:20px; background:#222; padding:10px;'><marquee>Toda la información bursátil en tiempo real.</marquee></div>"
-    
-    # SCRIPT GRÁFICA
+    # Script ApexCharts (INTACTO)
     html += f"""<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
     <script>
-        var options = {{ series: [{{ data: {json.dumps(series_data)} }}], chart: {{ type: 'candlestick', height: 400, background: '#000', foreColor: '#fff' }}, theme: {{ mode: 'dark' }},
-        plotOptions: {{ candlestick: {{ colors: {{ upward: '#00e676', downward: '#ff1744' }} }} }} }};
+        var options = {{ 
+            series: [{{ data: {json.dumps(series_data)} }}], 
+            chart: {{ type: 'candlestick', height: 400, background: '#000', foreColor: '#fff' }}, 
+            theme: {{ mode: 'dark' }},
+            plotOptions: {{ candlestick: {{ colors: {{ upward: '#00e676', downward: '#ff1744' }} }} }} 
+        }};
         new ApexCharts(document.querySelector("#chart"), options).render();
     </script>"""
     
