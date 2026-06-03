@@ -311,15 +311,8 @@ async def ver_detalle(simbolo: str):
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), {})
     profundidad = await obtener_detalle_profundo(simbolo) # Ya viene limpia y fusionada
-    
-    # Extraer las partes específicas del JSON de profundidad
-    resp = profundidad_raw.get('response', {})
-    encab = resp.get('cur_encab_simb_rv', [{}])[0]
-    cap = resp.get('cur_cap_simb_rv', [{}])[0]
-    prof = resp.get('cur_con_lib_ord_rv', [{}])[0]
-    
     historico = await obtener_historico(simbolo)
-    
+
     # Procesamiento seguro de gráfica (INTACTO)
     series_data = []
     if historico:
