@@ -67,6 +67,50 @@ async def obtener_datos_bvc():
         
         return datos_resumen
 
+async def obtener_detalle_profundo(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    payload = {'action': 'get_detalle_simbolo', 'simbolo': simbolo, 'tipo': 'rv'}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.post(url, data=payload, headers=headers)
+            if r.status_code == 200:
+                full_json = r.json()
+                data = full_json.get('response', {})
+                
+                # Blindaje: verificamos que las listas no estén vacías antes de acceder al índice [0]
+                prof_list = data.get('cur_con_lib_ord_rv', [])
+                encab_list = data.get('cur_encab_simb_rv', [])
+                cap_list = data.get('cur_cap_simb_rv', [])
+                
+                prof = prof_list[0] if prof_list else {}
+                encab = encab_list[0] if encab_list else {}
+                cap = cap_list[0] if cap_list else {}
+                
+                return {
+                    **prof,
+                    "ISIN": encab.get('COD_ISIN', 'N/A'),
+                    "ACC_CIRC": encab.get('ACC_CIRC', 'N/A'),
+                    "CAPITALIZACION": cap.get('CAPITALI_BS', 'N/A')
+                }
+        except Exception as e:
+            # Registro silencioso del error para mantener el servidor en pie
+            print(f"Error crítico en obtener_detalle_profundo para {simbolo}: {e}")
+            return {}
+    return {}
+
+async def obtener_historico(simbolo: str):
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    async with httpx.AsyncClient() as client:
+        # Hacemos la petición igualita a la de la página
+        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
+        datos = r.json()
+        return datos.get('cur_hist_mov_emisora', [])
+
 CSS_STYLE = """
 <style>
     body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; padding: 20px; }
@@ -175,7 +219,6 @@ async def ver_pizarra():
     return HTMLResponse(html)
     
 @app.get("/portafolio")
-@app.get("/portafolio")
 async def ver_portafolio():
     datos_bolsa = await obtener_datos_bvc()
     portafolio = cargar_portafolio()
@@ -238,72 +281,64 @@ async def ver_portafolio():
     return HTMLResponse(html)
     
 
-import json # Asegúrate de tener este import arriba en tu archivo
-
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
+    # 1. Obtención de datos (Fusión de fuentes)
     datos_bolsa = await obtener_datos_bvc()
-    activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), None)
-    
-    if not activo:
-        return HTMLResponse("<h1>Activo no encontrado</h1><a href='/'>Volver</a>")
-
-    # 1. Obtenemos el histórico
+    activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), {})
+    profundidad = await obtener_detalle_profundo(simbolo)
     historico = await obtener_historico(simbolo)
     
-    # 2. Procesamos los datos para la gráfica (formato necesario para ApexCharts)
-    series_data = []
-    for mov in historico[:30]: # Tomamos los últimos 30 días
-        fec = mov.get('FEC')
-        # Limpiamos los números (quitamos puntos de miles, cambiamos coma por punto)
-        ap = float(mov.get('PRECIO_APERT', '0').replace('.', '').replace(',', '.'))
-        maxi = float(mov.get('PRECIO_MAX', '0').replace('.', '').replace(',', '.'))
-        mini = float(mov.get('PRECIO_MIN', '0').replace('.', '').replace(',', '.'))
-        cie = float(mov.get('PRECIO_CIE', '0').replace('.', '').replace(',', '.'))
-        series_data.append({"x": fec, "y": [ap, maxi, mini, cie]})
+    # Lógica de color semáforo para la variación
+    var_rel = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
+    color_var = "#00e676" if var_rel >= 0 else "#ff1744"
 
-    # Convertimos la lista de Python a formato que JS entiende
-    series_json = json.dumps(series_data)
-
-    # 3. Construimos el HTML
-    html = f"<html><head>{CSS_STYLE}<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script></head><body><div class='container'>"
-    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
-    html += "<a href='/' class='btn' style='background:#95a5a6;'>« Volver a Pizarra</a>"
+    # HTML Estructurado con diseño profesional Dark
+    html = f"<html><head>{CSS_STYLE}</head><body style='background:#000; color:#fff; font-family: sans-serif;'><div class='container' style='background:#111; padding:20px; border-radius:10px;'>"
     
-    # Tabla de datos actuales
+    # CABECERA: Título y Botón Volver profesional
     html += f"""
-    <table style='margin-top:20px;'>
-        <tr><th colspan='2'>Datos Técnicos de {simbolo}</th></tr>
-        <tr><td>Precio Último</td><td>{activo.get('PRECIO', 'N/A')} Bs</td></tr>
-        <tr><td>Volumen</td><td>{activo.get('VOLUMEN', 'N/A')}</td></tr>
-        <tr><td>Variación</td><td>{activo.get('VAR_REL', 'N/A')}%</td></tr>
-    </table>
+    <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;'>
+        <h1 style='margin:0;'>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>
+        <a href='/' style='background:linear-gradient(145deg, #333, #111); color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px; border:1px solid #555; font-weight:bold; box-shadow: 2px 2px 5px #000;'>« Volver a Pizarra</a>
+    </div>
     """
     
-    # La Gráfica Profesional
-    html += "<div id='chart' style='margin-top:30px; background:white; padding:20px; border-radius:8px;'></div>"
-    html += f"""
+    # DATOS TÉCNICOS: Cuadros con relieve y semáforo
+    html += f"""<div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:20px;'>
+        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid #fff; box-shadow: inset 0 0 5px #000;'><b>Último:</b> {activo.get('PRECIO', 'N/A')}</div>
+        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid {color_var}; box-shadow: inset 0 0 5px #000;'><b>Variación:</b> {var_rel}%</div>
+        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid #555; box-shadow: inset 0 0 5px #000;'><b>ISIN:</b> {profundidad.get('ISIN', 'N/A')}</div>
+        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid #555; box-shadow: inset 0 0 5px #000;'><b>Acciones:</b> {profundidad.get('ACC_CIRC', 'N/A')}</div>
+        <div style='background:#1a1a1a; padding:15px; border-radius:8px; border-left:4px solid #555; box-shadow: inset 0 0 5px #000;'><b>Cap. Mercado:</b> {profundidad.get('CAPITALIZACION', 'N/A')} Bs</div>
+    </div>"""
+
+    # GRÁFICA: La Reina (Fondo negro)
+    html += "<div id='chart' style='background:#000; border:1px solid #333; margin-bottom:20px; border-radius:5px;'></div>"
+    
+    # PROFUNDIDAD: Tabla con colores internacionales (Finanzas)
+    html += "<h3 style='border-bottom:1px solid #444; padding-bottom:10px;'>Profundidad de Mercado (6 Niveles)</h3>"
+    html += "<table style='width:100%; border-collapse:collapse; text-align:center; color:#ddd;'>"
+    html += "<tr style='background:#222; color:#fff;'><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>"
+    
+    for i in range(1, 7):
+        html += f"""<tr style='border-bottom:1px solid #222;'>
+            <td style='color:#00e676;'>{profundidad.get(f'VOL_CMP_{i}', '-')}</td>
+            <td style='color:#00e676;'>{profundidad.get(f'PRE_CMP_{i}', '-')}</td>
+            <td style='color:#ff1744;'>{profundidad.get(f'PRE_VTA_{i}', '-')}</td>
+            <td style='color:#ff1744;'>{profundidad.get(f'VOL_VTA_{i}', '-')}</td>
+        </tr>"""
+    html += "</table></div></body></html>"
+    
+    # Script ApexCharts (Dark Mode)
+    html += f"""<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
     <script>
-        var options = {{
-            series: [{{ data: {series_json} }}],
-            chart: {{ type: 'candlestick', height: 350 }},
-            title: {{ text: 'Histórico Últimos 30 días', align: 'left' }},
-            xaxis: {{ type: 'category' }}
-        }};
-        var chart = new ApexCharts(document.querySelector("#chart"), options);
-        chart.render();
-    </script>
-    """
-    html += "</div></body></html>"
-    return HTMLResponse(html)
-
-async def obtener_historico(simbolo: str):
-    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
-    async with httpx.AsyncClient() as client:
-        # Hacemos la petición igualita a la de la página
-        r = await client.post(url, data={'action': 'getHistoricoSimbolo', 'simbolo': simbolo})
-        datos = r.json()
-        return datos.get('cur_hist_mov_emisora', [])
+        var options = {{ series: [{{ data: {json.dumps(series_data)} }}], chart: {{ type: 'candlestick', height: 400, background: '#000', foreColor: '#fff' }}, theme: {{ mode: 'dark' }},
+        plotOptions: {{ candlestick: {{ colors: {{ upward: '#00e676', downward: '#ff1744' }} }} }} }};
+        new ApexCharts(document.querySelector("#chart"), options).render();
+    </script>"""
+    
+    return HTMLResponse(html + "</div></body></html>")
         
 if __name__ == "__main__":
     # Render asigna el puerto automáticamente
