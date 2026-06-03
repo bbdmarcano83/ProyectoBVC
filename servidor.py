@@ -356,7 +356,7 @@ async def ver_detalle(simbolo: str):
     # Procesamiento de datos para la gráfica
     series_data = []
     if historico:
-        for m in historico[:60]:
+        for m in historico[:60][::-1]:
             series_data.append({
                 "x": m.get('FEC', ''),
                 "y": [
