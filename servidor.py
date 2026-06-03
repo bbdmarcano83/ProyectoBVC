@@ -41,7 +41,9 @@ def formatear_numero(valor):
         num = float(valor)
         return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
-        return valor  # Si no es un número (como el guion), lo devuelve igual
+        return
+        
+         valor  # Si no es un número (como el guion), lo devuelve igual
 async def obtener_datos_bvc():
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
     headers = {"User-Agent": "Mozilla/5.0"} # Añadimos cabecera básica por seguridad
@@ -139,6 +141,31 @@ async def agregar(simb: str = Form(...), cant: float = Form(...), precio: float 
     return RedirectResponse(url="/portafolio", status_code=303)
 
 
+async def obtener_datos_bvc():
+    url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
+    headers = {"User-Agent": "Mozilla/5.0"} # Añadimos cabecera básica por seguridad
+    
+    async with httpx.AsyncClient() as client:
+        # 1. Traemos el resumen (Precio, Monto, Variación)
+        r1 = await client.post(url, data={'action': 'resumenMercadoRentaVariable'}, headers=headers)
+        datos_resumen = r1.json()
+        
+        # 2. Traemos el detalle (Compra, Venta, Volúmenes)
+        r2 = await client.post(url, data={'action': 'get_cotizaciones'}, headers=headers)
+        datos_detalle = r2.json().get('response', [])
+        
+        # 3. Creamos un diccionario para buscar rápido el detalle por símbolo
+        mapa_detalle = {item['COD_SIMB']: item for item in datos_detalle}
+        
+        # 4. Fusionamos los datos
+        for item in datos_resumen:
+            simbolo = item.get('COD_SIMB')
+            if simbolo in mapa_detalle:
+                # Esto añade los datos de compra/venta al item del resumen
+                item.update(mapa_detalle[simbolo])
+        
+        return datos_resumen
+    
 @app.get("/")
 async def ver_pizarra():
     datos_bolsa = await obtener_datos_bvc()
@@ -217,7 +244,7 @@ async def ver_pizarra():
     html += "</marquee></div></body></html>"
     
     return HTMLResponse(html)
-    
+
 @app.get("/portafolio")
 async def ver_portafolio():
     datos_bolsa = await obtener_datos_bvc()
@@ -282,74 +309,63 @@ async def ver_portafolio():
     
 @app.get("/detalle/{simbolo}")
 async def ver_detalle(simbolo: str):
-    # 1. Obtención de datos
+    # 1. Recuperación de datos fusionados
     datos_bolsa = await obtener_datos_bvc()
     activo = next((item for item in datos_bolsa if item.get('COD_SIMB') == simbolo), {})
     profundidad = await obtener_detalle_profundo(simbolo)
     historico = await obtener_historico(simbolo)
     
-    # Procesamiento seguro de gráfica
-    series_data = []
-    if historico:
-        for m in historico[:60]:
-            series_data.append({
-                "x": m.get('FEC', ''),
-                "y": [
-                    float(str(m.get('PRECIO_APERT', 0)).replace('.', '').replace(',', '.')),
-                    float(str(m.get('PRECIO_MAX', 0)).replace('.', '').replace(',', '.')),
-                    float(str(m.get('PRECIO_MIN', 0)).replace('.', '').replace(',', '.')),
-                    float(str(m.get('PRECIO_CIE', 0)).replace('.', '').replace(',', '.'))
-                ]
-            })
+    # Fusionamos todo en un único objeto 'datos'
+    datos = {**activo, **profundidad}
     
-    # 2. Lógica de color semáforo
-    try:
-        var_rel = float(str(activo.get('VAR_REL', '0')).replace(',', '.'))
-    except:
-        var_rel = 0.0
+    # 2. Procesamiento gráfica
+    series_data = [{"x": m.get('FEC'), "y": [float(str(m.get('PRECIO_APERT', 0)).replace('.', '').replace(',', '.')), float(str(m.get('PRECIO_MAX', 0)).replace('.', '').replace(',', '.')), float(str(m.get('PRECIO_MIN', 0)).replace('.', '').replace(',', '.')), float(str(m.get('PRECIO_CIE', 0)).replace('.', '').replace(',', '.'))]} for m in historico[:60]]
+    
+    var_rel = float(str(datos.get('VAR_REL', '0')).replace(',', '.'))
     color_var = "green" if var_rel >= 0 else "red"
 
-    # 3. Construcción HTML
+    # 3. Construcción del HTML Completo
     html = f"<html><head>{CSS_STYLE}</head><body style='background:#000; color:#fff;'><div class='container' style='background:#111; padding:20px;'>"
     
-    # Cabecera con botón de retorno profesional
-    html += f"<h1>{activo.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
-    html += "<a href='/' class='btn' style='background:#444; padding:10px; text-decoration:none; color:white; border-radius:5px; display:inline-block; margin-bottom:20px;'>« Volver a Pizarra</a>"
+    # CABECERA Y BOTÓN DE RETORNO (Fijo y visible)
+    html += f"<div style='display:flex; justify-content:space-between; align-items:center;'>"
+    html += f"<h1>{datos.get('DESC_SIMB', simbolo)} ({simbolo})</h1>"
+    html += "<a href='/' style='background:#444; padding:10px; text-decoration:none; color:white; border-radius:5px;'>« Volver a Pizarra</a>"
+    html += "</div>"
     
-    # Cuadros con relieve (Datos Técnicos)
+    # DATOS TÉCNICOS (Precio, ISIN, Acciones, Capitalización)
     html += f"""<div style='display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; margin:20px 0;'>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Último Precio:</b> {activo.get('PRECIO', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Último Precio:</b> {datos.get('PRECIO', 'N/A')}</div>
         <div style='border:1px solid #444; padding:10px; border-radius:8px; color:{color_var};'><b>Variación:</b> {var_rel}%</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>ISIN:</b> {profundidad.get('ISIN', 'N/A')}</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Acciones:</b> {profundidad.get('ACC_CIRC', 'N/A')}</div>
-        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Cap. Mercado:</b> {profundidad.get('CAPITALIZACION', 'N/A')} Bs</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>ISIN:</b> {datos.get('ISIN', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Acciones:</b> {datos.get('ACC_CIRC', 'N/A')}</div>
+        <div style='border:1px solid #444; padding:10px; border-radius:8px;'><b>Cap. Mercado:</b> {datos.get('CAPITALIZACION', 'N/A')} Bs</div>
     </div>"""
 
-    # Gráfica Dark
+    # GRÁFICA (Intacta, fondo negro, 60 periodos)
     html += "<div id='chart' style='background:#000; border:1px solid #333;'></div>"
     
-    # Profundidad de Mercado (6 niveles)
+    # PROFUNDIDAD DE MERCADO (Tabla 6 niveles)
     html += "<h3 style='margin-top:20px;'>Profundidad de Mercado (6 Niveles)</h3>"
     html += "<table style='width:100%; border-collapse:collapse; text-align:center; color:#fff;'>"
     html += "<tr style='background:#333;'><th>Vol. Compra</th><th>Precio Compra</th><th>Precio Venta</th><th>Vol. Venta</th></tr>"
     for i in range(1, 7):
         html += f"""<tr style='border-bottom:1px solid #222;'>
-            <td style='color:#00e676;'>{profundidad.get(f'VOL_CMP_{i}', '-')}</td>
-            <td style='color:#00e676;'>{profundidad.get(f'PRE_CMP_{i}', '-')}</td>
-            <td style='color:#ff1744;'>{profundidad.get(f'PRE_VTA_{i}', '-')}</td>
-            <td style='color:#ff1744;'>{profundidad.get(f'VOL_VTA_{i}', '-')}</td>
+            <td style='color:#00e676;'>{datos.get(f'VOL_CMP_{i}', '-')}</td>
+            <td style='color:#00e676;'>{datos.get(f'PRE_CMP_{i}', '-')}</td>
+            <td style='color:#ff1744;'>{datos.get(f'PRE_VTA_{i}', '-')}</td>
+            <td style='color:#ff1744;'>{datos.get(f'VOL_VTA_{i}', '-')}</td>
         </tr>"""
     html += "</table>"
     
-    # Script ApexCharts (Blindado)
+    # TICKER (El que siempre acompaña abajo)
+    html += "<div class='ticker-wrap' style='margin-top:20px; background:#222; padding:10px;'><marquee>Toda la información bursátil en tiempo real.</marquee></div>"
+    
+    # SCRIPT GRÁFICA
     html += f"""<script src='https://cdn.jsdelivr.net/npm/apexcharts'></script>
     <script>
-        var options = {{ 
-            series: [{{ data: {json.dumps(series_data)} }}], 
-            chart: {{ type: 'candlestick', height: 400, background: '#000', foreColor: '#fff' }}, 
-            theme: {{ mode: 'dark' }},
-            plotOptions: {{ candlestick: {{ colors: {{ upward: '#00e676', downward: '#ff1744' }} }} }} 
-        }};
+        var options = {{ series: [{{ data: {json.dumps(series_data)} }}], chart: {{ type: 'candlestick', height: 400, background: '#000', foreColor: '#fff' }}, theme: {{ mode: 'dark' }},
+        plotOptions: {{ candlestick: {{ colors: {{ upward: '#00e676', downward: '#ff1744' }} }} }} }};
         new ApexCharts(document.querySelector("#chart"), options).render();
     </script>"""
     
