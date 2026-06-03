@@ -1,9 +1,10 @@
-from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 import json
 import os
 import asyncio
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 app = FastAPI()
 CONFIG_FILE = 'config.json'
@@ -75,23 +76,17 @@ async def obtener_detalle_profundo(simbolo: str):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Content-Type": "application/x-www-form-urlencoded"
     }
-    payload = {'action': 'get_detalle_simbolo', 'simbolo': simbolo, 'tipo': 'rv'}
+    payload = {'action': 'getSimbolosDetalle', 'simbolo': simbolo, 'tipo': 'rv'}
     
     async with httpx.AsyncClient() as client:
         try:
-            r = await client.post(url, data=payload, headers=headers)
+            r = await client.post(url, data=payload, headers=headers, timeout=5.0)
             if r.status_code == 200:
                 full_json = r.json()
                 data = full_json.get('response', {})
-                
-                # Blindaje: verificamos que las listas no estén vacías antes de acceder al índice [0]
-                prof_list = data.get('cur_con_lib_ord_rv', [])
-                encab_list = data.get('cur_encab_simb_rv', [])
-                cap_list = data.get('cur_cap_simb_rv', [])
-                
-                prof = prof_list[0] if prof_list else {}
-                encab = encab_list[0] if encab_list else {}
-                cap = cap_list[0] if cap_list else {}
+                encab = data.get('cur_encab_simb_rv', [{}])[0]
+                cap = data.get('cur_cap_simb_rv', [{}])[0]
+                prof = data.get('cur_con_lib_ord_rv', [{}])[0]
                 
                 return {
                     **prof,
@@ -100,8 +95,7 @@ async def obtener_detalle_profundo(simbolo: str):
                     "CAPITALIZACION": cap.get('CAPITALI_BS', 'N/A')
                 }
         except Exception as e:
-            # Registro silencioso del error para mantener el servidor en pie
-            print(f"Error crítico en obtener_detalle_profundo para {simbolo}: {e}")
+            print(f"Error: {e}")
             return {}
     return {}
 
