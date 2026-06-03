@@ -338,7 +338,7 @@ async def ver_detalle(simbolo: str):
     html = f"<html><head>{CSS_STYLE}</head><body style='background:#000; color:#fff;'><div class='container' style='background:#111; padding:20px;'>"
     
     # Cabecera con botón de retorno profesional
-    html += f"<h1>{encab.get('DESC_SIMB', activo.get('DESC_SIMB', simbolo))} ({simbolo})</h1>"
+    html += f"<h1>{profundidad.get('DESC_SIMB', activo.get('DESC_SIMB', simbolo))} ({simbolo})</h1>"
     html += "<a href='/' class='btn' style='background:#444; padding:10px; text-decoration:none; color:white; border-radius:5px; display:inline-block; margin-bottom:20px;'>« Volver a Pizarra</a>"
     
     # Cuadros con relieve (Datos Técnicos) - Rellenados quirúrgicamente
