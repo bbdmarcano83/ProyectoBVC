@@ -41,9 +41,8 @@ def formatear_numero(valor):
         num = float(valor)
         return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
-        return
+        return valor
         
-         valor  # Si no es un número (como el guion), lo devuelve igual
 async def obtener_datos_bvc():
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
     headers = {"User-Agent": "Mozilla/5.0"} # Añadimos cabecera básica por seguridad
