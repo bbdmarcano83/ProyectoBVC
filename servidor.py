@@ -35,7 +35,7 @@ def cargar_portafolio():
 def guardar_portafolio(data):
     with open('portafolio.json', 'w') as f: json.dump(data, f)
 
-import httpx
+
 def formatear_numero(valor):
     try:
         # Convertimos a float, luego a string con formato de miles y 2 decimales
@@ -44,6 +44,16 @@ def formatear_numero(valor):
         return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return valor
+
+def limpiar_float(valor):
+    if valor is None or valor == "":
+        return 0.0
+    try:
+        # Si es string con formato local (ej: "1.234,56"), limpia y convierte
+        s = str(valor).replace('.', '').replace(',', '.')
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
         
 async def obtener_datos_bvc():
     url = "https://www.bolsadecaracas.com/wp-admin/admin-ajax.php"
@@ -159,6 +169,7 @@ async def obtener_datos_bvc():
                 item.update(mapa_detalle[simbolo])
         
         return datos_resumen
+
     
 @app.get("/")
 async def ver_pizarra():
