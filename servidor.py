@@ -205,7 +205,7 @@ async def ver_pizarra():
     for item in datos_bolsa:
         simb = item.get('COD_SIMB')
         p_compra = float(item.get('PRE_CMP_1', 0))
-        p_venta = float(item.get('PRE_VTA_1', 0))
+        p_venta = limpiar_float(item.get('PRE_VTA_1'))
         v_compra = item.get('VOL_CMP_1', 0)
         v_venta = item.get('VOL_VTA_1', 0)
         p_ult = float(item.get('PRECIO', 0))
