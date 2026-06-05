@@ -4,3 +4,4 @@ httpx
 pandas
 beautifulsoup4
 python-multipart
+ccxt
