@@ -175,7 +175,20 @@ async def obtener_datos_bvc():
 async def ver_pizarra():
     datos_bolsa = await obtener_datos_bvc()
     
-    # CSS profesional
+    # --- LOGICA DE ORDENAMIENTO (De mayor a menor variación) ---
+    def extraer_var(item):
+        try:
+            # Convertimos a string, reemplazamos coma por punto y convertimos a float
+            val = str(item.get('VAR_REL', '0')).replace(',', '.')
+            return float(val)
+        except (ValueError, TypeError):
+            return -9999.0
+    
+    # Ordenamos la lista en su lugar (descendente)
+    datos_bolsa.sort(key=extraer_var, reverse=True)
+    # -----------------------------------------------------------
+
+    # CSS profesional (Sin cambios)
     style = """
     <style>
         body { font-family: sans-serif; margin: 20px; background: #f4f4f4; }
@@ -188,6 +201,7 @@ async def ver_pizarra():
     """
     
     html = f"<html><head>{style}</head><body>"
+    
     
     # BOTÓN INTEGRADO
     html += """
