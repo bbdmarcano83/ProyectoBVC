@@ -5,3 +5,5 @@ pandas
 beautifulsoup4
 python-multipart
 ccxt
+pandas-ta
+python-dotenv  esto era lo que tenia el archivo .txt
