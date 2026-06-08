@@ -157,13 +157,27 @@ def filtrar_por_volatilidad(df_5m, price):
     except: return False, "Error Volatilidad"
 
 def ejecutar_estrategia():
-    pos_activas = 0
-    for s in ASSETS:
-        try:
-            if any(float(p.get('contracts', 0)) > 0 for p in exchange.fetch_positions([s])): pos_activas += 1
-        except: continue
-    
-    if pos_activas >= 2: return 
+    # 1. Verificación de seguridad global (Máximo 2 activos a la vez)
+    try:
+        todas_las_posiciones = exchange.fetch_positions()
+        # Filtramos solo las que tienen contratos reales > 0
+        activas = [p for p in todas_las_posiciones if float(p.get('contracts', 0)) > 0]
+        posiciones_abiertas = len(activas)
+        
+        # Crear una lista de símbolos que ya tienen posición para no repetir
+        simbolos_con_posicion = [p['symbol'] for p in activas]
+        
+        # Opcional: verificar también órdenes abiertas pendientes
+        ordenes_pendientes = exchange.fetch_open_orders()
+        simbolos_con_posicion.extend([o['symbol'] for o in ordenes_pendientes])
+        
+    except Exception as e:
+        logging.error(f"Error consultando posiciones globales: {e}")
+        return
+
+    if posiciones_abiertas >= 2:
+        logging.info(f"Blindaje activo: {posiciones_abiertas} posiciones. No se abren más.")
+        return 
 
     try:
         balance = exchange.fetch_balance()['total']['USDC']
@@ -172,8 +186,13 @@ def ejecutar_estrategia():
 
     for symbol in ASSETS:
         try:
+            # SI YA TENEMOS POSICIÓN O ORDEN PENDIENTE, SALTAR
+            if symbol in simbolos_con_posicion:
+                continue
+
             if not puede_operar(symbol): continue
             
+            # Obtención de datos técnicos
             df_1h = pd.DataFrame(exchange.fetch_ohlcv(symbol, '1h', limit=200), columns=['t','o','h','l','c','v'])
             df_5m = pd.DataFrame(exchange.fetch_ohlcv(symbol, '5m', limit=100), columns=['t','o','h','l','c','v'])
             
@@ -184,27 +203,36 @@ def ejecutar_estrategia():
             wma = ta.wma(df_5m['c'], length=14).iloc[-1]
             price, close_1h = df_5m['c'].iloc[-1], df_1h['c'].iloc[-1]
 
-            logging.info(f"AUDITORÍA: {symbol} -> Precio: {price}, RSI: {rsi}, EMA: {ema200}")
-
             if pd.isna(rsi) or pd.isna(ema200): continue
 
+            # Filtro Volatilidad
             vol_ok, vol_msg = filtrar_por_volatilidad(df_5m, price)
             if not vol_ok: continue
 
+            # Lógica de señales
             long_signal = (close_1h > ema200 and rsi < 30 and price > wma)
             short_signal = (close_1h < ema200 and rsi > 70 and price < wma)
             
-            if long_signal: side, strength = 'buy', "LONG (RSI < 30)"
-            elif short_signal: side, strength = 'sell', "SHORT (RSI > 70)"
+            if long_signal: side, strength = 'buy', "LONG"
+            elif short_signal: side, strength = 'sell', "SHORT"
             else: continue
             
+            # Cálculo de tamaño
             pos_size = calcular_tamaño_posicion(symbol, balance, price)
+            
             if pos_size > 0:
+                logging.info(f"Intentando abrir {side} en {symbol}...")
                 success, order = ejecutar_operacion(symbol, side, pos_size)
+                
                 if success:
-                    enviar_telegram(f"🚀 ENTRADA: {side.upper()} {symbol}\n📊 {strength}\n📈 {vol_msg}")
-                    time.sleep(10)
-        except Exception as e: logging.error(f"Error analizando {symbol}: {e}")
+                    enviar_telegram(f"🚀 ENTRADA ÚNICA: {side.upper()} {symbol}\n📊 {strength}")
+                    # Añadimos a la lista local para evitar duplicados en el mismo ciclo
+                    simbolos_con_posicion.append(symbol)
+                    # PAUSA DE SEGURIDAD para que el exchange procese la orden
+                    time.sleep(15) 
+                    
+        except Exception as e:
+            logging.error(f"Error analizando {symbol}: {e}")
 
 def limpiar_datos_antiguos():
     ahora = datetime.datetime.now()
