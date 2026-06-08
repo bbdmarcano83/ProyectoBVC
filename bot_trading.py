@@ -8,7 +8,7 @@ import requests
 from flask import Flask
 from threading import Thread
 
-# Configuración de logs: Esto es lo que reemplaza a los 'print' y funciona en Render
+# Configuración de logs
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -18,7 +18,8 @@ logging.basicConfig(
 exchange = ccxt.deribit({
     'apiKey': os.getenv('DERIBIT_TESTNET_CLIENT_ID'),
     'secret': os.getenv('DERIBIT_TESTNET_CLIENT_SECRET'),
-    'sandbox': True
+    'sandbox': True,
+    'enableRateLimit': True 
 })
 exchange.load_markets()
 
@@ -33,6 +34,12 @@ RIESGO_FIJO = 0.02
 APALANCAMIENTO = 2
 PORCENTAJE_SL = 0.02 
 
+app = Flask(__name__)
+
+@app.route('/')
+def keep_alive():
+    return "Bot is running perfectly", 200
+
 def enviar_telegram(mensaje):
     try:
         url = f"https://api.telegram.org/bot{os.getenv('TELEGRAM_TOKEN')}/sendMessage"
@@ -41,7 +48,6 @@ def enviar_telegram(mensaje):
         logging.error(f"Error enviando Telegram: {e}")
 
 def patrulla_emergencia():
-    """Vigilante: Cierra cualquier pérdida > 2.05%."""
     for symbol in ASSETS:
         try:
             posiciones = exchange.fetch_positions([symbol])
@@ -49,7 +55,6 @@ def patrulla_emergencia():
                 if float(pos.get('contracts', 0)) > 0:
                     entry = float(pos['entry_price'])
                     mark = float(pos['mark_price'])
-                    # Si es short, la lógica de pérdida se invierte
                     side_multiplier = 1 if pos['side'] == 'long' else -1
                     pnl_pct = ((mark - entry) / entry) * side_multiplier
                     
@@ -63,6 +68,20 @@ def patrulla_emergencia():
             logging.error(f"Error en patrulla {symbol}: {e}")
 
 def ejecutar_estrategia():
+    # --- MODIFICACIÓN QUIRÚRGICA: SEMÁFORO DE SEGURIDAD ---
+    posiciones_abiertas = 0
+    for symbol in ASSETS:
+        try:
+            p_list = exchange.fetch_positions([symbol])
+            if any(float(p.get('contracts', 0)) > 0 for p in p_list):
+                posiciones_abiertas += 1
+        except: continue
+    
+    if posiciones_abiertas >= 2:
+        logging.info(f"BLINDAJE: {posiciones_abiertas} operaciones activas. Máximo permitido alcanzado. OMITIENDO.")
+        return 
+    # -----------------------------------------------------
+
     try:
         balance = exchange.fetch_balance()['total']['USDC']
         monto_riesgo = balance * RIESGO_FIJO
@@ -72,15 +91,15 @@ def ejecutar_estrategia():
 
     for symbol in ASSETS:
         try:
-            # 1. BLOQUEO DE POSICIÓN ÚNICA (Auditado)
+            # Re-verificar posición individual
             posiciones = exchange.fetch_positions([symbol])
             if any(float(p.get('contracts', 0)) > 0 for p in posiciones):
-                logging.info(f"AUDITORIA: {symbol} tiene posición abierta. OMITIENDO entrada.")
                 continue 
 
-            # 2. ANÁLISIS TÉCNICO
             df_1h = pd.DataFrame(exchange.fetch_ohlcv(symbol, '1h', limit=200), columns=['t', 'o', 'h', 'l', 'c', 'v'])
             df_5m = pd.DataFrame(exchange.fetch_ohlcv(symbol, '5m', limit=50), columns=['t', 'o', 'h', 'l', 'c', 'v'])
+            
+            if len(df_5m) < 14: continue
             
             ema200 = ta.ema(df_1h['c'], length=200).iloc[-1]
             rsi = ta.rsi(df_5m['c'], length=14).iloc[-1]
@@ -88,10 +107,8 @@ def ejecutar_estrategia():
             price = df_5m['c'].iloc[-1]
             close_1h = df_1h['c'].iloc[-1]
 
-            # Auditando valores para que sepas qué está pasando
-            logging.info(f"AUDITORIA: {symbol} -> Precio: {price:.4f}, RSI: {rsi:.2f}, EMA: {ema200:.4f}")
+            if pd.isna(rsi): continue
 
-            # 3. ESTRATEGIA DE ENTRADA
             side = 'buy' if (close_1h > ema200 and rsi < 30 and price > wma) else \
                    'sell' if (close_1h < ema200 and rsi > 70 and price < wma) else None
             
@@ -101,16 +118,19 @@ def ejecutar_estrategia():
                 msg = f"🚀 ENTRADA ÚNICA: {side.upper()} en {symbol} | Tamaño: {pos_size:.4f}"
                 logging.info(msg)
                 enviar_telegram(msg)
-            else:
-                logging.info(f"AUDITORIA: {symbol} sin señal técnica.")
+                time.sleep(10) # Pausa estratégica tras abrir orden
 
         except Exception as e:
             logging.error(f"Error analizando {symbol}: {e}")
 
 if __name__ == "__main__":
-    Thread(target=lambda: Flask(__name__).run(host='0.0.0.0', port=8080), daemon=True).start()
+    Thread(target=lambda: app.run(host='0.0.0.0', port=8080), daemon=True).start()
     logging.info("Bot iniciado. Monitoreando mercado...")
     while True:
-        patrulla_emergencia()
-        ejecutar_estrategia()
-        time.sleep(30)
+        try:
+            patrulla_emergencia()
+            ejecutar_estrategia()
+            time.sleep(30)
+        except Exception as e:
+            logging.critical(f"ERROR EN BUCLE PRINCIPAL: {e}")
+            time.sleep(60)
