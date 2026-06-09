@@ -157,42 +157,26 @@ def filtrar_por_volatilidad(df_5m, price):
     except: return False, "Error Volatilidad"
 
 def ejecutar_estrategia():
-    # 1. Verificación de seguridad global (Máximo 2 activos a la vez)
+    # 1. Obtener posiciones al inicio para saber qué hay abierto
     try:
         todas_las_posiciones = exchange.fetch_positions()
-        # Filtramos solo las que tienen contratos reales > 0
         activas = [p for p in todas_las_posiciones if float(p.get('contracts', 0)) > 0]
         posiciones_abiertas = len(activas)
-        
-        # Crear una lista de símbolos que ya tienen posición para no repetir
         simbolos_con_posicion = [p['symbol'] for p in activas]
         
-        # Opcional: verificar también órdenes abiertas pendientes
-        ordenes_pendientes = exchange.fetch_open_orders()
-        simbolos_con_posicion.extend([o['symbol'] for o in ordenes_pendientes])
-        
+        # LOG DE ESTADO (Para que veas qué detecta el bot)
+        logging.info(f"--- NUEVO CICLO --- Posiciones abiertas: {posiciones_abiertas} ({', '.join(simbolos_con_posicion)})")
     except Exception as e:
-        logging.error(f"Error consultando posiciones globales: {e}")
+        logging.error(f"Error consultando posiciones: {e}")
         return
-
-    if posiciones_abiertas >= 2:
-        logging.info(f"Blindaje activo: {posiciones_abiertas} posiciones. No se abren más.")
-        return 
 
     try:
         balance = exchange.fetch_balance()['total']['USDC']
-        if balance <= 10: return
     except: return
 
     for symbol in ASSETS:
         try:
-            # SI YA TENEMOS POSICIÓN O ORDEN PENDIENTE, SALTAR
-            if symbol in simbolos_con_posicion:
-                continue
-
-            if not puede_operar(symbol): continue
-            
-            # Obtención de datos técnicos
+            # 2. Obtener datos SIEMPRE para la auditoría (aunque ya haya posición)
             df_1h = pd.DataFrame(exchange.fetch_ohlcv(symbol, '1h', limit=200), columns=['t','o','h','l','c','v'])
             df_5m = pd.DataFrame(exchange.fetch_ohlcv(symbol, '5m', limit=100), columns=['t','o','h','l','c','v'])
             
@@ -203,6 +187,17 @@ def ejecutar_estrategia():
             wma = ta.wma(df_5m['c'], length=14).iloc[-1]
             price, close_1h = df_5m['c'].iloc[-1], df_1h['c'].iloc[-1]
 
+            # 3. AUDITORÍA VISIBLE (Moverla aquí arriba para verla siempre)
+            logging.info(f"AUDITORÍA: {symbol} -> Precio: {price}, RSI: {rsi:.2f}, EMA: {ema200:.2f}")
+
+            # 4. Verificaciones de bloqueo (Después de la auditoría)
+            if symbol in simbolos_con_posicion:
+                continue # No loguea señal si ya está adentro
+
+            if posiciones_abiertas >= 2:
+                continue # No loguea señal si el cupo está lleno
+
+            if not puede_operar(symbol): continue
             if pd.isna(rsi) or pd.isna(ema200): continue
 
             # Filtro Volatilidad
@@ -217,22 +212,20 @@ def ejecutar_estrategia():
             elif short_signal: side, strength = 'sell', "SHORT"
             else: continue
             
-            # Cálculo de tamaño
+            # 5. Ejecución
             pos_size = calcular_tamaño_posicion(symbol, balance, price)
-            
             if pos_size > 0:
-                logging.info(f"Intentando abrir {side} en {symbol}...")
+                logging.warning(f"🎯 SEÑAL DETECTADA: {side} en {symbol}. Ejecutando...")
                 success, order = ejecutar_operacion(symbol, side, pos_size)
                 
                 if success:
-                    enviar_telegram(f"🚀 ENTRADA ÚNICA: {side.upper()} {symbol}\n📊 {strength}")
-                    # Añadimos a la lista local para evitar duplicados en el mismo ciclo
+                    enviar_telegram(f"🚀 ENTRADA: {side.upper()} {symbol}\n📊 RSI: {rsi:.2f}")
                     simbolos_con_posicion.append(symbol)
-                    # PAUSA DE SEGURIDAD para que el exchange procese la orden
-                    time.sleep(15) 
+                    posiciones_abiertas += 1
+                    time.sleep(10) # Pausa tras operar
                     
         except Exception as e:
-            logging.error(f"Error analizando {symbol}: {e}")
+            logging.error(f"Error en {symbol}: {e}")
 
 def limpiar_datos_antiguos():
     ahora = datetime.datetime.now()
