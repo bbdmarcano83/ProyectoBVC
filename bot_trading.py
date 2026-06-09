@@ -63,7 +63,7 @@ def enviar_telegram(mensaje):
             
     except Exception as e:
         logging.error(f"Error de red enviando Telegram: {e}")
-        
+
 import datetime
 # Diccionario para controlar el cooldown por símbolo
 ultima_operacion = {symbol: datetime.datetime.min for symbol in ASSETS}
@@ -181,36 +181,44 @@ def filtrar_por_volatilidad(df_5m, price):
     except: return False, "Error Volatilidad"
 
 def ejecutar_estrategia():
-    # 1. Obtener posiciones actuales
+    # 1. CONTEO DE SEGURIDAD ABSOLUTA
     try:
         todas_las_posiciones = exchange.fetch_positions()
-        activas = [p for p in todas_las_posiciones if float(p.get('contracts', 0)) > 0]
-        posiciones_abiertas = len(activas)
-        simbolos_con_posicion = [p['symbol'] for p in activas]
-        logging.info(f"--- STATUS --- Abiertas: {posiciones_abiertas} | Activos: {', '.join(simbolos_con_posicion)}")
+        # Creamos una lista limpia de símbolos que tienen contratos > 0
+        simbolos_activos = []
+        for p in todas_las_posiciones:
+            cant = float(p.get('contracts', 0))
+            if cant > 0:
+                sym = p['symbol']
+                if sym not in simbolos_activos:
+                    simbolos_activos.append(sym)
+        
+        num_activos = len(simbolos_activos)
+        logging.info(f"--- STATUS --- Activos: {num_activos} | Lista: {simbolos_activos}")
+        
+        # Bloqueo estricto: Si ya hay 2 o más activos, NO HACER NADA MÁS
+        if num_activos >= 2:
+            logging.info("BLOQUEO: Cupo máximo de 2 activos alcanzado. No se buscan más señales.")
+            return 
+            
     except Exception as e:
-        logging.error(f"Error al obtener posiciones: {e}")
+        logging.error(f"Error en conteo de seguridad: {e}")
         return
 
-    # 2. Bloqueo global si tenemos 2 o más posiciones
-    if posiciones_abiertas >= 2:
-        return
-
-    # 3. Obtener Balance Disponible (solo dinero líquido/free)
+    # 2. BALANCE DISPONIBLE
     try:
         full_balance = exchange.fetch_balance()
-        balance_disponible = full_balance.get('free', {}).get('USDC', 0)
-        logging.info(f"💰 Balance USDC Disponible: ${balance_disponible:.2f}")
-
-        if balance_disponible <= 5:
+        balance_free = full_balance.get('free', {}).get('USDC', 0)
+        logging.info(f"💰 Balance Disponible: ${balance_free:.2f}")
+        if balance_free <= 5: 
             return
-    except Exception as e:
-        logging.error(f"Error obteniendo balance: {e}")
+    except Exception: 
         return
 
-    # 4. Bucle por cada activo configurado
+    # 3. BUCLE DE ANÁLISIS
     for symbol in ASSETS:
-        if symbol in simbolos_con_posicion:
+        # Si el símbolo ya está abierto, lo saltamos
+        if symbol in simbolos_activos: 
             continue
 
         try:
@@ -218,7 +226,8 @@ def ejecutar_estrategia():
             df_1h = pd.DataFrame(exchange.fetch_ohlcv(symbol, '1h', limit=200), columns=['t','o','h','l','c','v'])
             df_5m = pd.DataFrame(exchange.fetch_ohlcv(symbol, '5m', limit=100), columns=['t','o','h','l','c','v'])
             
-            if not validar_datos_tecnicos(df_1h, df_5m, symbol): continue
+            if not validar_datos_tecnicos(df_1h, df_5m, symbol): 
+                continue
             
             ema200 = ta.ema(df_1h['c'], length=200).iloc[-1]
             rsi = ta.rsi(df_5m['c'], length=14).iloc[-1]
@@ -226,39 +235,40 @@ def ejecutar_estrategia():
             price = df_5m['c'].iloc[-1]
             close_1h = df_1h['c'].iloc[-1]
 
-            # Filtros de Seguridad
-            if not puede_operar(symbol): continue
-            if pd.isna(rsi) or pd.isna(ema200): continue
+            # Auditoría técnica para los logs de Render
+            logging.info(f"AUDITORÍA: {symbol} | Precio: {price} | RSI: {rsi:.2f}")
 
-            # Lógica de señales
-            long_signal = (close_1h > ema200 and rsi < 30 and price > wma)
-            short_signal = (close_1h < ema200 and rsi > 70 and price < wma)
-            side = 'buy' if long_signal else 'sell' if short_signal else None
-            
-            if not side: continue
-
-            # Doble check de posición
-            check_final = exchange.fetch_positions([symbol])
-            if any(float(p.get('contracts', 0)) > 0 for p in check_final):
+            if not puede_operar(symbol): 
+                continue
+            if pd.isna(rsi) or pd.isna(ema200): 
                 continue
 
-            # Cálculo de tamaño
-            pos_size = calcular_tamaño_posicion(symbol, balance_disponible, price)
+            # Señales
+            long_sig = (close_1h > ema200 and rsi < 30 and price > wma)
+            short_sig = (close_1h < ema200 and rsi > 70 and price < wma)
+            side = 'buy' if long_sig else 'sell' if short_sig else None
             
+            if not side: 
+                continue
+
+            # DOBLE CHECK: Re-verificar posición justo antes de disparar
+            pos_final = exchange.fetch_positions([symbol])
+            if any(float(p.get('contracts', 0)) > 0 for p in pos_final): 
+                continue
+
+            # Ejecución
+            pos_size = calcular_tamaño_posicion(symbol, balance_free, price)
             if pos_size > 0:
-                logging.warning(f"🚀 DISPARANDO ORDEN: {side} {symbol} Cant: {pos_size}")
-                success, order = ejecutar_operacion(symbol, side, pos_size)
-                
+                logging.warning(f"🚀 EJECUTANDO: {side} {symbol}")
+                success, _ = ejecutar_operacion(symbol, side, pos_size)
                 if success:
                     enviar_telegram(f"✅ ORDEN EXITOSA: {side} {symbol}")
                     ultima_operacion[symbol] = datetime.datetime.now()
-                    logging.info("Esperando 20s para sincronización...")
-                    time.sleep(20)
-                    return # Salida forzada para evitar spam de órdenes
+                    time.sleep(20) # Pausa de sincronización
+                    return # Salir del bucle para procesar el nuevo estado en el siguiente ciclo
 
         except Exception as e:
-            logging.error(f"Error procesando {symbol}: {e}")
-            time.sleep(2)
+            logging.error(f"Error en {symbol}: {e}")
 
 def limpiar_datos_antiguos():
     ahora = datetime.datetime.now()
