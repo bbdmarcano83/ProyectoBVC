@@ -135,38 +135,50 @@ def actualizar_trailing_stop(symbol, pos):
         logging.error(f"Error actualizando trailing stop {symbol}: {e}")
 
 def patrulla_emergencia():
-    for symbol in ASSETS:
-        try:
-            posiciones = exchange.fetch_positions([symbol])
-            for pos in posiciones:
-                if float(pos.get('contracts', 0)) > 0:
-                    entry, mark, side = float(pos['entry_price']), float(pos['mark_price']), pos['side']
-                    side_mult = 1 if side == 'long' else -1
-                    pnl_pct = ((mark - entry) / entry) * side_mult
+    try:
+        # Obtenemos todas las posiciones de la cuenta
+        posiciones = exchange.fetch_positions()
+        
+        for pos in posiciones:
+            contratos = abs(float(pos.get('contracts', 0)))
+            if contratos > 0:
+                symbol = pos['symbol']
+                entry = float(pos.get('entry_price', 0))
+                mark = float(pos.get('mark_price', 0))
+                side = pos['side']
+                
+                # Protección contra error de división por cero
+                if entry <= 0: 
+                    continue 
+
+                side_mult = 1 if side == 'long' else -1
+                pnl_pct = ((mark - entry) / entry) * side_mult
+                
+                logging.info(f"Monitor {symbol}: PnL {pnl_pct:.2%}")
+
+                # LÓGICA DE CIERRE
+                should_close = False
+                msg_tipo = ""
+
+                if pnl_pct >= 0.06:
+                    should_close = True
+                    msg_tipo = "💰 TAKE PROFIT"
+                elif pnl_pct <= -0.02:
+                    should_close = True
+                    msg_tipo = "🚨 STOP LOSS"
+
+                if should_close:
+                    logging.warning(f"{msg_tipo}: {symbol} al {pnl_pct:.2%}")
+                    side_to_close = 'sell' if side == 'long' else 'buy'
                     
-                    actualizar_trailing_stop(symbol, pos)
-                    
-                    if pnl_pct >= TAKE_PROFIT_PCT:
-                        side_close = 'sell' if side == 'long' else 'buy'
-                        if ejecutar_operacion(symbol, side_close, float(pos['contracts']))[0]:
-                            enviar_telegram(f"💰 TP: {symbol} {pnl_pct:.2%}")
-                            if symbol in trailing_stops: del trailing_stops[symbol]
-                        continue
-                    
-                    stop_triggered = False
-                    if pnl_pct <= -0.0205:
-                        stop_triggered, msg = True, "🚨 EMERGENCIA"
-                    elif symbol in trailing_stops:
-                        if (side == 'long' and mark <= trailing_stops[symbol]) or \
-                           (side == 'short' and mark >= trailing_stops[symbol]):
-                            stop_triggered, msg = True, "📉 TRAILING"
-                    
-                    if stop_triggered:
-                        side_close = 'sell' if side == 'long' else 'buy'
-                        if ejecutar_operacion(symbol, side_close, float(pos['contracts']))[0]:
-                            enviar_telegram(f"{msg}: {symbol} {pnl_pct:.2%}")
-                            if symbol in trailing_stops: del trailing_stops[symbol]
-        except Exception as e: logging.error(f"Error patrulla {symbol}: {e}")
+                    # Ejecución del cierre
+                    success, _ = ejecutar_operacion(symbol, side_to_close, contratos)
+                    if success:
+                        enviar_telegram(f"{msg_tipo} EXITOSO: {symbol}\nPnL: {pnl_pct:.2%}")
+                        time.sleep(2) # Pausa breve entre cierres
+                
+    except Exception as e:
+        logging.error(f"Error en patrulla: {e}")
 
 def validar_datos_tecnicos(df_1h, df_5m, symbol):
     if len(df_1h) < 200: return False
@@ -279,16 +291,18 @@ def limpiar_datos_antiguos():
 
 if __name__ == "__main__":
     Thread(target=lambda: app.run(host='0.0.0.0', port=8080), daemon=True).start()
-    logging.info("🤖 Bot iniciado con todas las capas originales + correcciones.")
+    logging.info("🤖 Bot iniciado. Patrulla de alta frecuencia activa.")
     
-    ciclos = 0
     while True:
         try:
+            # Primero: Protegemos ganancias/controlamos pérdidas
             patrulla_emergencia()
+            
+            # Segundo: Buscamos nuevas oportunidades
             ejecutar_estrategia()
-            ciclos += 1
-            if ciclos % 100 == 0: limpiar_datos_antiguos()
-            time.sleep(30)
+            
+            # Pausa breve para no saturar
+            time.sleep(15)
         except Exception as e:
-            logging.critical(f"Error bucle: {e}")
-            time.sleep(60)
+            logging.error(f"Error en bucle principal: {e}")
+            time.sleep(30)
