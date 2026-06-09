@@ -49,11 +49,21 @@ def keep_alive():
 
 def enviar_telegram(mensaje):
     try:
-        url = f"https://api.telegram.org/bot{os.getenv('TELEGRAM_TOKEN')}/sendMessage"
-        requests.get(url, params={'chat_id': os.getenv('TELEGRAM_CHAT_ID'), 'text': mensaje}, timeout=5)
+        token = os.getenv('TELEGRAM_TOKEN')
+        chat_id = os.getenv('TELEGRAM_CHAT_ID')
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {'chat_id': chat_id, 'text': mensaje}
+        # Usamos post con timeout para mayor estabilidad
+        response = requests.post(url, json=payload, timeout=5)
+        
+        if response.status_code != 200:
+            logging.error(f"Telegram respondió con error {response.status_code}: {response.text}")
+        else:
+            logging.info("Mensaje enviado a Telegram correctamente.")
+            
     except Exception as e:
-        logging.error(f"Error enviando Telegram: {e}")
-
+        logging.error(f"Error de red enviando Telegram: {e}")
+        
 import datetime
 # Diccionario para controlar el cooldown por símbolo
 ultima_operacion = {symbol: datetime.datetime.min for symbol in ASSETS}
