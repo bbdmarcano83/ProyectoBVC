@@ -136,27 +136,33 @@ def actualizar_trailing_stop(symbol, pos):
 
 def patrulla_emergencia():
     try:
-        # Obtenemos todas las posiciones de la cuenta
-        posiciones = exchange.fetch_positions()
+        # 1. Forzamos a Deribit a darnos las posiciones de la billetera USDC
+        posiciones = exchange.fetch_positions(params={'currency': 'USDC'})
         
         for pos in posiciones:
-            contratos = abs(float(pos.get('contracts', 0)))
+            # 2. CRÍTICO: abs() para detectar Shorts (números negativos)
+            # También buscamos en 'size' por si 'contracts' viene vacío
+            contratos = abs(float(pos.get('contracts', 0) or pos.get('size', 0)))
+            
             if contratos > 0:
                 symbol = pos['symbol']
                 entry = float(pos.get('entry_price', 0))
                 mark = float(pos.get('mark_price', 0))
                 side = pos['side']
                 
-                # Protección contra error de división por cero
+                # 3. Protección contra división por cero
                 if entry <= 0: 
-                    continue 
+                    logging.warning(f"Esperando precio de entrada para {symbol}...")
+                    continue
 
+                # 4. Cálculo de PnL Porcentual
                 side_mult = 1 if side == 'long' else -1
                 pnl_pct = ((mark - entry) / entry) * side_mult
                 
-                logging.info(f"Monitor {symbol}: PnL {pnl_pct:.2%}")
+                # Log de monitoreo constante en Render
+                logging.info(f"MONITOR {symbol}: PnL {pnl_pct:.2%} | Lado: {side}")
 
-                # LÓGICA DE CIERRE
+                # 5. LÓGICA DE CIERRE (Take Profit 6% / Stop Loss 2%)
                 should_close = False
                 msg_tipo = ""
 
@@ -168,17 +174,21 @@ def patrulla_emergencia():
                     msg_tipo = "🚨 STOP LOSS"
 
                 if should_close:
-                    logging.warning(f"{msg_tipo}: {symbol} al {pnl_pct:.2%}")
+                    logging.warning(f"🎯 EJECUTANDO CIERRE {msg_tipo}: {symbol} al {pnl_pct:.2%}")
+                    
+                    # El lado de cierre es el opuesto al actual
                     side_to_close = 'sell' if side == 'long' else 'buy'
                     
-                    # Ejecución del cierre
+                    # Usamos la cantidad exacta de contratos que tiene la posición
                     success, _ = ejecutar_operacion(symbol, side_to_close, contratos)
+                    
                     if success:
-                        enviar_telegram(f"{msg_tipo} EXITOSO: {symbol}\nPnL: {pnl_pct:.2%}")
-                        time.sleep(2) # Pausa breve entre cierres
+                        enviar_telegram(f"{msg_tipo} EXITOSO: {symbol}\n📈 PnL: {pnl_pct:.2%}\n📉 Cantidad: {contratos}")
+                        # Pequeña pausa para no saturar la API si hay varios cierres
+                        time.sleep(2)
                 
     except Exception as e:
-        logging.error(f"Error en patrulla: {e}")
+        logging.error(f"Error crítico en patrulla de emergencia: {e}")
 
 def validar_datos_tecnicos(df_1h, df_5m, symbol):
     if len(df_1h) < 200: return False
@@ -193,94 +203,106 @@ def filtrar_por_volatilidad(df_5m, price):
     except: return False, "Error Volatilidad"
 
 def ejecutar_estrategia():
-    # 1. CONTEO DE SEGURIDAD ABSOLUTA
+    # 1. CONTEO DE SEGURIDAD (Con corrección para Shorts y USDC)
     try:
-        todas_las_posiciones = exchange.fetch_positions()
-        # Creamos una lista limpia de símbolos que tienen contratos > 0
+        todas_las_posiciones = exchange.fetch_positions(params={'currency': 'USDC'})
+        
         simbolos_activos = []
         for p in todas_las_posiciones:
-            cant = float(p.get('contracts', 0))
+            # CRÍTICO: Usamos abs() para que los Shorts (números negativos) se cuenten como activos
+            cant = abs(float(p.get('contracts', 0) or p.get('size', 0)))
             if cant > 0:
                 sym = p['symbol']
                 if sym not in simbolos_activos:
                     simbolos_activos.append(sym)
         
         num_activos = len(simbolos_activos)
-        logging.info(f"--- STATUS --- Activos: {num_activos} | Lista: {simbolos_activos}")
+        logging.info(f"--- STATUS --- Activos Detectados: {num_activos} | Lista: {simbolos_activos}")
         
-        # Bloqueo estricto: Si ya hay 2 o más activos, NO HACER NADA MÁS
+        # Bloqueo si ya hay 2 activos abiertos
         if num_activos >= 2:
-            logging.info("BLOQUEO: Cupo máximo de 2 activos alcanzado. No se buscan más señales.")
+            logging.info("Cupo lleno. Monitoreando posiciones existentes...")
             return 
             
     except Exception as e:
-        logging.error(f"Error en conteo de seguridad: {e}")
+        logging.error(f"Error en fase de conteo: {e}")
         return
 
-    # 2. BALANCE DISPONIBLE
+    # 2. BALANCE DISPONIBLE (Dinero líquido)
     try:
         full_balance = exchange.fetch_balance()
         balance_free = full_balance.get('free', {}).get('USDC', 0)
-        logging.info(f"💰 Balance Disponible: ${balance_free:.2f}")
+        logging.info(f"💰 Balance USDC Disponible: ${balance_free:.2f}")
         if balance_free <= 5: 
             return
-    except Exception: 
+    except Exception as e:
+        logging.error(f"Error obteniendo balance: {e}")
         return
 
-    # 3. BUCLE DE ANÁLISIS
+    # 3. BUCLE DE ANÁLISIS POR ACTIVO
     for symbol in ASSETS:
-        # Si el símbolo ya está abierto, lo saltamos
+        # Si ya tenemos este activo abierto, saltar al siguiente
         if symbol in simbolos_activos: 
             continue
 
         try:
-            # Descarga de datos
+            # Descarga de datos (200 velas 1h, 100 velas 5m para evitar RSI NaN)
             df_1h = pd.DataFrame(exchange.fetch_ohlcv(symbol, '1h', limit=200), columns=['t','o','h','l','c','v'])
             df_5m = pd.DataFrame(exchange.fetch_ohlcv(symbol, '5m', limit=100), columns=['t','o','h','l','c','v'])
             
             if not validar_datos_tecnicos(df_1h, df_5m, symbol): 
                 continue
             
+            # Indicadores
             ema200 = ta.ema(df_1h['c'], length=200).iloc[-1]
             rsi = ta.rsi(df_5m['c'], length=14).iloc[-1]
             wma = ta.wma(df_5m['c'], length=14).iloc[-1]
             price = df_5m['c'].iloc[-1]
             close_1h = df_1h['c'].iloc[-1]
 
-            # Auditoría técnica para los logs de Render
-            logging.info(f"AUDITORÍA: {symbol} | Precio: {price} | RSI: {rsi:.2f}")
+            # Auditoría técnica para Render
+            logging.info(f"AUDITORÍA: {symbol} | Precio: {price} | RSI: {rsi:.2f} | EMA200: {ema200:.2f}")
 
+            # Filtros de seguridad
             if not puede_operar(symbol): 
                 continue
             if pd.isna(rsi) or pd.isna(ema200): 
                 continue
 
-            # Señales
+            # Lógica de señales
             long_sig = (close_1h > ema200 and rsi < 30 and price > wma)
             short_sig = (close_1h < ema200 and rsi > 70 and price < wma)
-            side = 'buy' if long_sig else 'sell' if short_sig else None
             
+            side = 'buy' if long_sig else 'sell' if short_sig else None
             if not side: 
                 continue
 
-            # DOBLE CHECK: Re-verificar posición justo antes de disparar
-            pos_final = exchange.fetch_positions([symbol])
-            if any(float(p.get('contracts', 0)) > 0 for p in pos_final): 
+            # 4. DOBLE CHECK FINAL (Antes de disparar la orden)
+            check_final = exchange.fetch_positions(params={'currency': 'USDC'})
+            # Buscamos si el símbolo apareció mágicamente en el último segundo
+            ya_esta = any(p['symbol'] == symbol and abs(float(p.get('contracts', 0) or p.get('size', 0))) > 0 for p in check_final)
+            if ya_esta: 
                 continue
 
-            # Ejecución
+            # 5. EJECUCIÓN
             pos_size = calcular_tamaño_posicion(symbol, balance_free, price)
+            
             if pos_size > 0:
-                logging.warning(f"🚀 EJECUTANDO: {side} {symbol}")
-                success, _ = ejecutar_operacion(symbol, side, pos_size)
+                logging.warning(f"🚀 SEÑAL CONFIRMADA: {side} {symbol} Cant: {pos_size}")
+                success, order = ejecutar_operacion(symbol, side, pos_size)
+                
                 if success:
-                    enviar_telegram(f"✅ ORDEN EXITOSA: {side} {symbol}")
+                    enviar_telegram(f"✅ ORDEN EXITOSA: {side.upper()} {symbol}\n📊 RSI: {rsi:.2f}")
                     ultima_operacion[symbol] = datetime.datetime.now()
-                    time.sleep(20) # Pausa de sincronización
-                    return # Salir del bucle para procesar el nuevo estado en el siguiente ciclo
+                    
+                    # Pausa obligatoria para sincronización del exchange
+                    logging.info("Esperando 20s para que Deribit actualice saldos...")
+                    time.sleep(20)
+                    return # Salida forzada para reiniciar el ciclo con datos frescos
 
         except Exception as e:
-            logging.error(f"Error en {symbol}: {e}")
+            logging.error(f"Error procesando {symbol}: {e}")
+            time.sleep(2)
 
 def limpiar_datos_antiguos():
     ahora = datetime.datetime.now()
