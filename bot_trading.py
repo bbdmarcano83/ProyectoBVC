@@ -110,12 +110,11 @@ def ejecutar_operacion(symbol, side, pos_size, price):
     """Ejecuta orden con TP/SL nativo de Deribit integrado."""
     try:
         is_long = (side == 'buy')
-        # Calcular niveles de salida
+        # Calculamos niveles nativos
         tp_price = float(exchange.price_to_precision(symbol, price * (1 + TAKE_PROFIT_PCT if is_long else 1 - TAKE_PROFIT_PCT)))
         sl_price = float(exchange.price_to_precision(symbol, price * (1 - PORCENTAJE_SL if is_long else 1 + PORCENTAJE_SL)))
         amount = float(exchange.amount_to_precision(symbol, pos_size))
 
-        # Parámetros para Deribit
         params = {
             'leverage': APALANCAMIENTO,
             'stop_loss_price': sl_price,
@@ -127,11 +126,10 @@ def ejecutar_operacion(symbol, side, pos_size, price):
         order = exchange.create_order(symbol, 'market', side, amount, params=params)
         
         if order:
-            ultima_operacion[symbol] = datetime.datetime.now()
             return True, order
         return False, None
     except Exception as e:
-        logging.error(f"Error crítico en apertura: {e}")
+        logging.error(f"Error crítico en apertura con TP/SL: {e}")
         return False, None
 
 def actualizar_trailing_stop(symbol, pos):
@@ -181,7 +179,7 @@ def patrulla_emergencia():
                 else: continue
 
             pnl_pct = ((last_price - entry) / entry) * (1 if side == 'long' else -1)
-            logging.info(f"🔍 PATRULLA {symbol} | PnL: {pnl_pct:.2%} | Last: {last_price}")
+            logging.warning(f"🔍 PATRULLA {symbol} | PnL: {pnl_pct:.2%} | Last: {last_price}")
 
             # Cierre de emergencia manual si TP/SL nativo no cerró
             if pnl_pct >= TAKE_PROFIT_PCT or pnl_pct <= -PORCENTAJE_SL:
@@ -309,16 +307,17 @@ def ejecutar_estrategia():
             
             if pos_size > 0:
                 logging.warning(f"🚀 SEÑAL CONFIRMADA: {side} {symbol} Cant: {pos_size}")
-                success, order = ejecutar_operacion(symbol, side, pos_size)
+                # AHORA SÍ pasamos el precio actual para que la orden lleve TP/SL nativo
+                success, order = ejecutar_operacion(symbol, side, pos_size, price) 
                 
                 if success:
                     enviar_telegram(f"✅ ORDEN EXITOSA: {side.upper()} {symbol}\n📊 RSI: {rsi:.2f}")
                     ultima_operacion[symbol] = datetime.datetime.now()
                     
-                    # Pausa obligatoria para sincronización del exchange
+                    # Pausa obligatoria
                     logging.info("Esperando 20s para que Deribit actualice saldos...")
                     time.sleep(20)
-                    return # Salida forzada para reiniciar el ciclo con datos frescos
+                    return
 
         except Exception as e:
             logging.error(f"Error procesando {symbol}: {e}")
