@@ -136,55 +136,51 @@ def actualizar_trailing_stop(symbol, pos):
 
 def patrulla_emergencia():
     try:
-        # Obtener posiciones activas
         posiciones = exchange.fetch_positions(params={'currency': 'USDC'})
         
-        # Reporte de estado para logs
-        if not posiciones:
-            return
-
         for pos in posiciones:
             contratos = abs(float(pos.get('contracts', 0) or pos.get('size', 0)))
             if contratos <= 0: continue
             
             symbol = pos['symbol']
-            mark = float(pos.get('mark_price', 0))
+            side = pos['side']
             
-            # --- PROTECCIÓN CRÍTICA ---
-            if mark <= 0:
-                logging.warning(f"⚠️ Mark Price en 0 para {symbol}. Saltando.")
+            # 1. Obtención de precio robusta usando Last Price
+            ticker = exchange.fetch_ticker(symbol)
+            last_price = float(ticker.get('last', 0))
+            
+            if last_price <= 0:
+                logging.warning(f"⚠️ Last Price en 0 para {symbol}. Saltando.")
                 continue
             
+            # 2. Recuperación de entrada (si el campo de la posición falla)
             entry = float(pos.get('entry_price', 0) or pos.get('average_price', 0))
-            
-            # Recuperación de entrada si falla el campo de la posición
             if entry <= 0:
                 orders = exchange.fetch_closed_orders(symbol, limit=1)
                 if orders: entry = float(orders[0]['price'])
                 else: continue
 
-            side = pos['side']
+            # 3. Cálculo de PnL
             side_mult = 1 if side == 'long' else -1
-            pnl_pct = ((mark - entry) / entry) * side_mult
+            pnl_pct = ((last_price - entry) / entry) * side_mult
             
-            # Filtro anti-glitch (PnL irreal)
-            if abs(pnl_pct) > 0.50:
-                continue
+            # Filtro anti-glitch para evitar cierres por errores de lectura
+            if abs(pnl_pct) > 0.50: continue
 
-            # Evaluación de salida
-            if pnl_pct >= 0.06 or pnl_pct <= -0.02:
-                msg_tipo = "💰 TAKE PROFIT" if pnl_pct >= 0.06 else "🚨 STOP LOSS"
-                logging.warning(f"🎯 EJECUTANDO CIERRE {msg_tipo}: {symbol} al {pnl_pct:.2%}")
+            # 4. Lógica de Cierre
+            if pnl_pct >= TAKE_PROFIT_PCT or pnl_pct <= -PORCENTAJE_SL:
+                msg_tipo = "💰 TAKE PROFIT" if pnl_pct >= TAKE_PROFIT_PCT else "🚨 STOP LOSS"
+                logging.warning(f"🎯 CIERRE {msg_tipo}: {symbol} | PnL: {pnl_pct:.2%}")
                 
                 side_to_close = 'sell' if side == 'long' else 'buy'
                 success, _ = ejecutar_operacion(symbol, side_to_close, contratos)
                 
                 if success:
-                    enviar_telegram(f"{msg_tipo} EXITOSO: {symbol}\n📈 PnL: {pnl_pct:.2%}")
-                    time.sleep(5) 
+                    enviar_telegram(f"{msg_tipo} EJECUTADO\nActivo: {symbol}\n📈 PnL Final: {pnl_pct:.2%}")
+                    time.sleep(2)
                     
     except Exception as e:
-        logging.error(f"Error en patrulla: {e}")
+        logging.error(f"Error crítico en patrulla: {e}")
 
 def validar_datos_tecnicos(df_1h, df_5m, symbol):
     if len(df_1h) < 200: return False
@@ -310,41 +306,36 @@ def limpiar_datos_antiguos():
 def enviar_reporte_salud():
     try:
         balance = exchange.fetch_balance()
-        usdc_free = balance.get('total', {}).get('USDC', 0)
+        usdc_free = balance.get('free', {}).get('USDC', 0)
         posiciones = exchange.fetch_positions(params={'currency': 'USDC'})
         num_pos = len([p for p in posiciones if float(p.get('size', 0)) > 0])
         
-        mensaje = f"🤖 Bot Saludable\n💰 Balance: {usdc_free:.2f} USDC\n📊 Posiciones abiertas: {num_pos}"
+        mensaje = f"🤖 Bot Saludable\n💰 Balance Libre: {usdc_free:.2f} USDC\n📊 Posiciones: {num_pos}"
         enviar_telegram(mensaje)
     except Exception as e:
-        logging.error(f"Error en reporte de salud: {e}")
+        logging.error(f"Error en reporte salud: {e}")
 
 if __name__ == "__main__":
-    # Iniciar servidor web para keep-alive (Render/Heroku)
     Thread(target=lambda: app.run(host='0.0.0.0', port=8080), daemon=True).start()
-    logging.info("🤖 Bot iniciado. Patrulla de alta frecuencia activa.")
+    logging.info("🤖 Bot iniciado. Patrulla con Last Price activa.")
     
     contador_salud = 0
     
     while True:
         try:
-            # 1. PRIORIDAD: Patrulla de Emergencia (TP/SL y recuperación)
-            # Se ejecuta primero para proteger el capital ante cualquier escenario.
+            # 1. Patrulla de emergencia (TP/SL)
             patrulla_emergencia()
             
-            # 2. ESTRATEGIA: Buscar nuevas entradas
+            # 2. Ejecutar estrategia (Cuando esta abra operación, usa enviar_telegram)
             ejecutar_estrategia()
             
-            # 3. SISTEMA DE SALUD (Heartbeat)
-            # Envía un reporte cada 60 minutos (4 ciclos de 15 min = 1 hora)
+            # 3. Reporte de salud (Cada hora aprox: 240 ciclos * 15s = 3600s)
             contador_salud += 1
-            if contador_salud >= 4:
+            if contador_salud >= 240: 
                 enviar_reporte_salud()
                 contador_salud = 0
             
             time.sleep(15)
-            
         except Exception as e:
-            logging.error(f"Error crítico en bucle principal: {e}")
-            # Espera extendida ante errores para permitir la reconexión de red
+            logging.error(f"Error en bucle principal: {e}")
             time.sleep(60)
