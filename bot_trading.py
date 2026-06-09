@@ -136,66 +136,55 @@ def actualizar_trailing_stop(symbol, pos):
 
 def patrulla_emergencia():
     try:
-        # 1. Forzamos a Deribit a darnos las posiciones de la billetera USDC
         posiciones = exchange.fetch_positions(params={'currency': 'USDC'})
         
         for pos in posiciones:
-            # 2. CRÍTICO: Detectar Shorts (números negativos) y buscar en 'size' si 'contracts' falta
             contratos = abs(float(pos.get('contracts', 0) or pos.get('size', 0)))
+            if contratos <= 0: continue
             
-            if contratos > 0:
-                symbol = pos['symbol']
-                # Intentamos obtener el precio de entrada de varias formas
-                entry = float(pos.get('entry_price', 0) or pos.get('average_price', 0))
-                mark = float(pos.get('mark_price', 0))
-                side = pos['side']
+            symbol = pos['symbol']
+            mark = float(pos.get('mark_price', 0))
+            
+            # --- PROTECCIÓN CRÍTICA ---
+            if mark <= 0:
+                logging.warning(f"⚠️ Mark Price en 0 para {symbol}. Ignorando ciclo para evitar errores.")
+                continue
+            # --------------------------
+            
+            entry = float(pos.get('entry_price', 0) or pos.get('average_price', 0))
+            
+            if entry <= 0:
+                try:
+                    orders = exchange.fetch_closed_orders(symbol, limit=1)
+                    if orders: entry = float(orders[0]['price'])
+                    else: continue
+                except: continue
+
+            side = pos['side']
+            side_mult = 1 if side == 'long' else -1
+            pnl_pct = ((mark - entry) / entry) * side_mult
+            
+            # Filtro lógico: Solo cerramos si el PnL es real (evita lecturas erróneas del 100%)
+            if abs(pnl_pct) > 0.50:
+                logging.info(f"PnL extremo detectado ({pnl_pct:.2%}). Ignorando lectura errónea.")
+                continue
+
+            should_close = False
+            msg_tipo = ""
+
+            if pnl_pct >= 0.06:
+                should_close, msg_tipo = True, "💰 TAKE PROFIT"
+            elif pnl_pct <= -0.02:
+                should_close, msg_tipo = True, "🚨 STOP LOSS"
+
+            if should_close:
+                logging.warning(f"🎯 EJECUTANDO CIERRE {msg_tipo}: {symbol} al {pnl_pct:.2%}")
+                side_to_close = 'sell' if side == 'long' else 'buy'
+                success, _ = ejecutar_operacion(symbol, side_to_close, contratos)
                 
-                # --- MEJORA CRÍTICA: Si el precio sigue siendo 0, lo buscamos en el historial ---
-                if entry <= 0:
-                    try:
-                        # Buscamos la última orden cerrada de este símbolo para obtener el precio de ejecución
-                        orders = exchange.fetch_closed_orders(symbol, limit=1)
-                        if orders:
-                            entry = float(orders[0]['price'])
-                            logging.info(f"Recuperado precio histórico para {symbol}: {entry}")
-                        else:
-                            # Si no hay órdenes, avisamos y saltamos
-                            logging.warning(f"No se pudo recuperar precio de entrada real para {symbol}")
-                            continue
-                    except Exception as e:
-                        logging.error(f"Error recuperando historial para {symbol}: {e}")
-                        continue
-
-                # 3. Cálculo de PnL Porcentual
-                side_mult = 1 if side == 'long' else -1
-                pnl_pct = ((mark - entry) / entry) * side_mult
-                
-                # Log de monitoreo constante en Render
-                logging.info(f"MONITOR {symbol}: PnL {pnl_pct:.2%} | Entry: {entry:.4f} | Mark: {mark:.4f}")
-
-                # 4. LÓGICA DE CIERRE (Take Profit 6% / Stop Loss 2%)
-                should_close = False
-                msg_tipo = ""
-
-                if pnl_pct >= 0.06:
-                    should_close = True
-                    msg_tipo = "💰 TAKE PROFIT"
-                elif pnl_pct <= -0.02:
-                    should_close = True
-                    msg_tipo = "🚨 STOP LOSS"
-
-                if should_close:
-                    logging.warning(f"🎯 EJECUTANDO CIERRE {msg_tipo}: {symbol} al {pnl_pct:.2%}")
-                    
-                    # El lado de cierre es el opuesto al actual
-                    side_to_close = 'sell' if side == 'long' else 'buy'
-                    
-                    # Usamos la cantidad exacta de contratos que tiene la posición
-                    success, _ = ejecutar_operacion(symbol, side_to_close, contratos)
-                    
-                    if success:
-                        enviar_telegram(f"{msg_tipo} EXITOSO: {symbol}\n📈 PnL: {pnl_pct:.2%}\n📉 Cantidad: {contratos}")
-                        time.sleep(2) # Pausa breve entre cierres
+                if success:
+                    enviar_telegram(f"{msg_tipo} EXITOSO: {symbol}\n📈 PnL: {pnl_pct:.2%}")
+                    time.sleep(5) # Pausa larga para evitar bucles
                 
     except Exception as e:
         logging.error(f"Error crítico en patrulla de emergencia: {e}")
