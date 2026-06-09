@@ -106,17 +106,32 @@ def calcular_tamaño_posicion(symbol, balance_disponible, price):
         logging.error(f"Error calculando posición: {e}")
         return 0
 
-def ejecutar_operacion(symbol, side, pos_size):
+def ejecutar_operacion(symbol, side, pos_size, price):
+    """Ejecuta orden con TP/SL nativo de Deribit integrado."""
     try:
-        pos_size = float(exchange.amount_to_precision(symbol, pos_size))
-        order = exchange.create_order(symbol, 'market', side, pos_size, params={'leverage': APALANCAMIENTO})
+        is_long = (side == 'buy')
+        # Calcular niveles de salida
+        tp_price = float(exchange.price_to_precision(symbol, price * (1 + TAKE_PROFIT_PCT if is_long else 1 - TAKE_PROFIT_PCT)))
+        sl_price = float(exchange.price_to_precision(symbol, price * (1 - PORCENTAJE_SL if is_long else 1 + PORCENTAJE_SL)))
+        amount = float(exchange.amount_to_precision(symbol, pos_size))
+
+        # Parámetros para Deribit
+        params = {
+            'leverage': APALANCAMIENTO,
+            'stop_loss_price': sl_price,
+            'take_profit_price': tp_price,
+            'trigger': 'mark_price' 
+        }
         
-        if order.get('status') in ['closed', 'filled']:
+        logging.info(f"🚀 Enviando {side} {symbol} | SL: {sl_price} | TP: {tp_price}")
+        order = exchange.create_order(symbol, 'market', side, amount, params=params)
+        
+        if order:
             ultima_operacion[symbol] = datetime.datetime.now()
             return True, order
         return False, None
     except Exception as e:
-        logging.error(f"Error ejecutando orden {symbol} {side}: {e}")
+        logging.error(f"Error crítico en apertura: {e}")
         return False, None
 
 def actualizar_trailing_stop(symbol, pos):
@@ -135,9 +150,18 @@ def actualizar_trailing_stop(symbol, pos):
         logging.error(f"Error actualizando trailing stop {symbol}: {e}")
 
 def patrulla_emergencia():
+    """El Corazón Centinela: Vigila posiciones, limpia huérfanas y cierra si falla el TP/SL nativo."""
     try:
+        # 1. Obtener posiciones actuales
         posiciones = exchange.fetch_positions(params={'currency': 'USDC'})
-        
+        simbolos_con_posicion = [p['symbol'] for p in posiciones if abs(float(p.get('contracts', 0) or p.get('size', 0))) > 0]
+
+        # 2. LIMPIEZA: Si no hay posición activa, eliminamos órdenes huérfanas
+        for symbol in ASSETS:
+            if symbol not in simbolos_con_posicion:
+                limpiar_ordenes_huerfanas(symbol)
+
+        # 3. MONITOREO de posiciones
         for pos in posiciones:
             contratos = abs(float(pos.get('contracts', 0) or pos.get('size', 0)))
             if contratos <= 0: continue
@@ -145,42 +169,46 @@ def patrulla_emergencia():
             symbol = pos['symbol']
             side = pos['side']
             
-            # 1. Obtención de precio robusta usando Last Price
+            # Obtener Last Price
             ticker = exchange.fetch_ticker(symbol)
             last_price = float(ticker.get('last', 0))
+            if last_price <= 0: continue
             
-            if last_price <= 0:
-                logging.warning(f"⚠️ Last Price en 0 para {symbol}. Saltando.")
-                continue
-            
-            # 2. Recuperación de entrada (si el campo de la posición falla)
             entry = float(pos.get('entry_price', 0) or pos.get('average_price', 0))
             if entry <= 0:
                 orders = exchange.fetch_closed_orders(symbol, limit=1)
                 if orders: entry = float(orders[0]['price'])
                 else: continue
 
-            # 3. Cálculo de PnL
-            side_mult = 1 if side == 'long' else -1
-            pnl_pct = ((last_price - entry) / entry) * side_mult
-            
-            # Filtro anti-glitch para evitar cierres por errores de lectura
-            if abs(pnl_pct) > 0.50: continue
+            pnl_pct = ((last_price - entry) / entry) * (1 if side == 'long' else -1)
+            logging.info(f"🔍 PATRULLA {symbol} | PnL: {pnl_pct:.2%} | Last: {last_price}")
 
-            # 4. Lógica de Cierre
+            # Cierre de emergencia manual si TP/SL nativo no cerró
             if pnl_pct >= TAKE_PROFIT_PCT or pnl_pct <= -PORCENTAJE_SL:
                 msg_tipo = "💰 TAKE PROFIT" if pnl_pct >= TAKE_PROFIT_PCT else "🚨 STOP LOSS"
-                logging.warning(f"🎯 CIERRE {msg_tipo}: {symbol} | PnL: {pnl_pct:.2%}")
-                
                 side_to_close = 'sell' if side == 'long' else 'buy'
-                success, _ = ejecutar_operacion(symbol, side_to_close, contratos)
                 
-                if success:
-                    enviar_telegram(f"{msg_tipo} EJECUTADO\nActivo: {symbol}\n📈 PnL Final: {pnl_pct:.2%}")
-                    time.sleep(2)
-                    
+                try:
+                    order = exchange.create_order(symbol, 'market', side_to_close, contratos)
+                    if order:
+                        enviar_telegram(f"{msg_tipo} (Centinela) EJECUTADO\nActivo: {symbol}\nPnL: {pnl_pct:.2%}")
+                        time.sleep(2)
+                except Exception as e:
+                    logging.error(f"Fallo cierre patrulla {symbol}: {e}")
     except Exception as e:
         logging.error(f"Error crítico en patrulla: {e}")
+
+def limpiar_ordenes_huerfanas(symbol):
+    """Elimina órdenes pendientes de activos que no tienen posición abierta."""
+    try:
+        open_orders = exchange.fetch_open_orders(symbol)
+        for order in open_orders:
+            # Cancelamos si son órdenes trigger (nativas del exchange)
+            if order.get('type') in ['stop_market', 'stop', 'take_profit'] or 'trigger' in str(order):
+                exchange.cancel_order(order['id'], symbol)
+                logging.info(f"🧹 Limpieza: Cancelada orden huérfana {order['id']} de {symbol}")
+    except Exception as e:
+        logging.error(f"Error en limpieza de {symbol}: {e}")
 
 def validar_datos_tecnicos(df_1h, df_5m, symbol):
     if len(df_1h) < 200: return False
