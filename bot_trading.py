@@ -140,29 +140,40 @@ def patrulla_emergencia():
         posiciones = exchange.fetch_positions(params={'currency': 'USDC'})
         
         for pos in posiciones:
-            # 2. CRÍTICO: abs() para detectar Shorts (números negativos)
-            # También buscamos en 'size' por si 'contracts' viene vacío
+            # 2. CRÍTICO: Detectar Shorts (números negativos) y buscar en 'size' si 'contracts' falta
             contratos = abs(float(pos.get('contracts', 0) or pos.get('size', 0)))
             
             if contratos > 0:
                 symbol = pos['symbol']
-                entry = float(pos.get('entry_price', 0))
+                # Intentamos obtener el precio de entrada de varias formas
+                entry = float(pos.get('entry_price', 0) or pos.get('average_price', 0))
                 mark = float(pos.get('mark_price', 0))
                 side = pos['side']
                 
-                # 3. Protección contra división por cero
-                if entry <= 0: 
-                    logging.warning(f"Esperando precio de entrada para {symbol}...")
-                    continue
+                # --- MEJORA CRÍTICA: Si el precio sigue siendo 0, lo buscamos en el historial ---
+                if entry <= 0:
+                    try:
+                        # Buscamos la última orden cerrada de este símbolo para obtener el precio de ejecución
+                        orders = exchange.fetch_closed_orders(symbol, limit=1)
+                        if orders:
+                            entry = float(orders[0]['price'])
+                            logging.info(f"Recuperado precio histórico para {symbol}: {entry}")
+                        else:
+                            # Si no hay órdenes, avisamos y saltamos
+                            logging.warning(f"No se pudo recuperar precio de entrada real para {symbol}")
+                            continue
+                    except Exception as e:
+                        logging.error(f"Error recuperando historial para {symbol}: {e}")
+                        continue
 
-                # 4. Cálculo de PnL Porcentual
+                # 3. Cálculo de PnL Porcentual
                 side_mult = 1 if side == 'long' else -1
                 pnl_pct = ((mark - entry) / entry) * side_mult
                 
                 # Log de monitoreo constante en Render
-                logging.info(f"MONITOR {symbol}: PnL {pnl_pct:.2%} | Lado: {side}")
+                logging.info(f"MONITOR {symbol}: PnL {pnl_pct:.2%} | Entry: {entry:.4f} | Mark: {mark:.4f}")
 
-                # 5. LÓGICA DE CIERRE (Take Profit 6% / Stop Loss 2%)
+                # 4. LÓGICA DE CIERRE (Take Profit 6% / Stop Loss 2%)
                 should_close = False
                 msg_tipo = ""
 
@@ -184,8 +195,7 @@ def patrulla_emergencia():
                     
                     if success:
                         enviar_telegram(f"{msg_tipo} EXITOSO: {symbol}\n📈 PnL: {pnl_pct:.2%}\n📉 Cantidad: {contratos}")
-                        # Pequeña pausa para no saturar la API si hay varios cierres
-                        time.sleep(2)
+                        time.sleep(2) # Pausa breve entre cierres
                 
     except Exception as e:
         logging.error(f"Error crítico en patrulla de emergencia: {e}")
