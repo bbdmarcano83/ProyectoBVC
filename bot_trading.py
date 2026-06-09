@@ -54,32 +54,46 @@ def enviar_telegram(mensaje):
     except Exception as e:
         logging.error(f"Error enviando Telegram: {e}")
 
+import datetime
+# Diccionario para controlar el cooldown por símbolo
+ultima_operacion = {symbol: datetime.datetime.min for symbol in ASSETS}
+
+def puede_operar(symbol):
+    """Verifica si han pasado al menos 30 minutos desde la última operación en este símbolo"""
+    ahora = datetime.datetime.now()
+    tiempo_transcurrido = (ahora - ultima_operacion.get(symbol, datetime.datetime.min)).total_seconds()
+    return tiempo_transcurrido > 1800 # 1800 segundos = 30 minutos
+
 def puede_operar(symbol):
     if symbol in ultima_operacion:
         tiempo_transcurrido = datetime.datetime.now() - ultima_operacion[symbol]
         return tiempo_transcurrido.total_seconds() > (COOLDOWN_MINUTOS * 60)
     return True
 
-def calcular_tamaño_posicion(symbol, balance, price):
+def calcular_tamaño_posicion(symbol, balance_disponible, price):
     try:
         market = exchange.market(symbol)
         min_size = market['limits']['amount']['min']
-        max_size_exch = market['limits']['amount']['max']
         
-        monto_riesgo = balance * RIESGO_FIJO
+        # 2% de riesgo sobre el disponible
+        monto_riesgo = balance_disponible * RIESGO_FIJO
+        
+        # Cálculo de contratos
         pos_size = (monto_riesgo / (price * PORCENTAJE_SL)) * APALANCAMIENTO
         
-        if max_size_exch:
-            pos_size = min(pos_size, max_size_exch * 0.95)
-            
-        max_size_balance = (balance * 0.25) / price
-        pos_size = min(pos_size, max_size_balance)
+        # Seguridad: Máximo 80% del disponible para dejar margen de fees
+        max_size_seguro = (balance_disponible * 0.80) / price
+        pos_size = min(pos_size, max_size_seguro)
+        
+        # Límites del exchange
+        max_exch = market['limits']['amount']['max']
+        if max_exch: 
+            pos_size = min(pos_size, max_exch * 0.95)
         
         if pos_size < min_size: return 0
-        
         return float(exchange.amount_to_precision(symbol, pos_size))
     except Exception as e:
-        logging.error(f"Error calculando posición {symbol}: {e}")
+        logging.error(f"Error calculando posición: {e}")
         return 0
 
 def ejecutar_operacion(symbol, side, pos_size):
@@ -157,26 +171,40 @@ def filtrar_por_volatilidad(df_5m, price):
     except: return False, "Error Volatilidad"
 
 def ejecutar_estrategia():
-    # 1. Obtener posiciones al inicio para saber qué hay abierto
+    # 1. Obtener posiciones actuales
     try:
         todas_las_posiciones = exchange.fetch_positions()
         activas = [p for p in todas_las_posiciones if float(p.get('contracts', 0)) > 0]
         posiciones_abiertas = len(activas)
         simbolos_con_posicion = [p['symbol'] for p in activas]
-        
-        # LOG DE ESTADO (Para que veas qué detecta el bot)
-        logging.info(f"--- NUEVO CICLO --- Posiciones abiertas: {posiciones_abiertas} ({', '.join(simbolos_con_posicion)})")
+        logging.info(f"--- STATUS --- Abiertas: {posiciones_abiertas} | Activos: {', '.join(simbolos_con_posicion)}")
     except Exception as e:
-        logging.error(f"Error consultando posiciones: {e}")
+        logging.error(f"Error al obtener posiciones: {e}")
         return
 
-    try:
-        balance = exchange.fetch_balance()['total']['USDC']
-    except: return
+    # 2. Bloqueo global si tenemos 2 o más posiciones
+    if posiciones_abiertas >= 2:
+        return
 
+    # 3. Obtener Balance Disponible (solo dinero líquido/free)
+    try:
+        full_balance = exchange.fetch_balance()
+        balance_disponible = full_balance.get('free', {}).get('USDC', 0)
+        logging.info(f"💰 Balance USDC Disponible: ${balance_disponible:.2f}")
+
+        if balance_disponible <= 5:
+            return
+    except Exception as e:
+        logging.error(f"Error obteniendo balance: {e}")
+        return
+
+    # 4. Bucle por cada activo configurado
     for symbol in ASSETS:
+        if symbol in simbolos_con_posicion:
+            continue
+
         try:
-            # 2. Obtener datos SIEMPRE para la auditoría (aunque ya haya posición)
+            # Descarga de datos
             df_1h = pd.DataFrame(exchange.fetch_ohlcv(symbol, '1h', limit=200), columns=['t','o','h','l','c','v'])
             df_5m = pd.DataFrame(exchange.fetch_ohlcv(symbol, '5m', limit=100), columns=['t','o','h','l','c','v'])
             
@@ -185,47 +213,42 @@ def ejecutar_estrategia():
             ema200 = ta.ema(df_1h['c'], length=200).iloc[-1]
             rsi = ta.rsi(df_5m['c'], length=14).iloc[-1]
             wma = ta.wma(df_5m['c'], length=14).iloc[-1]
-            price, close_1h = df_5m['c'].iloc[-1], df_1h['c'].iloc[-1]
+            price = df_5m['c'].iloc[-1]
+            close_1h = df_1h['c'].iloc[-1]
 
-            # 3. AUDITORÍA VISIBLE (Moverla aquí arriba para verla siempre)
-            logging.info(f"AUDITORÍA: {symbol} -> Precio: {price}, RSI: {rsi:.2f}, EMA: {ema200:.2f}")
-
-            # 4. Verificaciones de bloqueo (Después de la auditoría)
-            if symbol in simbolos_con_posicion:
-                continue # No loguea señal si ya está adentro
-
-            if posiciones_abiertas >= 2:
-                continue # No loguea señal si el cupo está lleno
-
+            # Filtros de Seguridad
             if not puede_operar(symbol): continue
             if pd.isna(rsi) or pd.isna(ema200): continue
-
-            # Filtro Volatilidad
-            vol_ok, vol_msg = filtrar_por_volatilidad(df_5m, price)
-            if not vol_ok: continue
 
             # Lógica de señales
             long_signal = (close_1h > ema200 and rsi < 30 and price > wma)
             short_signal = (close_1h < ema200 and rsi > 70 and price < wma)
+            side = 'buy' if long_signal else 'sell' if short_signal else None
             
-            if long_signal: side, strength = 'buy', "LONG"
-            elif short_signal: side, strength = 'sell', "SHORT"
-            else: continue
+            if not side: continue
+
+            # Doble check de posición
+            check_final = exchange.fetch_positions([symbol])
+            if any(float(p.get('contracts', 0)) > 0 for p in check_final):
+                continue
+
+            # Cálculo de tamaño
+            pos_size = calcular_tamaño_posicion(symbol, balance_disponible, price)
             
-            # 5. Ejecución
-            pos_size = calcular_tamaño_posicion(symbol, balance, price)
             if pos_size > 0:
-                logging.warning(f"🎯 SEÑAL DETECTADA: {side} en {symbol}. Ejecutando...")
+                logging.warning(f"🚀 DISPARANDO ORDEN: {side} {symbol} Cant: {pos_size}")
                 success, order = ejecutar_operacion(symbol, side, pos_size)
                 
                 if success:
-                    enviar_telegram(f"🚀 ENTRADA: {side.upper()} {symbol}\n📊 RSI: {rsi:.2f}")
-                    simbolos_con_posicion.append(symbol)
-                    posiciones_abiertas += 1
-                    time.sleep(10) # Pausa tras operar
-                    
+                    enviar_telegram(f"✅ ORDEN EXITOSA: {side} {symbol}")
+                    ultima_operacion[symbol] = datetime.datetime.now()
+                    logging.info("Esperando 20s para sincronización...")
+                    time.sleep(20)
+                    return # Salida forzada para evitar spam de órdenes
+
         except Exception as e:
-            logging.error(f"Error en {symbol}: {e}")
+            logging.error(f"Error procesando {symbol}: {e}")
+            time.sleep(2)
 
 def limpiar_datos_antiguos():
     ahora = datetime.datetime.now()
