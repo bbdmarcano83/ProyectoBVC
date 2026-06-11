@@ -110,7 +110,6 @@ def ejecutar_operacion(symbol, side, pos_size, price):
     """Ejecuta orden con TP/SL nativo de Deribit integrado."""
     try:
         is_long = (side == 'buy')
-        # Calculamos niveles nativos
         tp_price = float(exchange.price_to_precision(symbol, price * (1 + TAKE_PROFIT_PCT if is_long else 1 - TAKE_PROFIT_PCT)))
         sl_price = float(exchange.price_to_precision(symbol, price * (1 - PORCENTAJE_SL if is_long else 1 + PORCENTAJE_SL)))
         amount = float(exchange.amount_to_precision(symbol, pos_size))
@@ -132,20 +131,38 @@ def ejecutar_operacion(symbol, side, pos_size, price):
         logging.error(f"Error crítico en apertura con TP/SL: {e}")
         return False, None
 
+def ajustar_sl_nativo(symbol, nuevo_sl):
+    try:
+        open_orders = exchange.fetch_open_orders(symbol)
+        for order in open_orders:
+            if order.get('type') == 'stop_market' or order.get('stopPrice') is not None:
+                exchange.edit_order(order['id'], symbol, 'stop_market', None, None, {'stopPrice': nuevo_sl})
+                logging.info(f"🚀 Trailing aplicado en {symbol} a {nuevo_sl}")
+                break
+    except Exception as e:
+        logging.debug(f"Ajuste SL omitido para {symbol}: {e}")
+
 def actualizar_trailing_stop(symbol, pos):
     try:
-        mark_price = float(pos['mark_price'])
-        side = pos['side']
-        if side == 'long':
+        # Usamos mark_price del exchange si no está en el objeto pos
+        mark_price = float(pos.get('mark_price') or exchange.fetch_ticker(symbol)['mark'])
+        entry = float(pos.get('entry_price', 0))
+        side = 'long' if float(pos.get('size', 0)) > 0 else 'short'
+        
+        umbral_cambio = 0.001 
+        
+        if side == 'long' and mark_price > entry * 1.01:
             nuevo_sl = mark_price * (1 - PORCENTAJE_SL)
-            if symbol not in trailing_stops or nuevo_sl > trailing_stops[symbol]:
+            if symbol not in trailing_stops or nuevo_sl > (trailing_stops[symbol] * (1 + umbral_cambio)):
                 trailing_stops[symbol] = nuevo_sl
-        else:
+        
+        elif side == 'short' and mark_price < entry * 0.99:
             nuevo_sl = mark_price * (1 + PORCENTAJE_SL)
-            if symbol not in trailing_stops or nuevo_sl < trailing_stops[symbol]:
+            if symbol not in trailing_stops or nuevo_sl < (trailing_stops[symbol] * (1 - umbral_cambio)):
                 trailing_stops[symbol] = nuevo_sl
+                
     except Exception as e:
-        logging.error(f"Error actualizando trailing stop {symbol}: {e}")
+        logging.error(f"Error cálculo trailing {symbol}: {e}")
 
 def patrulla_emergencia():
     """El Corazón Centinela: Vigila posiciones, limpia huérfanas y cierra si falla el TP/SL nativo."""
@@ -159,7 +176,7 @@ def patrulla_emergencia():
             if symbol not in simbolos_con_posicion:
                 limpiar_ordenes_huerfanas(symbol)
 
-        # 3. MONITOREO de posiciones
+       # 3. MONITOREO y GESTIÓN DE POSICIONES
         for pos in posiciones:
             contratos = abs(float(pos.get('contracts', 0) or pos.get('size', 0)))
             if contratos <= 0: continue
@@ -167,21 +184,28 @@ def patrulla_emergencia():
             symbol = pos['symbol']
             side = pos['side']
             
-            # Obtener Last Price
+            # Obtener datos de mercado
             ticker = exchange.fetch_ticker(symbol)
             last_price = float(ticker.get('last', 0))
             if last_price <= 0: continue
             
+            # Obtener precio de entrada
             entry = float(pos.get('entry_price', 0) or pos.get('average_price', 0))
             if entry <= 0:
                 orders = exchange.fetch_closed_orders(symbol, limit=1)
                 if orders: entry = float(orders[0]['price'])
                 else: continue
 
-            pnl_pct = ((last_price - entry) / entry) * (1 if side == 'long' else -1)
-            logging.warning(f"🔍 PATRULLA {symbol} | PnL: {pnl_pct:.2%} | Last: {last_price}")
+            # --- GESTIÓN DE TRAILING STOP ---
+            # Actualiza el precio SL en memoria y lo aplica al Exchange
+            actualizar_trailing_stop(symbol, pos)
+            if symbol in trailing_stops:
+                ajustar_sl_nativo(symbol, trailing_stops[symbol])
 
-            # Cierre de emergencia manual si TP/SL nativo no cerró
+            # --- MONITOREO DE SEGURIDAD (Cierre Emergencia) ---
+            pnl_pct = ((last_price - entry) / entry) * (1 if side == 'long' else -1)
+            
+            # Cierre de emergencia si se toca el TP/SL nativo o fallo
             if pnl_pct >= TAKE_PROFIT_PCT or pnl_pct <= -PORCENTAJE_SL:
                 msg_tipo = "💰 TAKE PROFIT" if pnl_pct >= TAKE_PROFIT_PCT else "🚨 STOP LOSS"
                 side_to_close = 'sell' if side == 'long' else 'buy'
@@ -190,11 +214,10 @@ def patrulla_emergencia():
                     order = exchange.create_order(symbol, 'market', side_to_close, contratos)
                     if order:
                         enviar_telegram(f"{msg_tipo} (Centinela) EJECUTADO\nActivo: {symbol}\nPnL: {pnl_pct:.2%}")
+                        if symbol in trailing_stops: del trailing_stops[symbol] # Limpiar memoria
                         time.sleep(2)
                 except Exception as e:
                     logging.error(f"Fallo cierre patrulla {symbol}: {e}")
-    except Exception as e:
-        logging.error(f"Error crítico en patrulla: {e}")
 
 def limpiar_ordenes_huerfanas(symbol):
     """Elimina órdenes pendientes de activos que no tienen posición abierta."""
