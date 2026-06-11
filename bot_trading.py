@@ -69,16 +69,15 @@ import datetime
 ultima_operacion = {symbol: datetime.datetime.min for symbol in ASSETS}
 
 def puede_operar(symbol):
-    """Verifica si han pasado al menos 30 minutos desde la última operación en este símbolo"""
-    ahora = datetime.datetime.now()
-    tiempo_transcurrido = (ahora - ultima_operacion.get(symbol, datetime.datetime.min)).total_seconds()
-    return tiempo_transcurrido > 1800 # 1800 segundos = 30 minutos
-
-def puede_operar(symbol):
-    if symbol in ultima_operacion:
-        tiempo_transcurrido = datetime.datetime.now() - ultima_operacion[symbol]
-        return tiempo_transcurrido.total_seconds() > (COOLDOWN_MINUTOS * 60)
-    return True
+    """Verifica si han pasado X minutos desde la última operación en este símbolo."""
+    # Si el símbolo no ha operado nunca, devuelve True (puede operar)
+    if symbol not in ultima_operacion:
+        return True
+    
+    # Si ha operado, calcula el tiempo transcurrido
+    tiempo_transcurrido = (datetime.datetime.now() - ultima_operacion[symbol]).total_seconds()
+    
+    return tiempo_transcurrido > (COOLDOWN_MINUTOS * 60)
 
 def calcular_tamaño_posicion(symbol, balance_disponible, price):
     try:
@@ -216,9 +215,11 @@ def patrulla_emergencia():
                         enviar_telegram(f"{msg_tipo} (Centinela) EJECUTADO\nActivo: {symbol}\nPnL: {pnl_pct:.2%}")
                         if symbol in trailing_stops: del trailing_stops[symbol] # Limpiar memoria
                         time.sleep(2)
-                
-    except Exception as e: # <--- ESTO ES LO QUE FALTABA
+                except Exception as e:
+                    logging.error(f"Fallo cierre patrulla {symbol}: {e}")
+    except Exception as e:
         logging.error(f"Error crítico en patrulla_emergencia: {e}")
+    
 
 def limpiar_ordenes_huerfanas(symbol):
     """Elimina órdenes pendientes de activos que no tienen posición abierta."""
@@ -348,11 +349,14 @@ def ejecutar_estrategia():
             time.sleep(2)
 
 def limpiar_datos_antiguos():
-    ahora = datetime.datetime.now()
-    to_rem = [s for s, t in ultima_operacion.items() if (ahora - t).total_seconds() > 86400]
-    for s in to_rem:
-        del ultima_operacion[s]
-        if s in trailing_stops: del trailing_stops[s]
+    try:
+        ahora = datetime.datetime.now()
+        to_rem = [s for s, t in ultima_operacion.items() if (ahora - t).total_seconds() > 86400]
+        for s in to_rem:
+            if s in ultima_operacion: del ultima_operacion[s]
+            if s in trailing_stops: del trailing_stops[s]
+    except Exception as e:
+        logging.error(f"Error limpiando datos antiguos: {e}")
          
 def enviar_reporte_salud():
     try:
