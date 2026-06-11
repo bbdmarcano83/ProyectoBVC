@@ -143,8 +143,10 @@ def ajustar_sl_nativo(symbol, nuevo_sl):
 
 def actualizar_trailing_stop(symbol, pos):
     try:
-        # Usamos mark_price del exchange si no está en el objeto pos
-        mark_price = float(pos.get('mark_price') or exchange.fetch_ticker(symbol).get('mark', last_price))
+        # CORRECCIÓN: Evitamos usar 'last_price' como fallback, usamos el último precio del ticker
+        ticker = exchange.fetch_ticker(symbol)
+        mark_price = float(pos.get('mark_price') or ticker.get('mark') or ticker.get('last'))
+        
         entry = float(pos.get('entry_price', 0))
         side = 'long' if float(pos.get('size', 0)) > 0 else 'short'
         
@@ -222,14 +224,22 @@ def patrulla_emergencia():
     
 
 def limpiar_ordenes_huerfanas(symbol):
-    """Elimina órdenes pendientes de activos que no tienen posición abierta."""
     try:
         open_orders = exchange.fetch_open_orders(symbol)
         for order in open_orders:
-            # Cancelamos si son órdenes trigger (nativas del exchange)
-            if order.get('type') in ['stop_market', 'stop', 'take_profit'] or 'trigger' in str(order):
-                exchange.cancel_order(order['id'], symbol)
-                logging.info(f"🧹 Limpieza: Cancelada orden huérfana {order['id']} de {symbol}")
+            # Identificamos el tipo y el ID para el log
+            tipo = order.get('type')
+            id_orden = order.get('id')
+            
+            # Condición de limpieza
+            if tipo in ['stop_market', 'stop', 'take_profit'] or 'trigger' in str(order).lower():
+                logging.info(f"🧹 Detectada orden huérfana: ID {id_orden} | Tipo: {tipo} | Símbolo: {symbol}")
+                exchange.cancel_order(id_orden, symbol)
+                logging.info(f"✅ Limpieza confirmada: Cancelada orden {id_orden}")
+            else:
+                # Esto es útil para debuguear si hay órdenes que no estás atrapando
+                logging.debug(f"Orden activa ignorada en limpieza: ID {id_orden} | Tipo: {tipo}")
+                
     except Exception as e:
         logging.error(f"Error en limpieza de {symbol}: {e}")
 
@@ -291,7 +301,7 @@ def ejecutar_estrategia():
         try:
             # Descarga de datos (200 velas 1h, 100 velas 5m para evitar RSI NaN)
             df_1h = pd.DataFrame(exchange.fetch_ohlcv(symbol, '1h', limit=200), columns=['t','o','h','l','c','v'])
-            df_5m = pd.DataFrame(exchange.fetch_ohlcv(symbol, '5m', limit=100), columns=['t','o','h','l','c','v'])
+            df_5m = pd.DataFrame(exchange.fetch_ohlcv(symbol, '5m', limit=200), columns=['t','o','h','l','c','v'])
             
             if not validar_datos_tecnicos(df_1h, df_5m, symbol): 
                 continue
