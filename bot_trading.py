@@ -217,7 +217,6 @@ def patrulla_emergencia():
                         if symbol in trailing_stops: del trailing_stops[symbol] # Limpiar memoria
                         time.sleep(2)
                 
-
     except Exception as e: # <--- ESTO ES LO QUE FALTABA
         logging.error(f"Error crítico en patrulla_emergencia: {e}")
 
