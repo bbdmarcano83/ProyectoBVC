@@ -216,8 +216,10 @@ def patrulla_emergencia():
                         enviar_telegram(f"{msg_tipo} (Centinela) EJECUTADO\nActivo: {symbol}\nPnL: {pnl_pct:.2%}")
                         if symbol in trailing_stops: del trailing_stops[symbol] # Limpiar memoria
                         time.sleep(2)
-                except Exception as e:
-                    logging.error(f"Fallo cierre patrulla {symbol}: {e}")
+                
+
+    except Exception as e: # <--- ESTO ES LO QUE FALTABA
+        logging.error(f"Error crítico en patrulla_emergencia: {e}")
 
 def limpiar_ordenes_huerfanas(symbol):
     """Elimina órdenes pendientes de activos que no tienen posición abierta."""
