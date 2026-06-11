@@ -144,7 +144,7 @@ def ajustar_sl_nativo(symbol, nuevo_sl):
 def actualizar_trailing_stop(symbol, pos):
     try:
         # Usamos mark_price del exchange si no está en el objeto pos
-        mark_price = float(pos.get('mark_price') or exchange.fetch_ticker(symbol).get('mark', last_price)
+        mark_price = float(pos.get('mark_price') or exchange.fetch_ticker(symbol).get('mark', last_price))
         entry = float(pos.get('entry_price', 0))
         side = 'long' if float(pos.get('size', 0)) > 0 else 'short'
         
