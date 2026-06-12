@@ -37,9 +37,11 @@ PORCENTAJE_SL = 0.02
 TAKE_PROFIT_PCT = 0.06
 MAX_VOLATILIDAD = 0.05
 COOLDOWN_MINUTOS = 30
+DURACION_BLOQUEO = 3600
 
 ultima_operacion = {}
 trailing_stops = {}
+bloqueos_temporales = {}
 
 app = Flask(__name__)
 
@@ -64,7 +66,6 @@ def enviar_telegram(mensaje):
     except Exception as e:
         logging.error(f"Error de red enviando Telegram: {e}")
 
-import datetime
 # Diccionario para controlar el cooldown por símbolo
 ultima_operacion = {symbol: datetime.datetime.min for symbol in ASSETS}
 
@@ -80,31 +81,48 @@ def puede_operar(symbol):
     return tiempo_transcurrido > (COOLDOWN_MINUTOS * 60)
 
 def calcular_tamaño_posicion(symbol, balance_disponible, price):
+    """
+    Calcula el tamaño de posición con validación estricta de límites del exchange.
+    Previene el error 10057 (Invalid parameter) asegurando precisión y límites.
+    """
     try:
         market = exchange.market(symbol)
-        min_size = market['limits']['amount']['min']
         
-        # 2% de riesgo sobre el disponible
+        # 1. Definir riesgo base
         monto_riesgo = balance_disponible * RIESGO_FIJO
         
-        # Cálculo de contratos
-        pos_size = (monto_riesgo / (price * PORCENTAJE_SL)) * APALANCAMIENTO
+        # 2. Cálculo base de contratos
+        pos_size = (monto_riesgo / (price * PORCENTAJE_SL))
         
-        # Seguridad: Máximo 80% del disponible para dejar margen de fees
-        max_size_seguro = (balance_disponible * 0.80) / price
+        # 3. Aplicar límite máximo de seguridad (50% del balance para protección)
+        max_size_seguro = (balance_disponible * 0.50) / price
         pos_size = min(pos_size, max_size_seguro)
         
-        # Límites del exchange
-        max_exch = market['limits']['amount']['max']
-        if max_exch: 
-            pos_size = min(pos_size, max_exch * 0.95)
+        # 4. Ajustar al paso mínimo (Step Size) permitido por el exchange
+        # Esto es vital para evitar el error 10057 por exceso de decimales
+        pos_size = float(exchange.amount_to_precision(symbol, pos_size))
         
-        if pos_size < min_size: return 0
-        return float(exchange.amount_to_precision(symbol, pos_size))
+        # 5. Verificación final contra límites (MIN y MAX)
+        limits = market['limits']['amount']
+        min_size = limits['min']
+        max_size = limits['max']
+        
+        # Validación de mínimo
+        if pos_size < min_size:
+            logging.warning(f"Tamaño {pos_size} menor al mínimo {min_size} en {symbol}. Abortando.")
+            return 0
+            
+        # Validación de máximo
+        if max_size and pos_size > max_size:
+            logging.info(f"Tamaño {pos_size} excede el máximo {max_size} en {symbol}. Ajustando.")
+            pos_size = float(exchange.amount_to_precision(symbol, max_size))
+            
+        return pos_size
+            
     except Exception as e:
-        logging.error(f"Error calculando posición: {e}")
+        logging.error(f"Error crítico en cálculo de posición: {e}")
         return 0
-
+            
 def ejecutar_operacion(symbol, side, pos_size, price):
     """Ejecuta orden con TP/SL nativo de Deribit integrado."""
     try:
@@ -210,15 +228,19 @@ def patrulla_emergencia():
             if pnl_pct >= TAKE_PROFIT_PCT or pnl_pct <= -PORCENTAJE_SL:
                 msg_tipo = "💰 TAKE PROFIT" if pnl_pct >= TAKE_PROFIT_PCT else "🚨 STOP LOSS"
                 side_to_close = 'sell' if side == 'long' else 'buy'
+
+                contratos = abs(float(pos.get('contracts', 0) or pos.get('size', 0)))
+                amount_to_close = float(exchange.amount_to_precision(symbol, contratos))
                 
                 try:
-                    order = exchange.create_order(symbol, 'market', side_to_close, contratos)
+                    order = exchange.create_order(symbol, 'market', side_to_close, amount_to_close)
                     if order:
                         enviar_telegram(f"{msg_tipo} (Centinela) EJECUTADO\nActivo: {symbol}\nPnL: {pnl_pct:.2%}")
-                        if symbol in trailing_stops: del trailing_stops[symbol] # Limpiar memoria
+                        if symbol in trailing_stops: del trailing_stops[symbol]
                         time.sleep(2)
                 except Exception as e:
                     logging.error(f"Fallo cierre patrulla {symbol}: {e}")
+
     except Exception as e:
         logging.error(f"Error crítico en patrulla_emergencia: {e}")
     
@@ -391,16 +413,15 @@ if __name__ == "__main__":
             # 1. Patrulla de emergencia (TP/SL)
             patrulla_emergencia()
             
-            # 2. Ejecutar estrategia (Cuando esta abra operación, usa enviar_telegram)
             ejecutar_estrategia()
             
-            # 3. Reporte de salud (Cada hora aprox: 240 ciclos * 15s = 3600s)
+            # 4. Reporte de salud
             contador_salud += 1
             if contador_salud >= 240: 
                 enviar_reporte_salud()
                 contador_salud = 0
             
-            time.sleep(15)
+            time.sleep(20)
         except Exception as e:
             logging.error(f"Error en bucle principal: {e}")
             time.sleep(60)
