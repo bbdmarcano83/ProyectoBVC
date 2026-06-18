@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}BVC Tracker{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/main.css">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="/" class="logo">
+                <span class="logo-mark">▸</span> BVC<span class="logo-dim">tracker</span>
+            </a>
+            <nav class="header-nav">
+                <a href="/" class="nav-link {% if active == 'pizarra' %}active{% endif %}">Pizarra</a>
+                <a href="/portafolio" class="nav-link {% if active == 'portafolio' %}active{% endif %}">Portafolio</a>
+            </nav>
+            <div class="header-time" id="reloj">--:--:--</div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="ticker-bar">
+        <div class="ticker-inner" id="ticker-content">
+            {% block ticker %}{% endblock %}
+        </div>
+    </footer>
+
+    <script src="/static/js/main.js"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

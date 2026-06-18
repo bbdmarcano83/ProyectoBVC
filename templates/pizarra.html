@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Pizarra — BVC Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Mercado <span class="dim">Renta Variable</span></h1>
+    <span class="badge badge--live">● En vivo</span>
+</div>
+
+<div class="table-wrapper">
+    <table class="data-table" id="tabla-pizarra">
+        <thead>
+            <tr>
+                <th class="col-simb sortable" data-col="0">Activo</th>
+                <th class="sortable" data-col="1">Vol. Compra</th>
+                <th class="sortable" data-col="2">P. Compra (Bs)</th>
+                <th class="sortable" data-col="3">P. Venta (Bs)</th>
+                <th class="sortable" data-col="4">Vol. Venta</th>
+                <th class="sortable" data-col="5">Último (Bs)</th>
+                <th class="sortable" data-col="6">Títulos</th>
+                <th class="sortable" data-col="7">Vol. Transado (Bs)</th>
+                <th class="sortable active-sort" data-col="8">Var. %</th>
+                <th class="sortable" data-col="9">Var. Bs</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in datos %}
+            {% set var = item.VAR_REL | float %}
+            {% set dir = 'up' if var > 0 else ('down' if var < 0 else 'flat') %}
+            <tr>
+                <td class="col-simb">
+                    <a href="/detalle/{{ item.COD_SIMB }}" class="simb-link">
+                        <img src="{{ item.ICON }}" class="logo-img" onerror="this.remove()">
+                        <span>{{ item.COD_SIMB }}</span>
+                    </a>
+                </td>
+                <td class="mono">{{ item.VOL_CMP_1 or '—' }}</td>
+                <td class="mono buy">{{ item.PRE_CMP_1 | float | format_bs }}</td>
+                <td class="mono sell">{{ item.PRE_VTA_1 | default(0) | float | format_bs }}</td>
+                <td class="mono">{{ item.VOL_VTA_1 or '—' }}</td>
+                <td class="mono">{{ item.PRECIO | float | format_bs }}</td>
+                <td class="mono">{{ item.VOLUMEN or '—' }}</td>
+                <td class="mono">{{ item.MONTO_EFECTIVO | float | format_bs }}</td>
+                <td class="mono var-{{ dir }}">
+                    {% if dir == 'up' %}▲{% elif dir == 'down' %}▼{% else %}▬{% endif %}
+                    {{ "%.2f"|format(var) }}%
+                </td>
+                <td class="mono var-{{ dir }}">
+                    {{ item.VAR_ABS | float | format_bs }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block ticker %}
+{% for item in datos %}
+{% set var = item.VAR_REL | float %}
+<span class="tick-item {% if var > 0 %}tick-up{% elif var < 0 %}tick-down{% endif %}">
+    <b>{{ item.COD_SIMB }}</b>
+    {{ item.PRECIO | float | format_bs }} Bs
+    <span>{{ "%.2f"|format(var) }}%</span>
+</span>
+{% endfor %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Ordenamiento de tabla al hacer clic en encabezado
+    document.querySelectorAll('.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = parseInt(th.dataset.col);
+            const tbody = document.querySelector('#tabla-pizarra tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const asc = th.classList.contains('asc');
+
+            document.querySelectorAll('.sortable').forEach(h => h.classList.remove('asc', 'desc', 'active-sort'));
+            th.classList.add('active-sort', asc ? 'desc' : 'asc');
+
+            rows.sort((a, b) => {
+                const av = parseFloat(a.cells[col].textContent.replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0;
+                const bv = parseFloat(b.cells[col].textContent.replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0;
+                return asc ? bv - av : av - bv;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Portafolio — BVC Tracker{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Mi <span class="dim">Portafolio</span></h1>
+    <div class="header-actions">
+        <form action="/configurar" method="post" class="inline-form">
+            <label class="form-label">Tasa BCV</label>
+            <input type="number" name="tasa" value="{{ tasa }}" step="any" class="input-sm" required>
+            <button type="submit" class="btn btn--ghost">Fijar</button>
+        </form>
+        <button class="btn btn--primary" onclick="abrirModal('modal-agregar')">+ Agregar</button>
+    </div>
+</div>
+
+<!-- Tarjetas resumen -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <span class="stat-label">Valor de Mercado</span>
+        <span class="stat-value mono">{{ resumen.total_mkt | format_bs }} Bs</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Costo Total</span>
+        <span class="stat-value mono">{{ resumen.total_inv | format_bs }} Bs</span>
+    </div>
+    <div class="stat-card {% if resumen.gan_bs >= 0 %}stat-card--up{% else %}stat-card--down{% endif %}">
+        <span class="stat-label">Ganancia (Bs)</span>
+        <span class="stat-value mono">{{ resumen.gan_bs | format_bs }} Bs</span>
+    </div>
+    <div class="stat-card {% if resumen.gan_usd >= 0 %}stat-card--up{% else %}stat-card--down{% endif %}">
+        <span class="stat-label">Ganancia (USD)</span>
+        <span class="stat-value mono">{{ "%.2f"|format(resumen.gan_usd) }} $</span>
+    </div>
+    <div class="stat-card {% if resumen.rend >= 0 %}stat-card--up{% else %}stat-card--down{% endif %}">
+        <span class="stat-label">Rendimiento</span>
+        <span class="stat-value mono">{{ "%.2f"|format(resumen.rend) }}%</span>
+    </div>
+</div>
+
+{% if filas %}
+<div class="chart-row">
+    <div class="chart-wrap">
+        <canvas id="chartComposicion"></canvas>
+    </div>
+    <div class="chart-wrap">
+        <canvas id="chartRendimiento"></canvas>
+    </div>
+</div>
+
+<div class="table-wrapper">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Símbolo</th>
+                <th>Cantidad</th>
+                <th>P. Promedio</th>
+                <th>P. Mercado</th>
+                <th>Costo Total</th>
+                <th>Val. Mercado</th>
+                <th>Peso %</th>
+                <th>Ganancia Bs</th>
+                <th>Ganancia USD</th>
+                <th>Rend. %</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in filas %}
+            <tr>
+                <td><a href="/detalle/{{ f.simb }}" class="simb-link"><b>{{ f.simb }}</b></a></td>
+                <td class="mono">{{ f.cantidad }}</td>
+                <td class="mono">{{ f.precio_prom | format_bs }}</td>
+                <td class="mono">{{ f.precio_actual | format_bs }}</td>
+                <td class="mono">{{ f.costo_total | format_bs }}</td>
+                <td class="mono">{{ f.val_mkt | format_bs }}</td>
+                <td class="mono">{{ "%.1f"|format(f.peso_pct) }}%</td>
+                <td class="mono {% if f.ganancia >= 0 %}var-up{% else %}var-down{% endif %}">
+                    {{ f.ganancia | format_bs }}
+                </td>
+                <td class="mono {% if f.gan_usd >= 0 %}var-up{% else %}var-down{% endif %}">
+                    {{ "%.2f"|format(f.gan_usd) }} $
+                </td>
+                <td class="mono {% if f.rend_pct >= 0 %}var-up{% else %}var-down{% endif %}">
+                    {{ "%.2f"|format(f.rend_pct) }}%
+                </td>
+                <td class="actions-cell">
+                    <button class="btn btn--sm btn--ghost"
+                        onclick="abrirEditar('{{ f.simb }}', {{ f.cantidad }}, {{ f.precio_prom }})">
+                        Editar
+                    </button>
+                    <button class="btn btn--sm btn--danger"
+                        onclick="confirmarEliminar('{{ f.simb }}')">
+                        ✕
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <p>Tu portafolio está vacío.</p>
+    <button class="btn btn--primary" onclick="abrirModal('modal-agregar')">Agregar primer activo</button>
+</div>
+{% endif %}
+
+<!-- ── Modal: Agregar ──────────────────────────────────────────── -->
+<div id="modal-agregar" class="overlay" onclick="cerrarSiOverlay(event, this)">
+    <div class="modal">
+        <button class="modal-close" onclick="cerrarModal('modal-agregar')">&times;</button>
+        <h3 class="modal-title">Agregar activo</h3>
+        <form action="/agregar" method="post" class="modal-form">
+            <label>Símbolo</label>
+            <input type="text" name="simb" placeholder="Ej: BVCC" required>
+            <label>Cantidad</label>
+            <input type="number" name="cant" placeholder="0" step="any" required>
+            <label>Precio promedio (Bs)</label>
+            <input type="number" name="precio" placeholder="0.00" step="any" required>
+            <label>Comisión (Bs)</label>
+            <input type="number" name="com" placeholder="0" step="any" value="0">
+            <label>Registro (Bs)</label>
+            <input type="number" name="reg" placeholder="0" step="any" value="0">
+            <label>IVA %</label>
+            <input type="number" name="iva" placeholder="16" step="any" value="16">
+            <button type="submit" class="btn btn--primary" style="margin-top:8px;">Guardar</button>
+        </form>
+    </div>
+</div>
+
+<!-- ── Modal: Editar ──────────────────────────────────────────── -->
+<div id="modal-editar" class="overlay" onclick="cerrarSiOverlay(event, this)">
+    <div class="modal">
+        <button class="modal-close" onclick="cerrarModal('modal-editar')">&times;</button>
+        <h3 class="modal-title">Editar activo</h3>
+        <form action="/editar" method="post" class="modal-form">
+            <input type="hidden" name="simb" id="edit-simb">
+            <label>Cantidad</label>
+            <input type="number" name="cant" id="edit-cant" step="any" required>
+            <label>Precio promedio (Bs)</label>
+            <input type="number" name="precio" id="edit-precio" step="any" required>
+            <label>Comisión (Bs)</label>
+            <input type="number" name="com" step="any" value="0">
+            <label>Registro (Bs)</label>
+            <input type="number" name="reg" step="any" value="0">
+            <label>IVA %</label>
+            <input type="number" name="iva" step="any" value="16">
+            <button type="submit" class="btn btn--primary" style="margin-top:8px;">Guardar cambios</button>
+        </form>
+    </div>
+</div>
+
+<!-- ── Modal: Confirmar eliminar ──────────────────────────────── -->
+<div id="modal-eliminar" class="overlay" onclick="cerrarSiOverlay(event, this)">
+    <div class="modal modal--sm">
+        <button class="modal-close" onclick="cerrarModal('modal-eliminar')">&times;</button>
+        <h3 class="modal-title">¿Eliminar activo?</h3>
+        <p class="modal-text">Esta acción no se puede deshacer.</p>
+        <form action="/eliminar" method="post" class="modal-form">
+            <input type="hidden" name="simb" id="del-simb">
+            <div style="display:flex; gap:10px; margin-top:12px;">
+                <button type="button" class="btn btn--ghost" style="flex:1" onclick="cerrarModal('modal-eliminar')">Cancelar</button>
+                <button type="submit" class="btn btn--danger" style="flex:1">Eliminar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block ticker %}
+{% for f in filas %}
+<span class="tick-item {% if f.ganancia >= 0 %}tick-up{% else %}tick-down{% endif %}">
+    <b>{{ f.simb }}</b> {{ f.precio_actual | format_bs }} Bs
+    <span>{{ "%.2f"|format(f.rend_pct) }}%</span>
+</span>
+{% endfor %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function abrirModal(id) { document.getElementById(id).style.display = 'flex'; }
+function cerrarModal(id) { document.getElementById(id).style.display = 'none'; }
+function cerrarSiOverlay(e, el) { if (e.target === el) cerrarModal(el.id); }
+
+function abrirEditar(simb, cant, precio) {
+    document.getElementById('edit-simb').value = simb;
+    document.getElementById('edit-cant').value = cant;
+    document.getElementById('edit-precio').value = precio;
+    abrirModal('modal-editar');
+}
+
+function confirmarEliminar(simb) {
+    document.getElementById('del-simb').value = simb;
+    abrirModal('modal-eliminar');
+}
+
+// ── Gráficas ──────────────────────────────────────────────────
+const labels  = {{ labels  | tojson }};
+const valores = {{ valores | tojson }};
+const ganancias = {{ ganancias | tojson }};
+
+const colorUp   = '#22c55e';
+const colorDown = '#ef4444';
+const colorBase = '#3b82f6';
+
+new Chart(document.getElementById('chartComposicion'), {
+    type: 'doughnut',
+    data: {
+        labels,
+        datasets: [{ data: valores, backgroundColor: ['#3b82f6','#6366f1','#8b5cf6','#a78bfa','#c4b5fd','#ddd6fe'] }]
+    },
+    options: {
+        plugins: { legend: { position: 'right' }, title: { display: true, text: 'Composición del portafolio' } },
+        cutout: '60%'
+    }
+});
+
+new Chart(document.getElementById('chartRendimiento'), {
+    type: 'bar',
+    data: {
+        labels,
+        datasets: [{
+            label: 'Ganancia (Bs)',
+            data: ganancias,
+            backgroundColor: ganancias.map(v => v >= 0 ? colorUp : colorDown)
+        }]
+    },
+    options: {
+        plugins: { title: { display: true, text: 'Ganancia por activo (Bs)' } },
+        scales: { y: { beginAtZero: true } }
+    }
+});
+</script>
+{% endblock %}

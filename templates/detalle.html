@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}{{ activo.DESC_SIMB or simbolo }} — BVC Tracker{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+{% endblock %}
+
+{% block content %}
+<div class="detalle-header">
+    <div>
+        <a href="/" class="back-link">← Pizarra</a>
+        <h1 class="page-title">
+            {{ activo.DESC_SIMB or simbolo }}
+            <span class="simb-tag">{{ simbolo }}</span>
+        </h1>
+    </div>
+    {% set var = activo.VAR_REL | default(0) | float %}
+    <div class="precio-hero {% if var > 0 %}var-up{% elif var < 0 %}var-down{% else %}var-flat{% endif %}">
+        <span class="precio-valor mono">{{ activo.PRECIO | float | format_bs }} Bs</span>
+        <span class="precio-var">
+            {% if var > 0 %}▲{% elif var < 0 %}▼{% else %}▬{% endif %}
+            {{ "%.2f"|format(var) }}%
+        </span>
+    </div>
+</div>
+
+<!-- Datos técnicos -->
+<div class="info-grid">
+    <div class="info-card">
+        <span class="info-label">ISIN</span>
+        <span class="info-value mono">{{ prof.ISIN or 'N/A' }}</span>
+    </div>
+    <div class="info-card">
+        <span class="info-label">Acciones circulantes</span>
+        <span class="info-value mono">{{ prof.ACC_CIRC or 'N/A' }}</span>
+    </div>
+    <div class="info-card">
+        <span class="info-label">Capitalización (Bs)</span>
+        <span class="info-value mono">{{ prof.CAPITALIZACION or 'N/A' }}</span>
+    </div>
+    <div class="info-card">
+        <span class="info-label">Último precio</span>
+        <span class="info-value mono">{{ activo.PRECIO | float | format_bs }} Bs</span>
+    </div>
+    <div class="info-card">
+        <span class="info-label">Volumen transado</span>
+        <span class="info-value mono">{{ activo.MONTO_EFECTIVO | default(0) | float | format_bs }} Bs</span>
+    </div>
+    <div class="info-card">
+        <span class="info-label">Títulos</span>
+        <span class="info-value mono">{{ activo.VOLUMEN or '—' }}</span>
+    </div>
+</div>
+
+<!-- Gráfica de velas -->
+<div class="chart-section">
+    <div class="chart-toolbar">
+        <h2 class="section-title" style="margin-bottom:0">Histórico de precios</h2>
+        <div class="temporalidad-btns">
+            <button class="t-btn" data-range="30">1M</button>
+            <button class="t-btn" data-range="90">3M</button>
+            <button class="t-btn" data-range="180">6M</button>
+            <button class="t-btn" data-range="365">1A</button>
+            <button class="t-btn active" data-range="0">Todo</button>
+        </div>
+    </div>
+    <div id="chart-velas"></div>
+    <div class="chart-stats" id="chart-stats">
+        <span id="stat-velas" class="chart-stat"></span>
+        <span id="stat-min" class="chart-stat"></span>
+        <span id="stat-max" class="chart-stat"></span>
+        <span id="stat-rend" class="chart-stat"></span>
+    </div>
+</div>
+
+<!-- Profundidad de mercado -->
+<div class="depth-section">
+    <h2 class="section-title">Profundidad de mercado <span class="dim">6 niveles</span></h2>
+    <table class="data-table depth-table">
+        <thead>
+            <tr>
+                <th class="buy">Vol. Compra</th>
+                <th class="buy">P. Compra (Bs)</th>
+                <th class="sell">P. Venta (Bs)</th>
+                <th class="sell">Vol. Venta</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for i in range(1, 7) %}
+            <tr>
+                <td class="mono buy">{{ prof['VOL_CMP_' ~ i] or '—' }}</td>
+                <td class="mono buy">{{ prof['PRE_CMP_' ~ i] or '—' }}</td>
+                <td class="mono sell">{{ prof['PRE_VTA_' ~ i] or '—' }}</td>
+                <td class="mono sell">{{ prof['VOL_VTA_' ~ i] or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const todosLosDatos = {{ series_data | tojson }};
+
+let chart = null;
+
+function filtrarPorRango(dias) {
+    if (dias === 0 || todosLosDatos.length === 0) return todosLosDatos;
+    const hoy = new Date();
+    const desde = new Date(hoy);
+    desde.setDate(desde.getDate() - dias);
+    return todosLosDatos.filter(d => {
+        // fecha viene como "DD/MM/YYYY" o "YYYY-MM-DD"
+        const partes = d.x.includes('/') ? d.x.split('/').reverse() : d.x.split('-');
+        const fecha = new Date(partes.join('-'));
+        return fecha >= desde;
+    });
+}
+
+function actualizarStats(datos) {
+    if (!datos.length) return;
+    const precios = datos.map(d => d.y[3]).filter(v => v > 0);
+    const min = Math.min(...precios);
+    const max = Math.max(...precios);
+    const primero = datos[0].y[3];
+    const ultimo  = datos[datos.length - 1].y[3];
+    const rend = primero > 0 ? ((ultimo - primero) / primero * 100).toFixed(2) : 0;
+    const color = rend >= 0 ? '#22c55e' : '#ef4444';
+
+    document.getElementById('stat-velas').textContent = `${datos.length} velas`;
+    document.getElementById('stat-min').textContent   = `Mín: ${min.toLocaleString('es-VE', {minimumFractionDigits:2})} Bs`;
+    document.getElementById('stat-max').textContent   = `Máx: ${max.toLocaleString('es-VE', {minimumFractionDigits:2})} Bs`;
+    document.getElementById('stat-rend').innerHTML    = `Rend: <span style="color:${color}">${rend >= 0 ? '+' : ''}${rend}%</span>`;
+}
+
+function renderChart(datos) {
+    const opciones = {
+        series: [{ data: datos }],
+        chart: {
+            type: 'candlestick',
+            height: 450,
+            background: 'transparent',
+            foreColor: '#8b949e',
+            toolbar: {
+                show: true,
+                tools: { download: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true }
+            },
+            zoom: { enabled: true },
+            animations: { enabled: false },
+        },
+        theme: { mode: 'dark' },
+        plotOptions: {
+            candlestick: {
+                colors: { upward: '#22c55e', downward: '#ef4444' },
+                wick: { useFillColor: true }
+            }
+        },
+        grid: { borderColor: '#21262d', strokeDashArray: 3 },
+        xaxis: {
+            type: 'category',
+            labels: {
+                style: { colors: '#8b949e', fontSize: '11px' },
+                rotate: -30,
+                maxHeight: 60,
+            },
+            tickAmount: 10,
+        },
+        yaxis: {
+            labels: {
+                style: { colors: '#8b949e' },
+                formatter: v => v.toLocaleString('es-VE', {minimumFractionDigits: 2})
+            },
+            tooltip: { enabled: true }
+        },
+        tooltip: {
+            theme: 'dark',
+            custom({ seriesIndex, dataPointIndex, w }) {
+                const d = w.globals.initialSeries[seriesIndex].data[dataPointIndex];
+                const [o, h, l, c] = d.y;
+                const color = c >= o ? '#22c55e' : '#ef4444';
+                return `<div style="padding:10px; font-family:monospace; font-size:12px; background:#1f2937; border:1px solid #30363d; border-radius:6px;">
+                    <b style="color:#e6edf3">${d.x}</b><br>
+                    <span style="color:#8b949e">Apertura:</span> <b>${o.toLocaleString('es-VE',{minimumFractionDigits:2})}</b><br>
+                    <span style="color:#8b949e">Máximo:</span>   <b style="color:#22c55e">${h.toLocaleString('es-VE',{minimumFractionDigits:2})}</b><br>
+                    <span style="color:#8b949e">Mínimo:</span>   <b style="color:#ef4444">${l.toLocaleString('es-VE',{minimumFractionDigits:2})}</b><br>
+                    <span style="color:#8b949e">Cierre:</span>   <b style="color:${color}">${c.toLocaleString('es-VE',{minimumFractionDigits:2})}</b>
+                </div>`;
+            }
+        }
+    };
+
+    if (chart) {
+        chart.updateSeries([{ data: datos }]);
+    } else {
+        chart = new ApexCharts(document.querySelector("#chart-velas"), opciones);
+        chart.render();
+    }
+    actualizarStats(datos);
+}
+
+// Botones de temporalidad
+document.querySelectorAll('.t-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.t-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const dias = parseInt(btn.dataset.range);
+        const datos = filtrarPorRango(dias);
+        renderChart(datos);
+    });
+});
+
+// Render inicial con todos los datos
+if (todosLosDatos.length > 0) {
+    renderChart(todosLosDatos);
+} else {
+    document.querySelector("#chart-velas").innerHTML =
+        '<p class="empty-chart">Sin datos históricos disponibles.</p>';
+}
+</script>
+{% endblock %}
