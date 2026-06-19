@@ -4,20 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Crear cuenta — Caracas Bull</title>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/main.css">
     <link rel="stylesheet" href="/static/css/auth.css">
 </head>
 <body class="auth-body">
     <div class="auth-card">
         <a href="/" class="auth-logo">
-            <span class="logo-mark">▸</span> Caracas<span class="logo-dim">Bull</span>
+            <div class="auth-logo-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 17c2-4 5-6 9-6s7 2 9 6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                    <path d="M8 11c0-3 1.5-5 4-6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                    <circle cx="12" cy="4" r="1.5" fill="#080f0f"/>
+                    <path d="M6 14l-3 3M18 14l3 3" stroke="#080f0f" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </div>
+            Caracas<span style="color:var(--text-secondary); font-weight:500">Bull</span>
         </a>
         <h1 class="auth-title">Crea tu cuenta</h1>
-        <p class="auth-subtitle">14 días gratis, sin tarjeta de crédito</p>
+        <p class="auth-subtitle">14 días gratis, sin tarjeta de crédito ni wallet requerida</p>
 
         {% if error %}
-        <div class="auth-error">{{ error }}</div>
+        <div class="auth-error">⚠ {{ error }}</div>
         {% endif %}
 
         <form action="/registro" method="post" class="auth-form">
@@ -29,7 +37,7 @@
             <input type="password" name="password" placeholder="Mínimo 8 caracteres" required minlength="8">
             <label>Confirmar contraseña</label>
             <input type="password" name="password2" placeholder="Repite la contraseña" required minlength="8">
-            <button type="submit" class="btn btn--primary" style="width:100%; margin-top:8px;">
+            <button type="submit" class="btn btn--primary" style="width:100%; margin-top:12px; padding:12px; font-size:14px; justify-content:center;">
                 Crear cuenta gratis
             </button>
         </form>
@@ -37,7 +45,7 @@
         <div class="auth-features">
             <span>✓ Pizarra en tiempo real</span>
             <span>✓ Portafolio personal</span>
-            <span>✓ Alertas por Telegram</span>
+            <span>✓ Alertas Telegram</span>
         </div>
 
         <p class="auth-footer">

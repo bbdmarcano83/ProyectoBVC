@@ -10,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
 from database import init_db, get_db
-from services.bvc import obtener_datos_bvc, obtener_detalle_profundo, obtener_historico, _to_float, formatear_bs
+from services.bvc import obtener_datos_bvc, obtener_detalle_profundo, obtener_historico, _to_float, formatear_bs, formatear_entero, formatear_millones, mercado_abierto
 from services.portafolio import calcular_fila, resumen_portafolio
 from services.auth import (
     crear_usuario, autenticar_usuario, crear_token,
@@ -38,6 +38,8 @@ env = Environment(
     cache_size=0,
 )
 env.filters["format_bs"] = formatear_bs
+env.filters["format_entero"] = formatear_entero
+env.filters["format_millones"] = formatear_millones
 
 def render(template_name: str, context: dict) -> HTMLResponse:
     t = env.get_template(template_name)
@@ -45,6 +47,12 @@ def render(template_name: str, context: dict) -> HTMLResponse:
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
+
+@app.get("/landing", response_class=HTMLResponse)
+async def landing_page(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    return render("landing.html", {"request": request, "usuario": usuario})
+
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, db: Session = Depends(get_db)):
@@ -101,7 +109,7 @@ async def registro_post(
 
 @app.get("/logout")
 async def logout():
-    response = RedirectResponse(url="/login", status_code=302)
+    response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie("access_token")
     return response
 
@@ -170,10 +178,16 @@ async def webhook_nowpayments(request: Request, db: Session = Depends(get_db)):
 # ── Pizarra ───────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
+async def index(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    return render("landing.html", {"request": request, "usuario": usuario})
+
+
+@app.get("/pizarra", response_class=HTMLResponse)
 async def pizarra(request: Request, db: Session = Depends(get_db)):
     usuario = get_usuario_actual(request, db)
     if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
+        return RedirectResponse(url="/", status_code=302)
     if not suscripcion_activa(usuario):
         return RedirectResponse(url="/suscripcion", status_code=302)
 
@@ -184,6 +198,7 @@ async def pizarra(request: Request, db: Session = Depends(get_db)):
         "active": "pizarra",
         "usuario": usuario,
         "dias": dias_restantes(usuario),
+        "mercado": mercado_abierto(),
     })
 
 
@@ -235,6 +250,7 @@ async def ver_portafolio(request: Request, db: Session = Depends(get_db)):
         "active": "portafolio",
         "usuario": usuario,
         "dias": dias_restantes(usuario),
+        "mercado": mercado_abierto(),
     })
 
 @app.post("/configurar")

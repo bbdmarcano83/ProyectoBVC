@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Caracas Bull — La bolsa de Caracas en tu bolsillo</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+    <link rel="stylesheet" href="/static/css/main.css">
+    <style>
+        .landing-nav {
+            position: fixed; top: 0; width: 100%; z-index: 100;
+            background: rgba(8,15,15,.85); backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 40px;
+        }
+        .landing-nav-inner {
+            max-width: 1200px; margin: auto; height: 60px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            text-align: center;
+            padding: 120px 24px 80px;
+            background: radial-gradient(ellipse at 50% 0%, #00c89610 0%, transparent 60%);
+        }
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--accent-dim); border: 1px solid #00c89633;
+            color: var(--accent); font-size: 12px; font-weight: 600;
+            padding: 6px 16px; border-radius: 99px; margin-bottom: 32px;
+            letter-spacing: .5px;
+        }
+        .hero-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse-dot 2s infinite; }
+        .hero-title {
+            font-size: clamp(40px, 6vw, 72px);
+            font-weight: 800;
+            line-height: 1.1;
+            letter-spacing: -2px;
+            margin-bottom: 24px;
+            max-width: 800px;
+        }
+        .hero-title .accent { color: var(--accent); }
+        .hero-sub {
+            font-size: 18px; color: var(--text-secondary);
+            max-width: 520px; line-height: 1.7;
+            margin-bottom: 48px;
+        }
+        .hero-btns { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+        .btn-hero-primary {
+            padding: 14px 32px; background: var(--accent); color: #080f0f;
+            border-radius: var(--radius); font-size: 15px; font-weight: 700;
+            border: none; cursor: pointer; transition: var(--transition);
+            text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+        }
+        .btn-hero-primary:hover { background: #00e0aa; transform: translateY(-2px); box-shadow: 0 8px 30px var(--accent-glow); }
+        .btn-hero-ghost {
+            padding: 14px 32px; background: transparent; color: var(--text);
+            border-radius: var(--radius); font-size: 15px; font-weight: 600;
+            border: 1px solid var(--border); cursor: pointer; transition: var(--transition);
+            text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+        }
+        .btn-hero-ghost:hover { background: var(--bg-raised); border-color: var(--text-secondary); }
+        .hero-note { margin-top: 20px; font-size: 13px; color: var(--text-dim); }
+
+        /* Stats bar */
+        .stats-bar {
+            display: flex; justify-content: center; gap: 60px;
+            padding: 40px 24px;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-surface);
+            flex-wrap: wrap;
+        }
+        .stat-hero { text-align: center; }
+        .stat-hero-num { font-family: var(--font-mono); font-size: 32px; font-weight: 700; color: var(--accent); letter-spacing: -1px; }
+        .stat-hero-label { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+        /* Features */
+        .features { max-width: 1100px; margin: 0 auto; padding: 100px 24px; }
+        .features-title { text-align: center; font-size: 36px; font-weight: 800; letter-spacing: -1px; margin-bottom: 14px; }
+        .features-sub { text-align: center; color: var(--text-secondary); font-size: 16px; margin-bottom: 60px; }
+        .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .feature-card {
+            background: var(--bg-surface); border: 1px solid var(--border);
+            border-radius: var(--radius-xl); padding: 28px;
+            transition: var(--transition);
+        }
+        .feature-card:hover { border-color: var(--accent-dim); transform: translateY(-4px); }
+        .feature-icon {
+            width: 44px; height: 44px; border-radius: var(--radius);
+            background: var(--accent-dim); border: 1px solid #00c89633;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--accent); font-size: 22px; margin-bottom: 18px;
+        }
+        .feature-name { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .feature-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+
+        /* Precios */
+        .pricing { background: var(--bg-surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 100px 24px; }
+        .pricing-inner { max-width: 800px; margin: auto; }
+        .pricing-title { text-align: center; font-size: 36px; font-weight: 800; letter-spacing: -1px; margin-bottom: 14px; }
+        .pricing-sub { text-align: center; color: var(--text-secondary); font-size: 16px; margin-bottom: 60px; }
+
+        /* CTA */
+        .cta { text-align: center; padding: 100px 24px; background: radial-gradient(ellipse at 50% 100%, #00c89610 0%, transparent 60%); }
+        .cta-title { font-size: 40px; font-weight: 800; letter-spacing: -1.5px; margin-bottom: 16px; }
+        .cta-sub { color: var(--text-secondary); font-size: 16px; margin-bottom: 40px; }
+
+        /* Footer */
+        .footer {
+            border-top: 1px solid var(--border); padding: 32px 40px;
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 13px; color: var(--text-secondary); flex-wrap: wrap; gap: 12px;
+        }
+        .footer a { color: var(--text-secondary); transition: color .15s; }
+        .footer a:hover { color: var(--accent); }
+    </style>
+</head>
+<body style="background: var(--bg);">
+
+<!-- Nav -->
+<nav class="landing-nav">
+    <div class="landing-nav-inner">
+        <a href="/" class="logo">
+            <div class="logo-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 17c2-4 5-6 9-6s7 2 9 6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                    <path d="M8 11c0-3 1.5-5 4-6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                    <circle cx="12" cy="4" r="1.5" fill="#080f0f"/>
+                    <path d="M6 14l-3 3M18 14l3 3" stroke="#080f0f" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </div>
+            Caracas<span class="logo-dim">Bull</span>
+        </a>
+        <div style="display:flex; gap:12px; align-items:center;">
+            {% if usuario %}
+            <a href="/pizarra" class="btn btn--ghost btn--sm">Ir a la app</a>
+            <a href="/logout" class="btn btn--primary btn--sm">Cerrar sesión</a>
+            {% else %}
+            <a href="/login" class="btn btn--ghost btn--sm">Iniciar sesión</a>
+            <a href="/registro" class="btn btn--primary btn--sm">Prueba gratis</a>
+            {% endif %}
+        </div>
+    </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+    <div class="hero-badge">
+        <span class="hero-badge-dot"></span>
+        Datos en tiempo real · Bolsa de Caracas
+    </div>
+    <h1 class="hero-title">
+        La bolsa de Caracas,<br>en tu <span class="accent">bolsillo</span>
+    </h1>
+    <p class="hero-sub">
+        Sigue tus inversiones, analiza el mercado y recibe alertas instantáneas. La única plataforma profesional enfocada en la BVC.
+    </p>
+    <div class="hero-btns">
+        {% if usuario %}
+        <a href="/pizarra" class="btn-hero-primary">
+            Ir a la pizarra <i class="ti ti-arrow-right"></i>
+        </a>
+        <a href="/portafolio" class="btn-hero-ghost">
+            Mi portafolio
+        </a>
+        {% else %}
+        <a href="/registro" class="btn-hero-primary">
+            Empezar gratis — 14 días <i class="ti ti-arrow-right"></i>
+        </a>
+        <a href="/login" class="btn-hero-ghost">
+            Ya tengo cuenta
+        </a>
+        {% endif %}
+    </div>
+    {% if not usuario %}
+    <p class="hero-note">Sin tarjeta de crédito · Sin wallet requerida · Cancela cuando quieras</p>
+    {% endif %}
+</section>
+
+<!-- Stats bar -->
+<div class="stats-bar">
+    <div class="stat-hero">
+        <div class="stat-hero-num">40+</div>
+        <div class="stat-hero-label">Acciones monitoreadas</div>
+    </div>
+    <div class="stat-hero">
+        <div class="stat-hero-num">Tiempo real</div>
+        <div class="stat-hero-label">Datos de la BVC</div>
+    </div>
+    <div class="stat-hero">
+        <div class="stat-hero-num">14 días</div>
+        <div class="stat-hero-label">Prueba gratuita</div>
+    </div>
+    <div class="stat-hero">
+        <div class="stat-hero-num">1,5 USDT</div>
+        <div class="stat-hero-label">Plan básico/mes</div>
+    </div>
+</div>
+
+<!-- Features -->
+<section class="features">
+    <h2 class="features-title">Todo lo que necesitas para invertir mejor</h2>
+    <p class="features-sub">Herramientas profesionales, diseñadas para el mercado venezolano</p>
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon"><i class="ti ti-chart-candle"></i></div>
+            <h3 class="feature-name">Pizarra en tiempo real</h3>
+            <p class="feature-desc">Precios, volumen, variaciones y profundidad de mercado de todas las acciones de la BVC, actualizados al instante.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon"><i class="ti ti-briefcase"></i></div>
+            <h3 class="feature-name">Portafolio personal</h3>
+            <p class="feature-desc">Registra tus posiciones y ve tu ganancia en Bs y USD en tiempo real, con cálculo de comisiones e IVA incluido.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon"><i class="ti ti-bell"></i></div>
+            <h3 class="feature-name">Alertas por Telegram</h3>
+            <p class="feature-desc">Recibe notificaciones instantáneas cuando una acción sube o baja el porcentaje que tú configures. No te pierdas ningún movimiento.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon"><i class="ti ti-chart-line"></i></div>
+            <h3 class="feature-name">Gráficas de velas</h3>
+            <p class="feature-desc">Histórico completo de precios con gráficas de velas japonesas. Filtra por 1M, 3M, 6M, 1 año o todo el histórico disponible.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon"><i class="ti ti-file-text"></i></div>
+            <h3 class="feature-name">Reportes PDF</h3>
+            <p class="feature-desc">Genera reportes mensuales de tu portafolio en PDF para llevar un registro de tus inversiones y compartir con tu asesor. <span style="color:var(--gold); font-size:11px; font-weight:600;">PRO</span></p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon"><i class="ti ti-calculator"></i></div>
+            <h3 class="feature-name">Calculadora ISLR</h3>
+            <p class="feature-desc">Calcula automáticamente tu ganancia gravable del año y genera el resumen fiscal. La función que ninguna otra app ofrece. <span style="color:var(--gold); font-size:11px; font-weight:600;">PRO</span></p>
+        </div>
+    </div>
+</section>
+
+<!-- Pricing -->
+<section class="pricing">
+    <div class="pricing-inner">
+        <h2 class="pricing-title">Precios simples y transparentes</h2>
+        <p class="pricing-sub">Sin sorpresas. Paga en USDT, cancela cuando quieras.</p>
+        <div class="planes-grid">
+            <div class="plan-card">
+                <div class="plan-header">
+                    <h3 class="plan-nombre">Básico</h3>
+                    <div class="plan-precio">
+                        <span class="plan-monto">1,5</span>
+                        <span class="plan-moneda">USDT / mes</span>
+                    </div>
+                </div>
+                <ul class="plan-features">
+                    <li>✓ Pizarra en tiempo real</li>
+                    <li>✓ Portafolio personal</li>
+                    <li>✓ Gráficas de velas</li>
+                    <li>✓ Profundidad de mercado</li>
+                    <li>✓ Alertas Telegram (3)</li>
+                    <li>✓ Watchlist personal</li>
+                    <li class="dim">✗ Reportes PDF</li>
+                    <li class="dim">✗ Calculadora ISLR</li>
+                </ul>
+                <a href="/registro" class="btn btn--ghost" style="width:100%; justify-content:center;">Empezar gratis</a>
+            </div>
+            <div class="plan-card plan-card--destacado">
+                <div class="plan-badge-top">Más popular</div>
+                <div class="plan-header">
+                    <h3 class="plan-nombre">Pro</h3>
+                    <div class="plan-precio">
+                        <span class="plan-monto">4,0</span>
+                        <span class="plan-moneda">USDT / mes</span>
+                    </div>
+                </div>
+                <ul class="plan-features">
+                    <li>✓ Todo lo del plan Básico</li>
+                    <li>✓ Alertas ilimitadas</li>
+                    <li>✓ Reportes PDF mensuales</li>
+                    <li>✓ Calculadora ISLR</li>
+                    <li>✓ Comparador de acciones</li>
+                    <li>✓ Historial de transacciones</li>
+                    <li>✓ Índice vs mercado</li>
+                    <li>✓ Soporte prioritario</li>
+                </ul>
+                <a href="/registro" class="btn btn--primary" style="width:100%; justify-content:center;">Empezar gratis</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+    <h2 class="cta-title">¿Listo para invertir mejor?</h2>
+    <p class="cta-sub">Únete y empieza tu prueba de 14 días gratis hoy mismo.</p>
+    <a href="/registro" class="btn-hero-primary">
+        Crear cuenta gratis <i class="ti ti-arrow-right"></i>
+    </a>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+    <div>
+        <a href="/" class="logo" style="font-size:14px;">
+            <div class="logo-icon" style="width:22px;height:22px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 17c2-4 5-6 9-6s7 2 9 6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                    <path d="M8 11c0-3 1.5-5 4-6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                    <circle cx="12" cy="4" r="1.5" fill="#080f0f"/>
+                </svg>
+            </div>
+            CaracasBull
+        </a>
+    </div>
+    <div>© 2026 Caracas Bull · Todos los derechos reservados</div>
+    <div style="display:flex; gap:20px;">
+        <a href="/login">Iniciar sesión</a>
+        <a href="/registro">Registrarse</a>
+    </div>
+</footer>
+
+</body>
+</html>

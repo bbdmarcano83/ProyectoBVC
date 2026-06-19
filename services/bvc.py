@@ -133,3 +133,39 @@ def formatear_bs(valor) -> str:
         return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except Exception:
         return str(valor)
+
+
+def formatear_entero(valor) -> str:
+    """Formatea un número entero con separador de miles: 257.919.300"""
+    try:
+        num = int(_to_float(valor))
+        return f"{num:,}".replace(",", ".")
+    except Exception:
+        return str(valor)
+
+
+def formatear_millones(valor) -> str:
+    """Formatea capitalización BVC: número con 2 decimales y Bs. (igual que la BVC oficial)."""
+    try:
+        num = _to_float(valor)
+        s = f"{num:,.2f}".replace(",","X").replace(".",",").replace("X",".")
+        return f"{s} Bs."
+    except Exception:
+        return str(valor)
+
+
+def mercado_abierto() -> bool:
+    """Devuelve True si el mercado BVC está abierto (Lun-Vie 09:00-13:00 VET)."""
+    from datetime import datetime
+    try:
+        import pytz
+        vet = pytz.timezone("America/Caracas")
+        ahora = datetime.now(vet)
+    except ImportError:
+        # sin pytz usamos UTC-4 manualmente
+        from datetime import timezone, timedelta
+        ahora = datetime.now(timezone(timedelta(hours=-4)))
+    if ahora.weekday() >= 5:
+        return False
+    hora = ahora.hour + ahora.minute / 60
+    return 9.0 <= hora < 13.0

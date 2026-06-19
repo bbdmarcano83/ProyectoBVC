@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Caracas Bull{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
     <link rel="stylesheet" href="/static/css/main.css">
     {% block extra_head %}{% endblock %}
 </head>
@@ -13,22 +14,44 @@
     <header class="site-header">
         <div class="header-inner">
             <a href="/" class="logo">
-                <span class="logo-mark">▸</span> Caracas<span class="logo-dim">Bull</span>
+                <div class="logo-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <path d="M3 17c2-4 5-6 9-6s7 2 9 6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                        <path d="M8 11c0-3 1.5-5 4-6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                        <circle cx="12" cy="4" r="1.5" fill="#080f0f"/>
+                        <path d="M6 14l-3 3M18 14l3 3" stroke="#080f0f" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                Caracas<span class="logo-dim">Bull</span>
             </a>
             <nav class="header-nav">
-                <a href="/" class="nav-link {% if active == 'pizarra' %}active{% endif %}">Pizarra</a>
-                <a href="/portafolio" class="nav-link {% if active == 'portafolio' %}active{% endif %}">Portafolio</a>
+                <a href="/pizarra" class="nav-link {% if active == 'pizarra' %}active{% endif %}">
+                    <i class="ti ti-chart-candle" style="font-size:13px"></i> Pizarra
+                </a>
+                <a href="/portafolio" class="nav-link {% if active == 'portafolio' %}active{% endif %}">
+                    <i class="ti ti-briefcase" style="font-size:13px"></i> Portafolio
+                </a>
             </nav>
             <div class="header-right">
+                <div class="market-status {% if not mercado %}market-status--cerrado{% endif %}">
+                    <span class="market-dot {% if not mercado %}market-dot--off{% endif %}"></span>
+                    {% if mercado %}Mercado abierto{% else %}Mercado cerrado{% endif %}
+                </div>
                 {% if usuario %}
-                    {% if dias <= 5 %}
-                    <a href="/suscripcion" class="dias-badge dias-badge--warn">⚠ {{ dias }}d restantes</a>
+                    {% if dias is defined and dias <= 5 %}
+                    <a href="/suscripcion" class="dias-badge dias-badge--warn">
+                        <i class="ti ti-clock" style="font-size:11px"></i> {{ dias }}d restantes
+                    </a>
                     {% endif %}
                     <div class="user-menu">
-                        <span class="user-name">{{ usuario.nombre.split()[0] }}</span>
+                        <div class="user-avatar">{{ usuario.nombre[0].upper() }}</div>
                         <div class="user-dropdown">
-                            <a href="/suscripcion">Mi suscripción</a>
-                            <a href="/logout" class="logout-link">Cerrar sesión</a>
+                            <a href="/suscripcion">
+                                <i class="ti ti-crown" style="font-size:14px"></i> Suscripción
+                            </a>
+                            <a href="/logout" class="logout-link">
+                                <i class="ti ti-logout" style="font-size:14px"></i> Cerrar sesión
+                            </a>
                         </div>
                     </div>
                 {% endif %}
@@ -42,7 +65,7 @@
     </main>
 
     <footer class="ticker-bar">
-        <div class="ticker-inner" id="ticker-content">
+        <div class="ticker-inner">
             {% block ticker %}{% endblock %}
         </div>
     </footer>

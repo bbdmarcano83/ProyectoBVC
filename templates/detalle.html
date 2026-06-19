@@ -33,23 +33,23 @@
     </div>
     <div class="info-card">
         <span class="info-label">Acciones circulantes</span>
-        <span class="info-value mono">{{ prof.ACC_CIRC or 'N/A' }}</span>
+        <span class="info-value mono">{{ prof.ACC_CIRC | default(0) | format_entero }}</span>
     </div>
     <div class="info-card">
-        <span class="info-label">Capitalización (Bs)</span>
-        <span class="info-value mono">{{ prof.CAPITALIZACION or 'N/A' }}</span>
+        <span class="info-label">Capitalización (MM Bs.)</span>
+        <span class="info-value mono">{{ prof.CAPITALIZACION | default(0) | format_millones }}</span>
     </div>
     <div class="info-card">
         <span class="info-label">Último precio</span>
         <span class="info-value mono">{{ activo.PRECIO | float | format_bs }} Bs</span>
     </div>
     <div class="info-card">
-        <span class="info-label">Volumen transado</span>
+        <span class="info-label">Vol. transado (Bs)</span>
         <span class="info-value mono">{{ activo.MONTO_EFECTIVO | default(0) | float | format_bs }} Bs</span>
     </div>
     <div class="info-card">
         <span class="info-label">Títulos</span>
-        <span class="info-value mono">{{ activo.VOLUMEN or '—' }}</span>
+        <span class="info-value mono">{{ activo.VOLUMEN | default(0) | format_entero }}</span>
     </div>
 </div>
 

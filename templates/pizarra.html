@@ -1,11 +1,24 @@
 {% extends "base.html" %}
-
-{% block title %}Pizarra — BVC Tracker{% endblock %}
+{% block title %}Pizarra — Caracas Bull{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1 class="page-title">Mercado <span class="dim">Renta Variable</span></h1>
-    <span class="badge badge--live">● En vivo</span>
+    <div>
+        <h1 class="page-title">Mercado <span class="dim">Renta Variable</span></h1>
+    </div>
+    <span class="badge--live">● En vivo</span>
+    <div style="margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <div class="search-bar">
+            <i class="ti ti-search search-icon"></i>
+            <input type="text" id="buscar" placeholder="Buscar activo...">
+        </div>
+        <div class="filter-chips">
+            <button class="chip active-all" data-filter="all">Todos</button>
+            <button class="chip" data-filter="up">▲ Alzas</button>
+            <button class="chip" data-filter="down">▼ Bajas</button>
+            <button class="chip" data-filter="vol">Mayor Vol.</button>
+        </div>
+    </div>
 </div>
 
 <div class="table-wrapper">
@@ -20,18 +33,18 @@
                 <th class="sortable" data-col="5">Último (Bs)</th>
                 <th class="sortable" data-col="6">Títulos</th>
                 <th class="sortable" data-col="7">Vol. Transado (Bs)</th>
-                <th class="sortable active-sort" data-col="8">Var. %</th>
+                <th class="sortable active-sort desc" data-col="8">Var. %</th>
                 <th class="sortable" data-col="9">Var. Bs</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="tabla-body">
             {% for item in datos %}
             {% set var = item.VAR_REL | float %}
             {% set dir = 'up' if var > 0 else ('down' if var < 0 else 'flat') %}
-            <tr>
+            <tr data-var="{{ var }}" data-vol="{{ item.MONTO_EFECTIVO | float }}" data-dir="{{ dir }}">
                 <td class="col-simb">
                     <a href="/detalle/{{ item.COD_SIMB }}" class="simb-link">
-                        <img src="{{ item.ICON }}" class="logo-img" onerror="this.remove()">
+                        <img src="{{ item.ICON }}" class="logo-img" onerror="this.style.display='none'">
                         <span>{{ item.COD_SIMB }}</span>
                     </a>
                 </td>
@@ -46,9 +59,7 @@
                     {% if dir == 'up' %}▲{% elif dir == 'down' %}▼{% else %}▬{% endif %}
                     {{ "%.2f"|format(var) }}%
                 </td>
-                <td class="mono var-{{ dir }}">
-                    {{ item.VAR_ABS | float | format_bs }}
-                </td>
+                <td class="mono var-{{ dir }}">{{ item.VAR_ABS | float | format_bs }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -69,24 +80,54 @@
 
 {% block extra_scripts %}
 <script>
-    // Ordenamiento de tabla al hacer clic en encabezado
-    document.querySelectorAll('.sortable').forEach(th => {
-        th.addEventListener('click', () => {
-            const col = parseInt(th.dataset.col);
-            const tbody = document.querySelector('#tabla-pizarra tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            const asc = th.classList.contains('asc');
+const allRows = Array.from(document.querySelectorAll('#tabla-body tr'));
 
-            document.querySelectorAll('.sortable').forEach(h => h.classList.remove('asc', 'desc', 'active-sort'));
-            th.classList.add('active-sort', asc ? 'desc' : 'asc');
+// ── Búsqueda ──────────────────────────────────────────────────────────────
+document.getElementById('buscar').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    allRows.forEach(r => {
+        const simb = r.querySelector('.simb-link span').textContent.toLowerCase();
+        r.style.display = simb.includes(q) ? '' : 'none';
+    });
+});
 
-            rows.sort((a, b) => {
-                const av = parseFloat(a.cells[col].textContent.replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0;
-                const bv = parseFloat(b.cells[col].textContent.replace(/[^0-9.,-]/g, '').replace(',', '.')) || 0;
-                return asc ? bv - av : av - bv;
-            });
-            rows.forEach(r => tbody.appendChild(r));
+// ── Filtros ───────────────────────────────────────────────────────────────
+document.querySelectorAll('.chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.chip').forEach(b => b.className = 'chip');
+        const f = btn.dataset.filter;
+        if (f === 'all')  btn.className = 'chip active-all';
+        if (f === 'up')   btn.className = 'chip active-up';
+        if (f === 'down') btn.className = 'chip active-down';
+        if (f === 'vol')  btn.className = 'chip active-vol';
+
+        allRows.forEach(r => {
+            const dir = r.dataset.dir;
+            const vol = parseFloat(r.dataset.vol);
+            if (f === 'all') r.style.display = '';
+            else if (f === 'up')   r.style.display = dir === 'up' ? '' : 'none';
+            else if (f === 'down') r.style.display = dir === 'down' ? '' : 'none';
+            else if (f === 'vol')  r.style.display = vol > 100000 ? '' : 'none';
         });
     });
+});
+
+// ── Ordenamiento ──────────────────────────────────────────────────────────
+document.querySelectorAll('.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+        const col = parseInt(th.dataset.col);
+        const tbody = document.querySelector('#tabla-body');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const asc = th.classList.contains('asc');
+        document.querySelectorAll('.sortable').forEach(h => h.classList.remove('asc','desc','active-sort'));
+        th.classList.add('active-sort', asc ? 'desc' : 'asc');
+        rows.sort((a, b) => {
+            const av = parseFloat(a.cells[col].textContent.replace(/[^0-9.,-]/g,'').replace(',','.')) || 0;
+            const bv = parseFloat(b.cells[col].textContent.replace(/[^0-9.,-]/g,'').replace(',','.')) || 0;
+            return asc ? bv - av : av - bv;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+    });
+});
 </script>
 {% endblock %}
