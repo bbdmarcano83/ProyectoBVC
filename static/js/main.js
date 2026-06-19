@@ -1,4 +1,3 @@
-// Reloj en tiempo real
 (function () {
     const el = document.getElementById('reloj');
     if (!el) return;

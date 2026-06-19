@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Suscripción — Caracas Bull{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Tu <span class="dim">Suscripción</span></h1>
+</div>
+
+<!-- Estado actual -->
+<div class="sus-estado">
+    {% if usuario.suscripcion %}
+        {% if activa %}
+        <div class="sus-badge sus-badge--activa">● Activa — Plan {{ usuario.suscripcion.plan | capitalize }}</div>
+        <p class="sus-vence">Vence en <b>{{ dias }}</b> días ({{ usuario.suscripcion.fecha_vence.strftime('%d/%m/%Y') }})</p>
+        {% else %}
+        <div class="sus-badge sus-badge--vencida">● Suscripción vencida</div>
+        <p class="sus-vence">Elige un plan para continuar usando Caracas Bull</p>
+        {% endif %}
+    {% endif %}
+</div>
+
+<!-- Planes -->
+<div class="planes-grid">
+    <!-- Plan Básico -->
+    <div class="plan-card">
+        <div class="plan-header">
+            <h2 class="plan-nombre">Básico</h2>
+            <div class="plan-precio">
+                <span class="plan-monto">1.5</span>
+                <span class="plan-moneda">USDT / mes</span>
+            </div>
+        </div>
+        <ul class="plan-features">
+            <li>✓ Pizarra en tiempo real</li>
+            <li>✓ Portafolio personal</li>
+            <li>✓ Gráficas de velas</li>
+            <li>✓ Profundidad de mercado</li>
+            <li>✓ Alertas por Telegram (3 alertas)</li>
+            <li>✓ Watchlist personal</li>
+            <li class="dim">✗ Reportes PDF</li>
+            <li class="dim">✗ Comparador de acciones</li>
+            <li class="dim">✗ Calculadora ISLR</li>
+        </ul>
+        <form action="/suscripcion/pagar" method="post">
+            <input type="hidden" name="plan" value="basico">
+            <button type="submit" class="btn btn--ghost" style="width:100%">
+                Suscribirse — Básico
+            </button>
+        </form>
+    </div>
+
+    <!-- Plan Pro -->
+    <div class="plan-card plan-card--destacado">
+        <div class="plan-badge-top">Más popular</div>
+        <div class="plan-header">
+            <h2 class="plan-nombre">Pro</h2>
+            <div class="plan-precio">
+                <span class="plan-monto">4.0</span>
+                <span class="plan-moneda">USDT / mes</span>
+            </div>
+        </div>
+        <ul class="plan-features">
+            <li>✓ Todo lo del plan Básico</li>
+            <li>✓ Alertas ilimitadas por Telegram</li>
+            <li>✓ Reportes PDF mensuales</li>
+            <li>✓ Comparador de acciones</li>
+            <li>✓ Calculadora ISLR</li>
+            <li>✓ Historial de transacciones</li>
+            <li>✓ Índice vs mercado</li>
+            <li>✓ Soporte prioritario</li>
+        </ul>
+        <form action="/suscripcion/pagar" method="post">
+            <input type="hidden" name="plan" value="pro">
+            <button type="submit" class="btn btn--primary" style="width:100%">
+                Suscribirse — Pro
+            </button>
+        </form>
+    </div>
+</div>
+
+{% if pago %}
+<!-- Modal de pago activo -->
+<div class="pago-modal">
+    <h3 class="pago-titulo">Completa tu pago</h3>
+    <p class="pago-instruccion">Envía exactamente <b class="var-up">{{ pago.pay_amount }} {{ pago.pay_currency | upper }}</b> a esta dirección:</p>
+    <div class="pago-address">
+        <code id="wallet-address">{{ pago.pay_address }}</code>
+        <button class="btn btn--sm btn--ghost" onclick="copiar()">Copiar</button>
+    </div>
+    <p class="pago-expira">Este pago expira en 30 minutos. Una vez confirmado, tu cuenta se activa automáticamente.</p>
+    <div class="pago-status" id="pago-status">
+        <span class="spinner"></span> Esperando confirmación...
+    </div>
+</div>
+{% endif %}
+
+{% if mensaje %}
+<div class="auth-error" style="background:#22c55e18; border-color:#22c55e44; color:#22c55e; margin-top:20px;">
+    ✓ {{ mensaje }}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if pago %}
+<script>
+function copiar() {
+    navigator.clipboard.writeText("{{ pago.pay_address }}");
+    event.target.textContent = "¡Copiado!";
+    setTimeout(() => event.target.textContent = "Copiar", 2000);
+}
+
+// Polling cada 15s para verificar el estado del pago
+const paymentId = "{{ pago.payment_id }}";
+setInterval(async () => {
+    const r = await fetch(`/suscripcion/estado/${paymentId}`);
+    const d = await r.json();
+    if (d.status === "finished" || d.status === "confirmed") {
+        document.getElementById("pago-status").innerHTML =
+            '<span style="color:#22c55e">✓ ¡Pago confirmado! Recargando...</span>';
+        setTimeout(() => location.reload(), 2000);
+    }
+}, 15000);
+</script>
+{% endif %}
+{% endblock %}

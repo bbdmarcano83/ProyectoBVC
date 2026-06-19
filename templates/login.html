@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar sesión — Caracas Bull</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body class="auth-body">
+    <div class="auth-card">
+        <a href="/" class="auth-logo">
+            <span class="logo-mark">▸</span> Caracas<span class="logo-dim">Bull</span>
+        </a>
+        <h1 class="auth-title">Bienvenido de vuelta</h1>
+        <p class="auth-subtitle">Ingresa a tu cuenta para continuar</p>
+
+        {% if error %}
+        <div class="auth-error">{{ error }}</div>
+        {% endif %}
+
+        <form action="/login" method="post" class="auth-form">
+            <label>Email</label>
+            <input type="email" name="email" placeholder="tu@email.com" required autofocus>
+            <label>Contraseña</label>
+            <input type="password" name="password" placeholder="••••••••" required>
+            <button type="submit" class="btn btn--primary" style="width:100%; margin-top:8px;">
+                Iniciar sesión
+            </button>
+        </form>
+
+        <p class="auth-footer">
+            ¿No tienes cuenta? <a href="/registro">Regístrate gratis — 14 días de prueba</a>
+        </p>
+    </div>
+</body>
+</html>

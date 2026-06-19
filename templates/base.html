@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}BVC Tracker{% endblock %}</title>
+    <title>{% block title %}Caracas Bull{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/main.css">
@@ -13,13 +13,27 @@
     <header class="site-header">
         <div class="header-inner">
             <a href="/" class="logo">
-                <span class="logo-mark">▸</span> BVC<span class="logo-dim">tracker</span>
+                <span class="logo-mark">▸</span> Caracas<span class="logo-dim">Bull</span>
             </a>
             <nav class="header-nav">
                 <a href="/" class="nav-link {% if active == 'pizarra' %}active{% endif %}">Pizarra</a>
                 <a href="/portafolio" class="nav-link {% if active == 'portafolio' %}active{% endif %}">Portafolio</a>
             </nav>
-            <div class="header-time" id="reloj">--:--:--</div>
+            <div class="header-right">
+                {% if usuario %}
+                    {% if dias <= 5 %}
+                    <a href="/suscripcion" class="dias-badge dias-badge--warn">⚠ {{ dias }}d restantes</a>
+                    {% endif %}
+                    <div class="user-menu">
+                        <span class="user-name">{{ usuario.nombre.split()[0] }}</span>
+                        <div class="user-dropdown">
+                            <a href="/suscripcion">Mi suscripción</a>
+                            <a href="/logout" class="logout-link">Cerrar sesión</a>
+                        </div>
+                    </div>
+                {% endif %}
+                <div class="header-time" id="reloj">--:--:--</div>
+            </div>
         </div>
     </header>
 
