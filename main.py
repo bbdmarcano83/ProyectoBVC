@@ -224,7 +224,7 @@ async def webhook_nowpayments(request: Request, db: Session = Depends(get_db)):
 
 # ── Pizarra ───────────────────────────────────────────────────────────────────
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def index(request: Request, db: Session = Depends(get_db)):
     usuario = get_usuario_actual(request, db)
     return render("landing.html", {"request": request, "usuario": usuario})
