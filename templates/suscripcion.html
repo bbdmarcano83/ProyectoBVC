@@ -108,18 +108,14 @@
 
 {% block extra_scripts %}
 {% if pago %}
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script>
-// Generar QR de la dirección
-QRCode.toCanvas(document.createElement('canvas'), '{{ pago.pay_address }}', {
-    width: 180,
-    color: { dark: '#00c896', light: '#0f1a1a' }
-}, function(err, canvas) {
-    if (!err) {
-        canvas.style.borderRadius = '10px';
-        document.getElementById('qr-code').appendChild(canvas);
-    }
-});
+// Generar QR usando Google Charts API (sin dependencias)
+const qrAddr = "{{ pago.pay_address }}";
+const qrImg = document.createElement("img");
+qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrAddr)}&bgcolor=0f1a1a&color=00c896&margin=10`;
+qrImg.style.cssText = "border-radius:12px;border:3px solid #00c896;width:180px;height:180px;";
+qrImg.alt = "QR Code";
+document.getElementById("qr-code").appendChild(qrImg);
 
 function copiar() {
     navigator.clipboard.writeText("{{ pago.pay_address }}");
