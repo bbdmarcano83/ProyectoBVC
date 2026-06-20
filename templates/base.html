@@ -58,6 +58,11 @@
                         <div class="user-avatar">{{ usuario.nombre[0].upper() }}</div>
                         <div class="user-dropdown">
                             <div style="padding:10px 16px 6px; font-size:12px; color:var(--text-secondary); border-bottom:1px solid var(--border); margin-bottom:4px;">{{ usuario.nombre }}</div>
+                            {% if usuario.es_admin %}
+                            <a href="/admin" style="color:var(--gold) !important;">
+                                <i class="ti ti-crown" style="font-size:14px"></i> Panel Admin
+                            </a>
+                            {% endif %}
                             <a href="/perfil">
                                 <i class="ti ti-user" style="font-size:14px"></i> Mi perfil
                             </a>
