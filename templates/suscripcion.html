@@ -83,7 +83,12 @@
 <!-- Modal de pago activo -->
 <div class="pago-modal">
     <h3 class="pago-titulo">Completa tu pago</h3>
-    <p class="pago-instruccion">Envía exactamente <b class="var-up">{{ pago.pay_amount }} {{ pago.pay_currency | upper }}</b> a esta dirección:</p>
+    <p class="pago-instruccion">
+        Envía exactamente <b class="var-up">{{ pago.pay_amount }} USDT</b> a esta dirección:<br>
+        <span style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;background:#f0c04018;border:1px solid #f0c04033;color:var(--gold);padding:5px 12px;border-radius:99px;font-size:12px;font-weight:700;">
+            ⚠ Red: BEP20 (Binance Smart Chain) — NO uses TRC20 ni ERC20
+        </span>
+    </p>
     <div class="pago-qr-wrap">
         <div id="qr-code"></div>
         <p class="pago-qr-label">Escanea con tu wallet</p>
