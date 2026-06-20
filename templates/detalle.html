@@ -1,6 +1,5 @@
 {% extends "base.html" %}
-
-{% block title %}{{ activo.DESC_SIMB or simbolo }} — BVC Tracker{% endblock %}
+{% block title %}{{ activo.DESC_SIMB or simbolo }} — Caracas Bull{% endblock %}
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
@@ -9,7 +8,7 @@
 {% block content %}
 <div class="detalle-header">
     <div>
-        <a href="/" class="back-link">← Pizarra</a>
+        <a href="/pizarra" class="back-link">← Pizarra</a>
         <h1 class="page-title">
             {{ activo.DESC_SIMB or simbolo }}
             <span class="simb-tag">{{ simbolo }}</span>
@@ -25,7 +24,6 @@
     </div>
 </div>
 
-<!-- Datos técnicos -->
 <div class="info-grid">
     <div class="info-card">
         <span class="info-label">ISIN</span>
@@ -53,10 +51,18 @@
     </div>
 </div>
 
-<!-- Gráfica de velas -->
+<!-- Gráfica combinada velas + volumen -->
 <div class="chart-section">
     <div class="chart-toolbar">
-        <h2 class="section-title" style="margin-bottom:0">Histórico de precios</h2>
+        <div style="display:flex; align-items:center; gap:12px;">
+            <h2 class="section-title" style="margin-bottom:0">Histórico de precios</h2>
+            {% if vela_hoy %}
+            <div class="vela-vivo-badge">
+                <span class="vela-dot"></span>
+                {% if mercado %}Vela en vivo{% else %}Hoy{% endif %}
+            </div>
+            {% endif %}
+        </div>
         <div class="temporalidad-btns">
             <button class="t-btn" data-range="30">1M</button>
             <button class="t-btn" data-range="90">3M</button>
@@ -66,6 +72,7 @@
         </div>
     </div>
     <div id="chart-velas"></div>
+    <div id="chart-volumen"></div>
     <div class="chart-stats" id="chart-stats">
         <span id="stat-velas" class="chart-stat"></span>
         <span id="stat-min" class="chart-stat"></span>
@@ -102,121 +109,270 @@
 
 {% block extra_scripts %}
 <script>
-const todosLosDatos = {{ series_data | tojson }};
+const todosLosDatos  = {{ series_data | tojson }};
+const todosVolumenes = {{ volume_data | tojson }};
+const velaHoy        = {{ vela_hoy | tojson if vela_hoy else 'null' }};
+const volHoy         = {{ vol_hoy_data | tojson if vol_hoy_data else 'null' }};
+const simbolo        = "{{ simbolo }}";
+const mercadoAbierto = {{ 'true' if mercado else 'false' }};
 
-let chart = null;
+let chartVelas = null;
+let chartVol   = null;
+let rangoActivo = 0;
 
-function filtrarPorRango(dias) {
-    if (dias === 0 || todosLosDatos.length === 0) return todosLosDatos;
-    const hoy = new Date();
-    const desde = new Date(hoy);
-    desde.setDate(desde.getDate() - dias);
-    return todosLosDatos.filter(d => {
-        // fecha viene como "DD/MM/YYYY" o "YYYY-MM-DD"
-        const partes = d.x.includes('/') ? d.x.split('/').reverse() : d.x.split('-');
-        const fecha = new Date(partes.join('-'));
-        return fecha >= desde;
-    });
+// ── Merge vela de hoy ─────────────────────────────────────────────────────
+// Convierte '19-JUN-26' a Date
+const MESES = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+function parseFecha(s) {
+    if (!s) return new Date(0);
+    const p = s.split('-');
+    if (p.length === 3 && isNaN(p[1])) {
+        return new Date(2000 + parseInt(p[2]), MESES[p[1].toUpperCase()] ?? 0, parseInt(p[0]));
+    }
+    // DD/MM/YYYY
+    if (s.includes('/')) { const q = s.split('/'); return new Date(q[2], q[1]-1, q[0]); }
+    return new Date(s);
 }
 
-function actualizarStats(datos) {
-    if (!datos.length) return;
-    const precios = datos.map(d => d.y[3]).filter(v => v > 0);
-    const min = Math.min(...precios);
-    const max = Math.max(...precios);
-    const primero = datos[0].y[3];
-    const ultimo  = datos[datos.length - 1].y[3];
-    const rend = primero > 0 ? ((ultimo - primero) / primero * 100).toFixed(2) : 0;
-    const color = rend >= 0 ? '#22c55e' : '#ef4444';
+function getDatos(dias) {
+    const desde = dias === 0 ? new Date(0) : new Date(Date.now() - dias*864e5);
+    let precios = todosLosDatos.filter(d => parseFecha(d.x) >= desde);
+    let vols    = todosVolumenes.filter(d => parseFecha(d.x) >= desde);
 
-    document.getElementById('stat-velas').textContent = `${datos.length} velas`;
-    document.getElementById('stat-min').textContent   = `Mín: ${min.toLocaleString('es-VE', {minimumFractionDigits:2})} Bs`;
-    document.getElementById('stat-max').textContent   = `Máx: ${max.toLocaleString('es-VE', {minimumFractionDigits:2})} Bs`;
+    if (velaHoy) {
+        precios = precios.filter(d => d.x !== velaHoy.x);
+        precios.push({ ...velaHoy, esHoy: true });
+    }
+    if (volHoy) {
+        vols = vols.filter(d => d.x !== volHoy.x);
+        vols.push({ ...volHoy, esHoy: true });
+    }
+    return { precios, vols };
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────
+function actualizarStats(precios) {
+    if (!precios.length) return;
+    const cierres = precios.map(d => d.y[3]).filter(v => v > 0);
+    const min = Math.min(...cierres);
+    const max = Math.max(...cierres);
+    const primero = precios[0].y[0];
+    const ultimo  = precios[precios.length - 1].y[3];
+    const rend = primero > 0 ? ((ultimo - primero) / primero * 100).toFixed(2) : 0;
+    const color = rend >= 0 ? 'var(--buy)' : 'var(--sell)';
+    const fmt = v => v.toLocaleString('es-VE', {minimumFractionDigits:2});
+    document.getElementById('stat-velas').textContent = `${precios.length} velas`;
+    document.getElementById('stat-min').textContent   = `Mín: ${fmt(min)} Bs`;
+    document.getElementById('stat-max').textContent   = `Máx: ${fmt(max)} Bs`;
     document.getElementById('stat-rend').innerHTML    = `Rend: <span style="color:${color}">${rend >= 0 ? '+' : ''}${rend}%</span>`;
 }
 
-function renderChart(datos) {
-    const opciones = {
-        series: [{ data: datos }],
+// ── Render ────────────────────────────────────────────────────────────────
+function renderCharts(precios, vols) {
+    const fmt = v => v.toLocaleString('es-VE', {minimumFractionDigits:2});
+
+    // ── Velas ──────────────────────────────────────────────────────────────
+    const optsVelas = {
+        series: [{ name: 'Precio', data: precios }],
         chart: {
+            id: 'velas',
             type: 'candlestick',
-            height: 450,
+            height: 380,
             background: 'transparent',
-            foreColor: '#8b949e',
-            toolbar: {
-                show: true,
-                tools: { download: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true }
-            },
+            foreColor: '#6b9090',
+            toolbar: { show: true, tools: { download: true, zoom: true, zoomin: true, zoomout: true, pan: true, reset: true } },
             zoom: { enabled: true },
             animations: { enabled: false },
+            brush: { enabled: false },
         },
         theme: { mode: 'dark' },
         plotOptions: {
             candlestick: {
-                colors: { upward: '#22c55e', downward: '#ef4444' },
+                colors: { upward: '#00c896', downward: '#ff4d6a' },
                 wick: { useFillColor: true }
             }
         },
-        grid: { borderColor: '#21262d', strokeDashArray: 3 },
+        grid: { borderColor: '#1e3030', strokeDashArray: 3 },
         xaxis: {
             type: 'category',
-            labels: {
-                style: { colors: '#8b949e', fontSize: '11px' },
-                rotate: -30,
-                maxHeight: 60,
-            },
-            tickAmount: 10,
+            labels: { show: false },  // ocultar en velas, se ve en volumen
+            axisBorder: { show: false },
+            axisTicks: { show: false },
+            crosshairs: { show: true },
         },
         yaxis: {
             labels: {
-                style: { colors: '#8b949e' },
-                formatter: v => v.toLocaleString('es-VE', {minimumFractionDigits: 2})
+                style: { colors: '#6b9090', fontSize: '11px' },
+                formatter: v => fmt(v)
             },
             tooltip: { enabled: true }
         },
         tooltip: {
             theme: 'dark',
+            shared: true,
             custom({ seriesIndex, dataPointIndex, w }) {
                 const d = w.globals.initialSeries[seriesIndex].data[dataPointIndex];
+                if (!d) return '';
                 const [o, h, l, c] = d.y;
-                const color = c >= o ? '#22c55e' : '#ef4444';
-                return `<div style="padding:10px; font-family:monospace; font-size:12px; background:#1f2937; border:1px solid #30363d; border-radius:6px;">
-                    <b style="color:#e6edf3">${d.x}</b><br>
-                    <span style="color:#8b949e">Apertura:</span> <b>${o.toLocaleString('es-VE',{minimumFractionDigits:2})}</b><br>
-                    <span style="color:#8b949e">Máximo:</span>   <b style="color:#22c55e">${h.toLocaleString('es-VE',{minimumFractionDigits:2})}</b><br>
-                    <span style="color:#8b949e">Mínimo:</span>   <b style="color:#ef4444">${l.toLocaleString('es-VE',{minimumFractionDigits:2})}</b><br>
-                    <span style="color:#8b949e">Cierre:</span>   <b style="color:${color}">${c.toLocaleString('es-VE',{minimumFractionDigits:2})}</b>
+                const color = c >= o ? '#00c896' : '#ff4d6a';
+                const esHoy = d.esHoy;
+                const vd      = vols[dataPointIndex];
+                const titulos = vd ? vd.y.toLocaleString('es-VE') : '—';
+                const monto   = vd ? vd.monto.toLocaleString('es-VE', {minimumFractionDigits:2}) : '—';
+                const ops     = vd ? vd.ops : '—';
+                return `<div style="padding:12px;font-family:monospace;font-size:12px;background:#0f1a1a;border:1px solid #1e3030;border-radius:8px;min-width:200px;">
+                    <b style="color:#e8f0f0">${d.x}${esHoy ? ' <span style=color:#f0c040>● HOY</span>' : ''}</b><br><br>
+                    <span style="color:#6b9090">Apertura:    </span><b style="color:#e8f0f0">${fmt(o)} Bs</b><br>
+                    <span style="color:#6b9090">Máximo:      </span><b style="color:#00c896">${fmt(h)} Bs</b><br>
+                    <span style="color:#6b9090">Mínimo:      </span><b style="color:#ff4d6a">${fmt(l)} Bs</b><br>
+                    <span style="color:#6b9090">Cierre:      </span><b style="color:${color}">${fmt(c)} Bs</b><br>
+                    <div style="border-top:1px solid #1e3030;margin:6px 0"></div>
+                    <span style="color:#6b9090">Títulos:     </span><b style="color:#a0b8b8">${titulos}</b><br>
+                    <span style="color:#6b9090">Monto Bs:    </span><b style="color:#a0b8b8">${monto}</b><br>
+                    <span style="color:#6b9090">Operaciones: </span><b style="color:#a0b8b8">${ops}</b>
                 </div>`;
             }
+        },
+        annotations: velaHoy && mercadoAbierto ? {
+            xaxis: [{
+                x: velaHoy.x,
+                borderColor: '#f0c040',
+                borderWidth: 1,
+                strokeDashArray: 4,
+                label: { text: '● Hoy', style: { color: '#080f0f', background: '#f0c040', fontSize: '11px', fontWeight: 700 } }
+            }]
+        } : {}
+    };
+
+    // ── Volumen ────────────────────────────────────────────────────────────
+    const volColors = vols.map(d => {
+        if (d.esHoy) return '#f0c040';
+        return d.isUp ? '#00c89660' : '#ff4d6a60';
+    });
+
+    const optsVol = {
+        series: [{ name: 'Volumen', data: vols.map(d => ({ x: d.x, y: d.y })) }],
+        chart: {
+            id: 'volumen',
+            type: 'bar',
+            height: 150,
+            background: 'transparent',
+            foreColor: '#6b9090',
+            toolbar: { show: false },
+            animations: { enabled: false },
+            sparkline: { enabled: false },
+        },
+        theme: { mode: 'dark' },
+        dataLabels: { enabled: false },
+        plotOptions: {
+            bar: { columnWidth: '70%' }
+        },
+        fill: { colors: volColors },
+        colors: volColors,
+        grid: {
+            borderColor: '#1e3030',
+            strokeDashArray: 3,
+            yaxis: { lines: { show: true } },
+            padding: { left: 10, right: 10 }
+        },
+        xaxis: {
+            type: 'category',
+            labels: {
+                style: { colors: '#6b9090', fontSize: '10px' },
+                rotate: -30,
+                maxHeight: 55,
+                tickAmount: 12,
+            },
+            axisBorder: { show: false },
+            axisTicks: { show: false },
+        },
+        yaxis: {
+            logarithmic: true,
+            logBase: 10,
+            labels: {
+                style: { colors: '#6b9090', fontSize: '10px' },
+                formatter: v => {
+                    if (v >= 1000000) return (v/1000000).toFixed(1)+'M';
+                    if (v >= 1000)    return (v/1000).toFixed(0)+'K';
+                    return Math.round(v).toString();
+                }
+            },
+            tickAmount: 3,
+            min: 1,
+        },
+        tooltip: {
+            theme: 'dark',
+            enabled: false,  // tooltip ya se muestra en las velas
         }
     };
 
-    if (chart) {
-        chart.updateSeries([{ data: datos }]);
+    if (chartVelas) {
+        chartVelas.updateSeries([{ data: precios }]);
+        chartVelas.updateOptions({ annotations: optsVelas.annotations });
     } else {
-        chart = new ApexCharts(document.querySelector("#chart-velas"), opciones);
-        chart.render();
+        chartVelas = new ApexCharts(document.querySelector('#chart-velas'), optsVelas);
+        chartVelas.render();
     }
-    actualizarStats(datos);
+
+    if (chartVol) {
+        chartVol.updateSeries([{ data: vols.map(d => ({ x: d.x, y: d.y })) }]);
+    } else {
+        chartVol = new ApexCharts(document.querySelector('#chart-volumen'), optsVol);
+        chartVol.render();
+    }
+
+    actualizarStats(precios);
 }
 
-// Botones de temporalidad
+// ── Botones temporalidad ──────────────────────────────────────────────────
 document.querySelectorAll('.t-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.t-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const dias = parseInt(btn.dataset.range);
-        const datos = filtrarPorRango(dias);
-        renderChart(datos);
+        rangoActivo = parseInt(btn.dataset.range);
+        const { precios, vols } = getDatos(rangoActivo);
+        renderCharts(precios, vols);
     });
 });
 
-// Render inicial con todos los datos
-if (todosLosDatos.length > 0) {
-    renderChart(todosLosDatos);
+// ── Render inicial ────────────────────────────────────────────────────────
+if (todosLosDatos.length > 0 || velaHoy) {
+    const { precios, vols } = getDatos(0);
+    renderCharts(precios, vols);
 } else {
-    document.querySelector("#chart-velas").innerHTML =
+    document.querySelector('#chart-velas').innerHTML =
         '<p class="empty-chart">Sin datos históricos disponibles.</p>';
+    document.querySelector('#chart-volumen').style.display = 'none';
 }
+
+// ── Actualización en vivo cada 30s ────────────────────────────────────────
+{% if mercado %}
+setInterval(async () => {
+    try {
+        const r = await fetch(`/api/precio/${simbolo}`);
+        const d = await r.json();
+        if (!d.precio || !chartVelas) return;
+
+        const { precios, vols } = getDatos(rangoActivo);
+        const idx = precios.findIndex(v => v.esHoy);
+        if (idx >= 0) {
+            const v = precios[idx];
+            precios[idx] = {
+                ...v,
+                y: [v.y[0], Math.max(v.y[1], d.precio), Math.min(v.y[2], d.precio), d.precio]
+            };
+            chartVelas.updateSeries([{ data: precios }]);
+            // Flash precio header
+            const el = document.querySelector('.precio-valor');
+            if (el) {
+                const prev = parseFloat(el.dataset.prev || d.precio);
+                el.style.color = d.precio > prev ? '#00c896' : '#ff4d6a';
+                el.dataset.prev = d.precio;
+                setTimeout(() => el.style.color = '', 800);
+            }
+        }
+    } catch(e) {}
+}, 30000);
+{% endif %}
 </script>
 {% endblock %}

@@ -717,3 +717,25 @@ a { color: inherit; text-decoration: none; }
     background: var(--sell) !important;
     animation: none !important;
 }
+
+/* ── Vela en vivo badge ───────────────────────────────────────────────────── */
+.vela-vivo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--gold-dim);
+    border: 1px solid #f0c04033;
+    color: var(--gold);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 99px;
+    letter-spacing: .3px;
+}
+.vela-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+    animation: pulse-dot 1.5s infinite;
+}

@@ -77,11 +77,19 @@ async def obtener_detalle_profundo(simbolo: str) -> dict:
             cap   = data.get("cur_cap_simb_rv", [{}])[0]
             prof  = data.get("cur_con_lib_ord_rv", [{}])[0]
 
+            # Datos del dia actual para la vela en vivo
+            resumen_dia = data.get("cur_resumen_simb_rv", [{}])[0]
+
             resultado = {
                 **prof,
                 "ISIN":           encab.get("COD_ISIN", "N/A"),
                 "ACC_CIRC":       encab.get("ACC_CIRC", "N/A"),
                 "CAPITALIZACION": cap.get("CAPITALI_BS", "N/A"),
+                # OHLC del dia en curso
+                "HOY_APERT": resumen_dia.get("PRECIO_APERT") or encab.get("PRECIO_APERT"),
+                "HOY_MAX":   resumen_dia.get("PRECIO_MAX")   or encab.get("PRECIO_MAX"),
+                "HOY_MIN":   resumen_dia.get("PRECIO_MIN")   or encab.get("PRECIO_MIN"),
+                "HOY_CIE":   encab.get("PRECIO"),
             }
             _cache_set(key, resultado)
             return resultado

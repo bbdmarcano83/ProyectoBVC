@@ -339,16 +339,74 @@ async def ver_detalle(request: Request, simbolo: str, db: Session = Depends(get_
         obtener_datos_bvc(), obtener_detalle_profundo(simbolo), obtener_historico(simbolo)
     )
     activo = next((i for i in datos_bolsa if i.get("COD_SIMB") == simbolo), {})
+
     series_data = []
+    volume_data = []
     for m in reversed(historico):
-        o, h, l, c = _to_float(m.get("PRECIO_APERT")), _to_float(m.get("PRECIO_MAX")), _to_float(m.get("PRECIO_MIN")), _to_float(m.get("PRECIO_CIE"))
+        o = _to_float(m.get("PRECIO_APERT"))
+        h = _to_float(m.get("PRECIO_MAX"))
+        l = _to_float(m.get("PRECIO_MIN"))
+        c = _to_float(m.get("PRECIO_CIE"))
+        # TOT_ACC_NEGOC = titulos negociados, TOT_MONTO_NEGOC = monto en Bs
+        v     = _to_float(m.get("TOT_ACC_NEGOC") or 0)
+        monto = _to_float(m.get("TOT_MONTO_NEGOC") or 0)
+        ops   = _to_float(m.get("TOT_OP_NEGOC") or 0)
+        fecha = m.get("FEC", "")
         if any([o, h, l, c]):
-            series_data.append({"x": m.get("FEC", ""), "y": [o, h, l, c]})
+            series_data.append({"x": fecha, "y": [o, h, l, c]})
+            volume_data.append({"x": fecha, "y": v, "monto": monto, "ops": int(ops), "isUp": c >= o})
+
+    # Vela del dia en curso
+    from datetime import datetime
+    try:
+        import pytz
+        vet = pytz.timezone("America/Caracas")
+        hoy = datetime.now(vet).strftime("%d/%m/%Y")
+    except Exception:
+        from datetime import timezone, timedelta
+        hoy = datetime.now(timezone(timedelta(hours=-4))).strftime("%d/%m/%Y")
+
+    precio_actual = _to_float(activo.get("PRECIO"))
+    apert  = _to_float(prof.get("HOY_APERT") or precio_actual)
+    maximo = _to_float(prof.get("HOY_MAX")   or precio_actual)
+    minimo = _to_float(prof.get("HOY_MIN")   or precio_actual)
+    vol_hoy = _to_float(activo.get("VOLUMEN") or 0)
+
+    vela_hoy = None
+    if precio_actual > 0:
+        vela_hoy = {"x": hoy, "y": [apert, maximo, minimo, precio_actual]}
+
+    vol_hoy_data = None
+    if vol_hoy > 0:
+        vol_hoy_data = {"x": hoy, "y": vol_hoy, "isUp": precio_actual >= apert}
 
     return render("detalle.html", {
         "request": request, "simbolo": simbolo, "activo": activo,
-        "prof": prof, "series_data": series_data, "active": "",
+        "prof": prof, "series_data": series_data,
+        "volume_data": volume_data,
+        "vela_hoy": vela_hoy,
+        "vol_hoy_data": vol_hoy_data,
+        "active": "",
         "usuario": usuario, "dias": dias_restantes(usuario),
+        "mercado": mercado_abierto(),
+    })
+
+
+# ── API endpoints ────────────────────────────────────────────────────────────────
+
+@app.get("/api/precio/{simbolo}")
+async def api_precio(simbolo: str, request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"error": "no autorizado"}, status_code=401)
+    datos = await obtener_datos_bvc()
+    activo = next((i for i in datos if i.get("COD_SIMB") == simbolo.upper()), None)
+    if not activo:
+        return JSONResponse({"error": "no encontrado"}, status_code=404)
+    return JSONResponse({
+        "precio":  _to_float(activo.get("PRECIO")),
+        "var_rel": _to_float(activo.get("VAR_REL")),
+        "var_abs": _to_float(activo.get("VAR_ABS")),
     })
 
 
