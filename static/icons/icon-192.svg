@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#080f0f"/>
+  <rect width="192" height="192" rx="40" fill="#00c896" opacity="0.12"/>
+  <!-- Mismo toro del header escalado -->
+  <path d="M24 132c15-30 36-45 66-45s51 15 66 45" stroke="#00c896" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <path d="M54 87c0-21 9-36 30-42" stroke="#00c896" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <circle cx="90" cy="39" r="11" fill="#00c896"/>
+  <path d="M42 108l-21 21M138 108l21 21" stroke="#00c896" stroke-width="12" stroke-linecap="round"/>
+</svg>

@@ -21,6 +21,7 @@ from services.auth import (
 )
 from services.pagos import crear_pago, verificar_firma_ipn, procesar_webhook, verificar_estado_pago
 from services.importador import importar_archivo
+from services.email import email_recuperar_password, email_bienvenida
 from database import ActivoPortafolio, Watchlist
 
 app = FastAPI(title="Caracas Bull")
@@ -44,6 +45,8 @@ def _migrar_db():
         "ALTER TABLE usuarios ADD COLUMN telegram_chat_id VARCHAR(50)",
         "ALTER TABLE usuarios ADD COLUMN telegram_codigo VARCHAR(10)",
         "ALTER TABLE usuarios ADD COLUMN broker VARCHAR(50)",
+        "ALTER TABLE usuarios ADD COLUMN token_recuperacion VARCHAR(100)",
+        "ALTER TABLE usuarios ADD COLUMN token_expira DATETIME",
     ]
     with SessionLocal() as db:
         for sql in migraciones:
@@ -202,6 +205,7 @@ async def suscripcion_page(request: Request, mensaje: str = None, db: Session = 
         "pago": None,
         "mensaje": mensaje,
         "active": "",
+        "mercado": mercado_abierto(),
     })
 
 @app.post("/suscripcion/pagar")
@@ -210,11 +214,15 @@ async def suscripcion_pagar(
     plan: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    usuario = require_usuario(request, db)
-    if isinstance(usuario, RedirectResponse):
-        return usuario
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
 
     pago = await crear_pago(usuario.id, plan, usuario.email)
+    mensaje_error = None
+
+    if not pago:
+        mensaje_error = "Error al conectar con el sistema de pagos. Verifica que NOWPAYMENTS_API_KEY esté configurada en Render."
 
     return render("suscripcion.html", {
         "request": request,
@@ -222,8 +230,9 @@ async def suscripcion_pagar(
         "activa": suscripcion_activa(usuario),
         "dias": dias_restantes(usuario),
         "pago": pago,
-        "mensaje": None,
+        "mensaje": mensaje_error,
         "active": "",
+        "mercado": mercado_abierto(),
     })
 
 @app.get("/suscripcion/estado/{payment_id}")
@@ -833,6 +842,63 @@ async def api_precio(simbolo: str, request: Request, db: Session = Depends(get_d
     })
 
 
+# ── Recuperar contraseña ─────────────────────────────────────────────────────────
+
+@app.get("/recuperar", response_class=HTMLResponse)
+async def recuperar_page(request: Request):
+    return render("recuperar.html", {"request": request, "modo": "solicitar", "error": None, "mensaje": None, "token": None})
+
+@app.post("/recuperar", response_class=HTMLResponse)
+async def recuperar_post(request: Request, email: str = Form(...), db: Session = Depends(get_db)):
+    import secrets
+    from datetime import datetime, timedelta
+    from database import Usuario as UsuarioModel
+    usuario = db.query(UsuarioModel).filter(UsuarioModel.email == email.lower().strip()).first()
+    if usuario:
+        token = secrets.token_urlsafe(32)
+        usuario.token_recuperacion = token
+        usuario.token_expira = datetime.utcnow() + timedelta(minutes=30)
+        db.commit()
+        app_url = os.environ.get("APP_URL", "https://caracasbull.com")
+        import asyncio
+        asyncio.create_task(asyncio.to_thread(email_recuperar_password, usuario.email, usuario.nombre, token, app_url))
+    return render("recuperar.html", {
+        "request": request, "modo": "solicitar", "error": None,
+        "mensaje": "Si el email existe, recibirás un enlace en minutos.", "token": None
+    })
+
+@app.get("/recuperar/{token}", response_class=HTMLResponse)
+async def recuperar_token_page(request: Request, token: str, db: Session = Depends(get_db)):
+    from datetime import datetime
+    from database import Usuario as UsuarioModel
+    usuario = db.query(UsuarioModel).filter(UsuarioModel.token_recuperacion == token).first()
+    if not usuario or not usuario.token_expira or datetime.utcnow() > usuario.token_expira:
+        return render("recuperar.html", {"request": request, "modo": "expirado", "error": None, "mensaje": None, "token": None})
+    return render("recuperar.html", {"request": request, "modo": "nueva", "error": None, "mensaje": None, "token": token})
+
+@app.post("/recuperar/{token}", response_class=HTMLResponse)
+async def recuperar_token_post(
+    request: Request, token: str,
+    password: str = Form(...), password2: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    from datetime import datetime
+    from database import Usuario as UsuarioModel
+    from services.auth import hash_password
+    usuario = db.query(UsuarioModel).filter(UsuarioModel.token_recuperacion == token).first()
+    if not usuario or not usuario.token_expira or datetime.utcnow() > usuario.token_expira:
+        return render("recuperar.html", {"request": request, "modo": "expirado", "error": None, "mensaje": None, "token": None})
+    if password != password2:
+        return render("recuperar.html", {"request": request, "modo": "nueva", "error": "Las contraseñas no coinciden", "mensaje": None, "token": token})
+    if len(password) < 8:
+        return render("recuperar.html", {"request": request, "modo": "nueva", "error": "Mínimo 8 caracteres", "mensaje": None, "token": token})
+    usuario.password_hash = hash_password(password)
+    usuario.token_recuperacion = None
+    usuario.token_expira = None
+    db.commit()
+    return render("recuperar.html", {"request": request, "modo": "ok", "error": None, "mensaje": None, "token": None})
+
+
 # ── Watchlist ────────────────────────────────────────────────────────────────────
 
 @app.get("/watchlist", response_class=HTMLResponse)
@@ -1015,6 +1081,17 @@ async def admin_desactivar(request: Request, usuario_id: int = Form(...), db: Se
 
 
 # ── PWA ───────────────────────────────────────────────────────────────────────
+
+@app.get("/favicon.ico")
+async def favicon_ico():
+    from fastapi.responses import FileResponse
+    return FileResponse("static/favicon.svg", media_type="image/svg+xml")
+
+@app.get("/favicon.svg")
+async def favicon_svg():
+    from fastapi.responses import FileResponse
+    return FileResponse("static/favicon.svg", media_type="image/svg+xml")
+
 
 @app.get("/manifest.json")
 async def manifest():

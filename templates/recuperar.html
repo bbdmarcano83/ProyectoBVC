@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recuperar contraseña — Caracas Bull</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/css/auth.css">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+</head>
+<body class="auth-body">
+    <div class="auth-card">
+        <a href="/" class="auth-logo">
+            <div class="auth-logo-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 17c2-4 5-6 9-6s7 2 9 6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                    <path d="M8 11c0-3 1.5-5 4-6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
+                    <circle cx="12" cy="4" r="1.5" fill="#080f0f"/>
+                </svg>
+            </div>
+            Caracas<span style="color:var(--text-secondary); font-weight:500">Bull</span>
+        </a>
+
+        {% if modo == 'solicitar' %}
+        <h1 class="auth-title">¿Olvidaste tu contraseña?</h1>
+        <p class="auth-subtitle">Ingresa tu email y te enviamos un enlace para restablecerla.</p>
+        {% if error %}<div class="auth-error">⚠ {{ error }}</div>{% endif %}
+        {% if mensaje %}<div class="auth-error" style="background:#00c89615;border-color:#00c89633;color:var(--buy);">✓ {{ mensaje }}</div>{% endif %}
+        <form action="/recuperar" method="post" class="auth-form">
+            <label>Email</label>
+            <input type="email" name="email" placeholder="tu@email.com" required autofocus>
+            <button type="submit" class="btn btn--primary" style="width:100%;margin-top:12px;padding:12px;font-size:14px;justify-content:center;">
+                Enviar enlace de recuperación
+            </button>
+        </form>
+
+        {% elif modo == 'nueva' %}
+        <h1 class="auth-title">Nueva contraseña</h1>
+        <p class="auth-subtitle">Elige una contraseña segura para tu cuenta.</p>
+        {% if error %}<div class="auth-error">⚠ {{ error }}</div>{% endif %}
+        <form action="/recuperar/{{ token }}" method="post" class="auth-form">
+            <label>Nueva contraseña</label>
+            <input type="password" name="password" placeholder="Mínimo 8 caracteres" minlength="8" required autofocus>
+            <label>Confirmar contraseña</label>
+            <input type="password" name="password2" placeholder="Repite la contraseña" minlength="8" required>
+            <button type="submit" class="btn btn--primary" style="width:100%;margin-top:12px;padding:12px;font-size:14px;justify-content:center;">
+                Cambiar contraseña
+            </button>
+        </form>
+
+        {% elif modo == 'expirado' %}
+        <h1 class="auth-title">Enlace expirado</h1>
+        <p class="auth-subtitle">Este enlace ya no es válido. Solicita uno nuevo.</p>
+        <a href="/recuperar" class="btn btn--primary" style="width:100%;margin-top:12px;padding:12px;font-size:14px;justify-content:center;display:block;text-align:center;">
+            Solicitar nuevo enlace
+        </a>
+
+        {% elif modo == 'ok' %}
+        <h1 class="auth-title">✓ Contraseña cambiada</h1>
+        <p class="auth-subtitle">Tu contraseña fue actualizada correctamente.</p>
+        <a href="/login" class="btn btn--primary" style="width:100%;margin-top:12px;padding:12px;font-size:14px;justify-content:center;display:block;text-align:center;">
+            Iniciar sesión
+        </a>
+        {% endif %}
+
+        <p class="auth-footer">
+            <a href="/login">← Volver al login</a>
+        </p>
+    </div>
+</body>
+</html>
