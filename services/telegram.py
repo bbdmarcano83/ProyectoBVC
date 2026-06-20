@@ -2,7 +2,7 @@ import httpx
 import asyncio
 import os
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8828374649:AAFSk1n57WKwxjtCG3500wPErr2B84Cces4")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_API   = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 

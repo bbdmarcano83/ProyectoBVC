@@ -2,6 +2,7 @@ import uvicorn
 import asyncio
 import os
 import json
+import httpx
 
 from fastapi import FastAPI, Form, Request, Depends, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -27,11 +28,30 @@ app = FastAPI(title="Caracas Bull")
 @app.on_event("startup")
 async def startup():
     init_db()
+    _migrar_db()
     _crear_admin_si_no_existe()
     # Arrancar worker de alertas en background
     asyncio.create_task(loop_alertas())
     # Registrar webhook de Telegram
     await registrar_webhook_telegram()
+
+
+def _migrar_db():
+    """Agrega columnas nuevas a tablas existentes sin borrar datos."""
+    from sqlalchemy import text
+    migraciones = [
+        "ALTER TABLE usuarios ADD COLUMN telegram_chat_id VARCHAR(50)",
+        "ALTER TABLE usuarios ADD COLUMN telegram_codigo VARCHAR(10)",
+        "ALTER TABLE usuarios ADD COLUMN broker VARCHAR(50)",
+    ]
+    with SessionLocal() as db:
+        for sql in migraciones:
+            try:
+                db.execute(text(sql))
+                db.commit()
+                print(f"[Migración] OK: {sql}")
+            except Exception:
+                pass  # La columna ya existe, ignorar
 
 
 def _crear_admin_si_no_existe():
