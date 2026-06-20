@@ -862,3 +862,58 @@ a { color: inherit; text-decoration: none; }
 .sus-info-row:last-of-type { border-bottom: none; }
 .sus-info-label { color: var(--text-secondary); }
 .sus-info-val   { font-weight: 600; }
+
+/* ── Alertas ──────────────────────────────────────────────────────────────── */
+.alerta-aviso {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    background: #2AABEE10;
+    border: 1px solid #2AABEE33;
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    line-height: 1.6;
+}
+.alerta-aviso-icon { font-size: 24px; flex-shrink: 0; }
+
+/* ── Telegram pasos ───────────────────────────────────────────────────────── */
+.telegram-paso {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.6;
+}
+.paso-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #080f0f;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.telegram-codigo-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin-top: 6px;
+}
+.telegram-codigo-box code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--accent);
+    flex: 1;
+}

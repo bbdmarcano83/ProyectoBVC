@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Alertas — Caracas Bull{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Alertas <span class="dim">de precio</span></h1>
+    {% if usuario.telegram_chat_id %}
+    <span class="badge--live" style="background:#2AABEE18; border-color:#2AABEE44; color:#2AABEE;">
+        ✈ Telegram vinculado
+    </span>
+    {% else %}
+    <a href="/perfil" class="btn btn--ghost btn--sm">⚠ Vincula Telegram primero</a>
+    {% endif %}
+    <button class="btn btn--primary" onclick="abrirModal('modal-alerta')" style="margin-left:auto;">
+        + Nueva alerta
+    </button>
+</div>
+
+{% if not usuario.telegram_chat_id %}
+<div class="alerta-aviso">
+    <div class="alerta-aviso-icon">✈</div>
+    <div>
+        <b>Vincula tu cuenta de Telegram para recibir alertas</b>
+        <p>Ve a tu <a href="/perfil" style="color:var(--accent)">perfil</a> y haz clic en "Vincular Telegram". Es rápido y gratis.</p>
+    </div>
+</div>
+{% endif %}
+
+{% if alertas %}
+<div class="table-wrapper">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Símbolo</th>
+                <th>Tipo</th>
+                <th>% Disparador</th>
+                <th>Estado</th>
+                <th>Creada</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in alertas %}
+            <tr>
+                <td>
+                    <a href="/detalle/{{ a.simbolo }}" class="simb-link">
+                        <b>{{ a.simbolo }}</b>
+                    </a>
+                </td>
+                <td>
+                    {% if a.tipo == 'subida' %}
+                    <span class="var-up">▲ Subida</span>
+                    {% else %}
+                    <span class="var-down">▼ Bajada</span>
+                    {% endif %}
+                </td>
+                <td class="mono">{{ "%.1f"|format(a.porcentaje) }}%</td>
+                <td>
+                    {% if a.disparada %}
+                    <span style="color:var(--gold); font-size:12px; font-weight:600;">● Disparada</span>
+                    {% elif a.activa %}
+                    <span style="color:var(--buy); font-size:12px; font-weight:600;">● Activa</span>
+                    {% else %}
+                    <span style="color:var(--text-secondary); font-size:12px;">Inactiva</span>
+                    {% endif %}
+                </td>
+                <td class="mono" style="color:var(--text-secondary); font-size:12px;">
+                    {{ a.creado_en.strftime('%d/%m/%Y') if a.creado_en else '—' }}
+                </td>
+                <td>
+                    <div class="actions-cell">
+                        {% if a.disparada %}
+                        <form action="/alertas/reset" method="post" style="display:inline;">
+                            <input type="hidden" name="alerta_id" value="{{ a.id }}">
+                            <button class="btn btn--sm btn--ghost">↺ Reactivar</button>
+                        </form>
+                        {% endif %}
+                        <form action="/alertas/eliminar" method="post" style="display:inline;">
+                            <input type="hidden" name="alerta_id" value="{{ a.id }}">
+                            <button class="btn btn--sm btn--danger">✕</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">🔔</div>
+    <p>No tienes alertas configuradas.</p>
+    <button class="btn btn--primary" onclick="abrirModal('modal-alerta')">
+        Crear primera alerta
+    </button>
+</div>
+{% endif %}
+
+<!-- Modal nueva alerta -->
+<div id="modal-alerta" class="overlay" onclick="cerrarSiOverlay(event, this)">
+    <div class="modal">
+        <button class="modal-close" onclick="cerrarModal('modal-alerta')">&times;</button>
+        <h3 class="modal-title">Nueva alerta de precio</h3>
+        <form action="/alertas/crear" method="post" class="modal-form">
+            <label>Símbolo</label>
+            <select name="simbolo" required style="width:100%; padding:9px 12px; background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-size:13px;">
+                {% for s in simbolos %}
+                <option value="{{ s }}">{{ s }}</option>
+                {% endfor %}
+            </select>
+            <label>Tipo de alerta</label>
+            <select name="tipo" required style="width:100%; padding:9px 12px; background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-size:13px;">
+                <option value="subida">▲ Alerta de subida</option>
+                <option value="bajada">▼ Alerta de bajada</option>
+            </select>
+            <label>% de variación para disparar</label>
+            <input type="number" name="porcentaje" placeholder="Ej: 5 (para alertar al +5%)" step="0.1" min="0.1" max="100" required>
+            <p style="color:var(--text-secondary); font-size:12px; margin-top:4px;">
+                Se te notificará por Telegram cuando la acción alcance este % de variación en el día.
+            </p>
+            <button type="submit" class="btn btn--primary" style="margin-top:8px;">Crear alerta</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function abrirModal(id) { document.getElementById(id).style.display = 'flex'; }
+function cerrarModal(id) { document.getElementById(id).style.display = 'none'; }
+function cerrarSiOverlay(e, el) { if (e.target === el) cerrarModal(el.id); }
+</script>
+{% endblock %}

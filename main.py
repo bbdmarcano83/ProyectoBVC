@@ -9,7 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
-from database import init_db, get_db, SessionLocal
+from database import init_db, get_db, SessionLocal, AlertaPrecio
+from services.alertas_worker import loop_alertas
 from services.bvc import obtener_datos_bvc, obtener_detalle_profundo, obtener_historico, _to_float, formatear_bs, formatear_entero, formatear_millones, mercado_abierto
 from services.portafolio import calcular_fila, resumen_portafolio
 from services.auth import (
@@ -24,9 +25,13 @@ app = FastAPI(title="Caracas Bull")
 
 # ── Init DB al arrancar ────────────────────────────────────────────────────────
 @app.on_event("startup")
-def startup():
+async def startup():
     init_db()
     _crear_admin_si_no_existe()
+    # Arrancar worker de alertas en background
+    asyncio.create_task(loop_alertas())
+    # Registrar webhook de Telegram
+    await registrar_webhook_telegram()
 
 
 def _crear_admin_si_no_existe():
@@ -541,6 +546,254 @@ async def eliminar_cuenta(
     return response
 
 
+# ── Telegram ─────────────────────────────────────────────────────────────────────
+
+@app.post("/telegram/vincular")
+async def vincular_telegram(request: Request, db: Session = Depends(get_db)):
+    import random, string
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"error": "no autorizado"}, status_code=401)
+    # Generar código de 6 dígitos
+    codigo = "".join(random.choices(string.digits, k=6))
+    usuario.telegram_codigo = codigo
+    db.commit()
+    return JSONResponse({"codigo": codigo, "bot": "@CaracasBullBot"})
+
+
+@app.post("/webhook/telegram")
+async def webhook_telegram(request: Request, db: Session = Depends(get_db)):
+    from services.telegram import verificar_codigo
+    datos = await request.json()
+    mensaje = datos.get("message", {})
+    chat_id = str(mensaje.get("chat", {}).get("id", ""))
+    texto   = mensaje.get("text", "").strip()
+
+    if not chat_id:
+        return JSONResponse({"ok": True})
+
+    if texto.startswith("/start "):
+        codigo = texto.replace("/start ", "").strip()
+        await verificar_codigo(chat_id, codigo, db)
+    elif texto == "/start":
+        from services.telegram import enviar_mensaje
+        msg = "Bienvenido a CaracasBull. Ve a tu perfil y haz clic en Vincular Telegram."
+        await enviar_mensaje(chat_id, msg)
+    elif texto == "/status":
+        from services.telegram import enviar_mensaje
+        from database import Usuario as UsuarioModel
+        u = db.query(UsuarioModel).filter(UsuarioModel.telegram_chat_id == chat_id).first()
+        if u:
+            plan = u.suscripcion.plan if u.suscripcion else "trial"
+            await enviar_mensaje(chat_id, f"Cuenta vinculada: {u.nombre} | Plan: {plan}")
+        else:
+            await enviar_mensaje(chat_id, "No hay cuenta vinculada a este chat.")
+
+    return JSONResponse({"ok": True})
+
+
+# ── Alertas ───────────────────────────────────────────────────────────────────────
+
+@app.get("/alertas", response_class=HTMLResponse)
+async def ver_alertas(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    alertas = db.query(AlertaPrecio).filter(
+        AlertaPrecio.usuario_id == usuario.id
+    ).order_by(AlertaPrecio.creado_en.desc()).all()
+    datos_bolsa = await obtener_datos_bvc()
+    simbolos = sorted([item["COD_SIMB"] for item in datos_bolsa])
+    return render("alertas.html", {
+        "request": request, "usuario": usuario,
+        "alertas": alertas, "simbolos": simbolos,
+        "dias": dias_restantes(usuario),
+        "mercado": mercado_abierto(), "active": "",
+    })
+
+
+@app.post("/alertas/crear")
+async def crear_alerta(
+    request: Request,
+    simbolo:    str   = Form(...),
+    tipo:       str   = Form(...),
+    porcentaje: float = Form(...),
+    db: Session = Depends(get_db),
+):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    db.add(AlertaPrecio(
+        usuario_id=usuario.id,
+        simbolo=simbolo.upper(),
+        tipo=tipo,
+        porcentaje=porcentaje,
+        activa=True,
+        disparada=False,
+    ))
+    db.commit()
+    return RedirectResponse(url="/alertas", status_code=303)
+
+
+@app.post("/alertas/eliminar")
+async def eliminar_alerta(
+    request: Request,
+    alerta_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    alerta = db.query(AlertaPrecio).filter(
+        AlertaPrecio.id == alerta_id,
+        AlertaPrecio.usuario_id == usuario.id,
+    ).first()
+    if alerta:
+        db.delete(alerta)
+        db.commit()
+    return RedirectResponse(url="/alertas", status_code=303)
+
+
+@app.post("/alertas/reset")
+async def reset_alerta(
+    request: Request,
+    alerta_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    alerta = db.query(AlertaPrecio).filter(
+        AlertaPrecio.id == alerta_id,
+        AlertaPrecio.usuario_id == usuario.id,
+    ).first()
+    if alerta:
+        alerta.disparada = False
+        db.commit()
+    return RedirectResponse(url="/alertas", status_code=303)
+
+
+# ── Telegram ─────────────────────────────────────────────────────────────────────
+
+@app.post("/telegram/vincular")
+async def vincular_telegram(request: Request, db: Session = Depends(get_db)):
+    import random, string
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"error": "no autorizado"}, status_code=401)
+    codigo = "".join(random.choices(string.digits, k=6))
+    usuario.telegram_codigo = codigo
+    db.commit()
+    return JSONResponse({"codigo": codigo, "bot": "@CaracasBullBot"})
+
+
+@app.post("/webhook/telegram")
+async def webhook_telegram(request: Request, db: Session = Depends(get_db)):
+    from services.telegram import verificar_codigo, enviar_mensaje
+    from database import Usuario as UsuarioModel
+    datos = await request.json()
+    mensaje = datos.get("message", {})
+    chat_id = str(mensaje.get("chat", {}).get("id", ""))
+    texto   = mensaje.get("text", "").strip()
+    if not chat_id:
+        return JSONResponse({"ok": True})
+    if texto.startswith("/start "):
+        codigo = texto.replace("/start ", "").strip()
+        await verificar_codigo(chat_id, codigo, db)
+    elif texto == "/start":
+        bienvenida = "Bienvenido a CaracasBull. Ve a tu perfil y haz clic en Vincular Telegram."
+        await enviar_mensaje(chat_id, bienvenida)
+    elif texto == "/status":
+        u = db.query(UsuarioModel).filter(UsuarioModel.telegram_chat_id == chat_id).first()
+        if u:
+            plan = u.suscripcion.plan if u.suscripcion else "trial"
+            await enviar_mensaje(chat_id, f"Cuenta vinculada: {u.nombre} | Plan: {plan}")
+        else:
+            await enviar_mensaje(chat_id, "No hay cuenta vinculada a este chat.")
+    return JSONResponse({"ok": True})
+
+
+# ── Alertas ───────────────────────────────────────────────────────────────────────
+
+@app.get("/alertas", response_class=HTMLResponse)
+async def ver_alertas(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    alertas = db.query(AlertaPrecio).filter(
+        AlertaPrecio.usuario_id == usuario.id
+    ).order_by(AlertaPrecio.creado_en.desc()).all()
+    datos_bolsa = await obtener_datos_bvc()
+    simbolos = sorted([item["COD_SIMB"] for item in datos_bolsa])
+    return render("alertas.html", {
+        "request": request, "usuario": usuario,
+        "alertas": alertas, "simbolos": simbolos,
+        "dias": dias_restantes(usuario),
+        "mercado": mercado_abierto(), "active": "",
+    })
+
+
+@app.post("/alertas/crear")
+async def crear_alerta(
+    request: Request,
+    simbolo:    str   = Form(...),
+    tipo:       str   = Form(...),
+    porcentaje: float = Form(...),
+    db: Session = Depends(get_db),
+):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    db.add(AlertaPrecio(
+        usuario_id=usuario.id,
+        simbolo=simbolo.upper(),
+        tipo=tipo,
+        porcentaje=porcentaje,
+        activa=True,
+        disparada=False,
+    ))
+    db.commit()
+    return RedirectResponse(url="/alertas", status_code=303)
+
+
+@app.post("/alertas/eliminar")
+async def eliminar_alerta(
+    request: Request,
+    alerta_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    alerta = db.query(AlertaPrecio).filter(
+        AlertaPrecio.id == alerta_id,
+        AlertaPrecio.usuario_id == usuario.id,
+    ).first()
+    if alerta:
+        db.delete(alerta)
+        db.commit()
+    return RedirectResponse(url="/alertas", status_code=303)
+
+
+@app.post("/alertas/reset")
+async def reset_alerta(
+    request: Request,
+    alerta_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    alerta = db.query(AlertaPrecio).filter(
+        AlertaPrecio.id == alerta_id,
+        AlertaPrecio.usuario_id == usuario.id,
+    ).first()
+    if alerta:
+        alerta.disparada = False
+        db.commit()
+    return RedirectResponse(url="/alertas", status_code=303)
+
+
 # ── API endpoints ────────────────────────────────────────────────────────────────
 
 @app.get("/api/precio/{simbolo}")
@@ -557,6 +810,25 @@ async def api_precio(simbolo: str, request: Request, db: Session = Depends(get_d
         "var_rel": _to_float(activo.get("VAR_REL")),
         "var_abs": _to_float(activo.get("VAR_ABS")),
     })
+
+
+# ── Setup Telegram webhook ───────────────────────────────────────────────────────
+
+async def registrar_webhook_telegram():
+    """Registra el webhook de Telegram al arrancar la app."""
+    import os
+    app_url = os.environ.get("APP_URL", "")
+    if not app_url:
+        return
+    webhook_url = f"{app_url}/webhook/telegram"
+    from services.telegram import TELEGRAM_API
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.post(f"{TELEGRAM_API}/setWebhook", json={"url": webhook_url})
+            if r.status_code == 200:
+                print(f"[Telegram] Webhook registrado: {webhook_url}")
+        except Exception as e:
+            print(f"[Telegram] Error registrando webhook: {e}")
 
 
 # ── Inicio ─────────────────────────────────────────────────────────────────────

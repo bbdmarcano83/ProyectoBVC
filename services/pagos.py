@@ -17,7 +17,7 @@ NOWPAYMENTS_URL = "https://api.nowpayments.io/v1"
 # Precios por plan
 PRECIOS = {
     "basico": 1.5,
-    "pro": 4.0,
+    "pro": 2.99,  # Precio especial de lanzamiento
 }
 
 DURACION_DIAS = {
@@ -36,7 +36,7 @@ async def crear_pago(usuario_id: int, plan: str, email: str) -> Optional[dict]:
     payload = {
         "price_amount": monto,
         "price_currency": "usd",
-        "pay_currency": "usdtbsc",
+        "pay_currency": "usdttrc20",
         "order_id": f"cb_{usuario_id}_{plan}_{int(datetime.utcnow().timestamp())}",
         "order_description": f"Caracas Bull — Plan {plan.capitalize()} (30 días)",
         "ipn_callback_url": os.environ.get("APP_URL", "") + "/webhook/nowpayments",

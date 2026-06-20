@@ -27,9 +27,14 @@ class Usuario(Base):
     activo        = Column(Boolean, default=True)
     creado_en     = Column(DateTime, server_default=func.now())
 
+    telegram_chat_id = Column(String(50), nullable=True)
+    telegram_codigo  = Column(String(10), nullable=True)
+    broker           = Column(String(50), nullable=True)
+
     suscripcion   = relationship("Suscripcion", back_populates="usuario", uselist=False)
     activos       = relationship("ActivoPortafolio", back_populates="usuario", cascade="all, delete-orphan")
     watchlist     = relationship("Watchlist", back_populates="usuario", cascade="all, delete-orphan")
+    alertas       = relationship("AlertaPrecio", back_populates="usuario", cascade="all, delete-orphan")
 
 
 class Suscripcion(Base):
@@ -87,6 +92,21 @@ class PagoHistorial(Base):
     moneda          = Column(String(10), default="USDT")
     status          = Column(String(50))
     creado_en       = Column(DateTime, server_default=func.now())
+
+
+class AlertaPrecio(Base):
+    __tablename__ = "alertas_precio"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    usuario_id  = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    simbolo     = Column(String(20), nullable=False)
+    tipo        = Column(String(10), nullable=False)   # "subida" | "bajada"
+    porcentaje  = Column(Float, nullable=False)         # ej: 5.0 = 5%
+    activa      = Column(Boolean, default=True)
+    disparada   = Column(Boolean, default=False)
+    creado_en   = Column(DateTime, server_default=func.now())
+
+    usuario     = relationship("Usuario", back_populates="alertas")
 
 
 # ── Inicialización ────────────────────────────────────────────────────────────

@@ -68,20 +68,40 @@
 
     <!-- Telegram -->
     <div class="perfil-card">
-        <h3 class="perfil-section-title">
-            Alertas por Telegram
-            <span class="coming-soon-badge">Próximamente</span>
-        </h3>
+        <h3 class="perfil-section-title">Alertas por Telegram</h3>
+        {% if usuario.telegram_chat_id %}
+        <div class="perfil-msg perfil-msg--ok">
+            ✅ Cuenta de Telegram vinculada correctamente
+        </div>
+        <a href="/alertas" class="btn btn--primary" style="width:100%; justify-content:center;">
+            Ver mis alertas
+        </a>
+        {% else %}
         <p style="color:var(--text-secondary); font-size:13px; line-height:1.7; margin-bottom:16px;">
-            Vincula tu cuenta de Telegram para recibir alertas de precio instantáneas. Cuando una acción suba o baje el % que configures, te avisamos al instante.
+            Vincula tu Telegram para recibir alertas de precio al instante.
         </p>
-        <div class="telegram-preview">
-            <div class="telegram-icon">✈</div>
-            <div>
-                <div style="font-weight:600; font-size:13px;">@CaracasBullBot</div>
-                <div style="color:var(--text-secondary); font-size:12px;">Disponible en el próximo update</div>
+        <button class="btn btn--primary" id="btn-vincular" onclick="vincularTelegram()">
+            ✈ Vincular Telegram
+        </button>
+        <div id="telegram-pasos" style="display:none; margin-top:16px;">
+            <div class="telegram-paso">
+                <span class="paso-num">1</span>
+                Abre Telegram y busca <b id="bot-nombre">@CaracasBullBot</b>
+            </div>
+            <div class="telegram-paso">
+                <span class="paso-num">2</span>
+                Envía este comando al bot:
+                <div class="telegram-codigo-box">
+                    <code id="telegram-cmd">/start ------</code>
+                    <button class="btn btn--sm btn--ghost" onclick="copiarCmd()">Copiar</button>
+                </div>
+            </div>
+            <div class="telegram-paso">
+                <span class="paso-num">3</span>
+                El bot confirmará la vinculación. Recarga esta página.
             </div>
         </div>
+        {% endif %}
     </div>
 
     <!-- Suscripción -->
@@ -146,5 +166,31 @@
 function abrirModal(id) { document.getElementById(id).style.display = 'flex'; }
 function cerrarModal(id) { document.getElementById(id).style.display = 'none'; }
 function cerrarSiOverlay(e, el) { if (e.target === el) cerrarModal(el.id); }
+
+async function vincularTelegram() {
+    const btn = document.getElementById('btn-vincular');
+    btn.textContent = 'Generando código...';
+    btn.disabled = true;
+    try {
+        const r = await fetch('/telegram/vincular', { method: 'POST' });
+        const d = await r.json();
+        if (d.codigo) {
+            document.getElementById('telegram-cmd').textContent = '/start ' + d.codigo;
+            document.getElementById('bot-nombre').textContent = d.bot;
+            document.getElementById('telegram-pasos').style.display = 'block';
+            btn.textContent = '✈ Código generado';
+        }
+    } catch(e) {
+        btn.textContent = '✈ Vincular Telegram';
+        btn.disabled = false;
+    }
+}
+
+function copiarCmd() {
+    const cmd = document.getElementById('telegram-cmd').textContent;
+    navigator.clipboard.writeText(cmd);
+    event.target.textContent = '¡Copiado!';
+    setTimeout(() => event.target.textContent = 'Copiar', 2000);
+}
 </script>
 {% endblock %}
