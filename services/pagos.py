@@ -28,7 +28,10 @@ DURACION_DIAS = {
 
 async def crear_pago(usuario_id: int, plan: str, email: str) -> Optional[dict]:
     """Crea una orden de pago en NOWPayments y devuelve los datos."""
-    if not NOWPAYMENTS_API_KEY:
+    key = os.environ.get("NOWPAYMENTS_API_KEY", "")
+    print(f"[NOWPayments] API Key presente: {bool(key)}, longitud: {len(key)}")
+    if not key:
+        print("[NOWPayments] ERROR: API Key no configurada")
         return None
 
     monto = PRECIOS.get(plan, 1.5)
@@ -36,7 +39,7 @@ async def crear_pago(usuario_id: int, plan: str, email: str) -> Optional[dict]:
     payload = {
         "price_amount": monto,
         "price_currency": "usd",
-        "pay_currency": "usdttrc20",
+        "pay_currency": "usdtbsc",
         "order_id": f"cb_{usuario_id}_{plan}_{int(datetime.utcnow().timestamp())}",
         "order_description": f"Caracas Bull — Plan {plan.capitalize()} (30 días)",
         "ipn_callback_url": os.environ.get("APP_URL", "") + "/webhook/nowpayments",
@@ -50,13 +53,16 @@ async def crear_pago(usuario_id: int, plan: str, email: str) -> Optional[dict]:
                 f"{NOWPAYMENTS_URL}/payment",
                 json=payload,
                 headers={
-                    "x-api-key": NOWPAYMENTS_API_KEY,
+                    "x-api-key": key,
                     "Content-Type": "application/json",
                 },
                 timeout=10.0,
             )
+            print(f"[NOWPayments] Status: {r.status_code}, Response: {r.text[:300]}")
             if r.status_code == 201:
                 return r.json()
+            else:
+                print(f"[NOWPayments] Error {r.status_code}: {r.text}")
         except Exception as e:
             print(f"[NOWPayments] Error creando pago: {e}")
     return None
