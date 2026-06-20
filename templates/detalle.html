@@ -169,6 +169,15 @@ function actualizarStats(precios) {
 
 // ── Render ────────────────────────────────────────────────────────────────
 function renderCharts(precios, vols) {
+    // Crear mapa fecha→volumen para lookup consistente
+    const volMap = {};
+    vols.forEach(v => { volMap[v.x] = v; });
+
+    // Alinear volúmenes con las velas (mismo orden, misma longitud)
+    vols = precios.map(p => {
+        const v = volMap[p.x];
+        return v || { x: p.x, y: 0, monto: 0, ops: 0, isUp: p.y[3] >= p.y[0] };
+    });
     const fmt = v => v.toLocaleString('es-VE', {minimumFractionDigits:2});
 
     // ── Velas ──────────────────────────────────────────────────────────────
@@ -216,9 +225,9 @@ function renderCharts(precios, vols) {
                 const [o, h, l, c] = d.y;
                 const color = c >= o ? '#00c896' : '#ff4d6a';
                 const esHoy = d.esHoy;
-                const vd      = vols[dataPointIndex];
-                const titulos = vd ? vd.y.toLocaleString('es-VE') : '—';
-                const monto   = vd ? vd.monto.toLocaleString('es-VE', {minimumFractionDigits:2}) : '—';
+                const vd      = volMap[d.x] || vols[dataPointIndex];
+                const titulos = vd && vd.y ? vd.y.toLocaleString('es-VE') : '—';
+                const monto   = vd && vd.monto ? vd.monto.toLocaleString('es-VE', {minimumFractionDigits:2}) : '—';
                 const ops     = vd ? vd.ops : '—';
                 return `<div style="padding:12px;font-family:monospace;font-size:12px;background:#0f1a1a;border:1px solid #1e3030;border-radius:8px;min-width:200px;">
                     <b style="color:#e8f0f0">${d.x}${esHoy ? ' <span style=color:#f0c040>● HOY</span>' : ''}</b><br><br>
@@ -245,13 +254,18 @@ function renderCharts(precios, vols) {
     };
 
     // ── Volumen ────────────────────────────────────────────────────────────
+    // Colores por barra
     const volColors = vols.map(d => {
-        if (d.esHoy) return '#f0c040';
-        return d.isUp ? '#00c89660' : '#ff4d6a60';
+        if (d.esHoy && mercadoAbierto) return '#f0c040';
+        if (d.esHoy) return '#f0c04080';
+        return d.isUp ? '#00c89666' : '#ff4d6a66';
     });
 
+    // Para ApexCharts bar distributed colors necesitamos series con color por punto
+    const volSeries = vols.map((d, i) => ({ x: d.x, y: d.y, fillColor: volColors[i] }));
+
     const optsVol = {
-        series: [{ name: 'Volumen', data: vols.map(d => ({ x: d.x, y: d.y })) }],
+        series: [{ name: 'Volumen', data: volSeries }],
         chart: {
             id: 'volumen',
             type: 'bar',
@@ -265,9 +279,16 @@ function renderCharts(precios, vols) {
         theme: { mode: 'dark' },
         dataLabels: { enabled: false },
         plotOptions: {
-            bar: { columnWidth: '70%' }
+            bar: {
+                columnWidth: '70%',
+                distributed: false,
+            }
         },
-        fill: { colors: volColors },
+        fill: {
+            type: 'solid',
+            colors: volColors,
+            opacity: 0.85,
+        },
         colors: volColors,
         grid: {
             borderColor: '#1e3030',
@@ -302,7 +323,22 @@ function renderCharts(precios, vols) {
         },
         tooltip: {
             theme: 'dark',
-            enabled: false,  // tooltip ya se muestra en las velas
+            enabled: true,
+            custom({ dataPointIndex, w }) {
+                // Buscar por fecha, no por índice, para evitar desface
+                const fecha = w.globals.initialSeries[0].data[dataPointIndex]?.x;
+                const vd = (fecha && volMap[fecha]) || vols[dataPointIndex];
+                if (!vd) return '';
+                const color = vd.isUp ? '#00c896' : '#ff4d6a';
+                const esHoy = vd.esHoy;
+                const fmt = v => v.toLocaleString('es-VE', {minimumFractionDigits:2});
+                return `<div style="padding:10px;font-family:monospace;font-size:12px;background:#0f1a1a;border:1px solid #1e3030;border-radius:8px;min-width:185px;">
+                    <b style="color:#e8f0f0">${fecha || vd.x}${esHoy ? ' <span style=color:#f0c040>● HOY</span>' : ''}</b><br><br>
+                    <span style="color:#6b9090">Títulos:     </span><b style="color:${color}">${vd.y.toLocaleString('es-VE')}</b><br>
+                    <span style="color:#6b9090">Monto Bs:    </span><b style="color:#a0b8b8">${fmt(vd.monto)}</b><br>
+                    <span style="color:#6b9090">Operaciones: </span><b style="color:#a0b8b8">${vd.ops}</b>
+                </div>`;
+            }
         }
     };
 
@@ -315,7 +351,8 @@ function renderCharts(precios, vols) {
     }
 
     if (chartVol) {
-        chartVol.updateSeries([{ data: vols.map(d => ({ x: d.x, y: d.y })) }]);
+        const vs = vols.map((d,i) => ({ x: d.x, y: d.y, fillColor: volColors[i] }));
+        chartVol.updateSeries([{ data: vs }]);
     } else {
         chartVol = new ApexCharts(document.querySelector('#chart-volumen'), optsVol);
         chartVol.render();
