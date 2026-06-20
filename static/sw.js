@@ -1,0 +1,1 @@
+﻿const CACHE="caracasbull-v1";self.addEventListener("install",e=>{self.skipWaiting()});self.addEventListener("activate",e=>{self.clients.claim()});self.addEventListener("fetch",e=>{if(e.request.method!=="GET"||!e.request.url.includes("/static/"))return;e.respondWith(caches.match(e.request).then(c=>c||fetch(e.request)))})

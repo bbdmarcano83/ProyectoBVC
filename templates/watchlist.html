@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Watchlist — Caracas Bull{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Mi <span class="dim">Watchlist</span></h1>
+    <span class="badge--live">● En vivo</span>
+</div>
+
+{% if not items %}
+<div class="empty-state">
+    <div class="empty-icon">👁</div>
+    <p>Tu watchlist está vacía.</p>
+    <p style="font-size:13px;">Agrega acciones desde la pizarra haciendo clic en ★</p>
+    <a href="/pizarra" class="btn btn--primary">Ir a la pizarra</a>
+</div>
+{% else %}
+<div class="table-wrapper">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th class="col-simb">Activo</th>
+                <th>Último (Bs)</th>
+                <th>Var. %</th>
+                <th>Var. Bs</th>
+                <th>Vol. Compra</th>
+                <th>P. Compra</th>
+                <th>P. Venta</th>
+                <th>Vol. Transado</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            {% set var = item.VAR_REL | default(0) | float %}
+            {% set dir = 'up' if var > 0 else ('down' if var < 0 else 'flat') %}
+            <tr>
+                <td class="col-simb">
+                    <a href="/detalle/{{ item.COD_SIMB }}" class="simb-link">
+                        <img src="{{ item.ICON }}" class="logo-img" onerror="this.style.display='none'">
+                        <span>{{ item.COD_SIMB }}</span>
+                    </a>
+                </td>
+                <td class="mono">{{ item.PRECIO | float | format_bs }} Bs</td>
+                <td class="mono var-{{ dir }}">
+                    {% if dir == 'up' %}▲{% elif dir == 'down' %}▼{% else %}▬{% endif %}
+                    {{ "%.2f"|format(var) }}%
+                </td>
+                <td class="mono var-{{ dir }}">{{ item.VAR_ABS | float | format_bs }}</td>
+                <td class="mono">{{ item.VOL_CMP_1 or '—' }}</td>
+                <td class="mono buy">{{ item.PRE_CMP_1 | float | format_bs }}</td>
+                <td class="mono sell">{{ item.PRE_VTA_1 | default(0) | float | format_bs }}</td>
+                <td class="mono">{{ item.MONTO_EFECTIVO | float | format_bs }}</td>
+                <td>
+                    <form action="/watchlist/eliminar" method="post">
+                        <input type="hidden" name="simbolo" value="{{ item.COD_SIMB }}">
+                        <button class="btn btn--sm btn--danger" title="Quitar de watchlist">★</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block ticker %}
+{% for item in items %}
+{% set var = item.VAR_REL | float %}
+<span class="tick-item {% if var > 0 %}tick-up{% elif var < 0 %}tick-down{% endif %}">
+    <b>{{ item.COD_SIMB }}</b> {{ item.PRECIO | float | format_bs }} Bs
+    <span>{{ "%.2f"|format(var) }}%</span>
+</span>
+{% endfor %}
+{% endblock %}

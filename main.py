@@ -20,6 +20,7 @@ from services.auth import (
     suscripcion_activa, dias_restantes, hash_password
 )
 from services.pagos import crear_pago, verificar_firma_ipn, procesar_webhook, verificar_estado_pago
+from services.importador import importar_archivo
 from database import ActivoPortafolio, Watchlist
 
 app = FastAPI(title="Caracas Bull")
@@ -830,6 +831,201 @@ async def api_precio(simbolo: str, request: Request, db: Session = Depends(get_d
         "var_rel": _to_float(activo.get("VAR_REL")),
         "var_abs": _to_float(activo.get("VAR_ABS")),
     })
+
+
+# ── Watchlist ────────────────────────────────────────────────────────────────────
+
+@app.get("/watchlist", response_class=HTMLResponse)
+async def ver_watchlist(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    simbolos_wl = [w.simbolo for w in usuario.watchlist]
+    datos_bolsa = await obtener_datos_bvc()
+    items = [i for i in datos_bolsa if i.get("COD_SIMB") in simbolos_wl]
+    return render("watchlist.html", {
+        "request": request, "usuario": usuario,
+        "items": items, "dias": dias_restantes(usuario),
+        "mercado": mercado_abierto(), "active": "",
+    })
+
+@app.post("/watchlist/agregar")
+async def agregar_watchlist(request: Request, simbolo: str = Form(...), db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"ok": False}, status_code=401)
+    existe = db.query(Watchlist).filter(
+        Watchlist.usuario_id == usuario.id,
+        Watchlist.simbolo == simbolo.upper()
+    ).first()
+    if not existe:
+        db.add(Watchlist(usuario_id=usuario.id, simbolo=simbolo.upper()))
+        db.commit()
+    return JSONResponse({"ok": True})
+
+@app.post("/watchlist/eliminar")
+async def eliminar_watchlist(request: Request, simbolo: str = Form(...), db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    item = db.query(Watchlist).filter(
+        Watchlist.usuario_id == usuario.id,
+        Watchlist.simbolo == simbolo.upper()
+    ).first()
+    if item:
+        db.delete(item)
+        db.commit()
+    ref = request.headers.get("referer", "/watchlist")
+    return RedirectResponse(url=ref, status_code=303)
+
+
+# ── Importar portafolio ───────────────────────────────────────────────────────
+
+@app.get("/portafolio/importar", response_class=HTMLResponse)
+async def importar_page(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    return render("importar.html", {
+        "request": request, "usuario": usuario,
+        "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
+        "active": "", "error": None, "activos_preview": None, "activos_json": None,
+    })
+
+@app.post("/portafolio/importar", response_class=HTMLResponse)
+async def importar_post(request: Request, db: Session = Depends(get_db)):
+    import json as json_mod
+    from fastapi import UploadFile, File
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    form = await request.form()
+    archivo = form.get("archivo")
+    if not archivo or not archivo.filename:
+        return render("importar.html", {
+            "request": request, "usuario": usuario,
+            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
+            "active": "", "error": "Selecciona un archivo", "activos_preview": None, "activos_json": None,
+        })
+    try:
+        contenido = await archivo.read()
+        activos = importar_archivo(contenido, archivo.filename)
+        if not activos:
+            raise ValueError("No se encontraron activos en el archivo")
+        return render("importar.html", {
+            "request": request, "usuario": usuario,
+            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
+            "active": "", "error": None,
+            "activos_preview": activos,
+            "activos_json": json_mod.dumps(activos),
+        })
+    except Exception as e:
+        return render("importar.html", {
+            "request": request, "usuario": usuario,
+            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
+            "active": "", "error": str(e), "activos_preview": None, "activos_json": None,
+        })
+
+@app.post("/portafolio/importar/confirmar")
+async def importar_confirmar(request: Request, datos: str = Form(...), db: Session = Depends(get_db)):
+    import json as json_mod
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    activos = json_mod.loads(datos)
+    for a in activos:
+        existente = db.query(ActivoPortafolio).filter(
+            ActivoPortafolio.usuario_id == usuario.id,
+            ActivoPortafolio.simbolo == a["simbolo"]
+        ).first()
+        if existente:
+            existente.cantidad = a["cantidad"]
+            existente.precio_promedio = a["precio_promedio"]
+        else:
+            db.add(ActivoPortafolio(
+                usuario_id=usuario.id,
+                simbolo=a["simbolo"],
+                cantidad=a["cantidad"],
+                precio_promedio=a["precio_promedio"],
+                comision=a.get("comision", 0),
+                registro=a.get("registro", 0),
+                iva=a.get("iva", 16),
+            ))
+    db.commit()
+    return RedirectResponse(url="/portafolio", status_code=303)
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_panel(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario or not usuario.es_admin:
+        return RedirectResponse(url="/", status_code=302)
+    from database import Usuario as UsuarioModel, Suscripcion
+    usuarios = db.query(UsuarioModel).order_by(UsuarioModel.creado_en.desc()).all()
+    total = len(usuarios)
+    activas   = sum(1 for u in usuarios if u.suscripcion and u.suscripcion.activa)
+    plan_pro  = sum(1 for u in usuarios if u.suscripcion and u.suscripcion.plan == "pro")
+    plan_bas  = sum(1 for u in usuarios if u.suscripcion and u.suscripcion.plan == "basico")
+    trial     = sum(1 for u in usuarios if u.suscripcion and u.suscripcion.plan == "trial")
+    con_tg    = sum(1 for u in usuarios if u.telegram_chat_id)
+    return render("admin.html", {
+        "request": request, "usuario": usuario,
+        "usuarios": usuarios,
+        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
+        "stats": {
+            "total_usuarios": total, "activas": activas,
+            "plan_pro": plan_pro, "plan_basico": plan_bas,
+            "trial": trial, "con_telegram": con_tg,
+        }
+    })
+
+@app.post("/admin/activar")
+async def admin_activar(
+    request: Request,
+    usuario_id: int = Form(...),
+    plan: str = Form("pro"),
+    db: Session = Depends(get_db),
+):
+    admin = get_usuario_actual(request, db)
+    if not admin or not admin.es_admin:
+        return RedirectResponse(url="/", status_code=302)
+    from database import Suscripcion
+    from datetime import datetime, timedelta
+    sus = db.query(Suscripcion).filter(Suscripcion.usuario_id == usuario_id).first()
+    if sus:
+        sus.plan = plan
+        sus.activa = True
+        sus.fecha_vence = datetime.utcnow() + timedelta(days=30)
+    db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+@app.post("/admin/desactivar")
+async def admin_desactivar(request: Request, usuario_id: int = Form(...), db: Session = Depends(get_db)):
+    admin = get_usuario_actual(request, db)
+    if not admin or not admin.es_admin:
+        return RedirectResponse(url="/", status_code=302)
+    from database import Suscripcion
+    sus = db.query(Suscripcion).filter(Suscripcion.usuario_id == usuario_id).first()
+    if sus:
+        sus.activa = False
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+# ── PWA ───────────────────────────────────────────────────────────────────────
+
+@app.get("/manifest.json")
+async def manifest():
+    import json as json_mod
+    with open("static/manifest.json") as f:
+        return JSONResponse(json_mod.load(f))
+
+@app.get("/sw.js")
+async def service_worker():
+    from fastapi.responses import FileResponse
+    return FileResponse("static/sw.js", media_type="application/javascript")
 
 
 # ── Setup Telegram webhook ───────────────────────────────────────────────────────

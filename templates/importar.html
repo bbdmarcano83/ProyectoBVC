@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Importar Portafolio — Caracas Bull{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Importar <span class="dim">Portafolio</span></h1>
+    <a href="/portafolio" class="btn btn--ghost btn--sm">← Volver</a>
+</div>
+
+<div class="importar-grid">
+
+    <!-- Instrucciones -->
+    <div class="importar-card">
+        <h3 class="perfil-section-title">¿Cómo importar?</h3>
+        <div class="import-paso">
+            <span class="paso-num">1</span>
+            <div>
+                Descarga tu estado de cuenta desde tu broker
+                <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <span class="broker-badge">Mercosur Casa de Bolsa</span>
+                    <span class="broker-badge">Per Capital</span>
+                    <span class="broker-badge">Cualquier broker</span>
+                </div>
+            </div>
+        </div>
+        <div class="import-paso">
+            <span class="paso-num">2</span>
+            <div>
+                El archivo debe tener estas columnas (cualquier nombre similar funciona):
+                <div class="import-cols">
+                    <span class="import-col">Símbolo</span>
+                    <span class="import-col">Cantidad</span>
+                    <span class="import-col">Precio promedio</span>
+                </div>
+            </div>
+        </div>
+        <div class="import-paso">
+            <span class="paso-num">3</span>
+            <div>Sube el archivo y revisa los activos detectados antes de confirmar</div>
+        </div>
+        <a href="/static/plantilla_portafolio.csv" download class="btn btn--ghost" style="margin-top:8px;">
+            ↓ Descargar plantilla CSV
+        </a>
+    </div>
+
+    <!-- Upload -->
+    <div class="importar-card">
+        <h3 class="perfil-section-title">Subir archivo</h3>
+        {% if error %}
+        <div class="perfil-msg perfil-msg--err">⚠ {{ error }}</div>
+        {% endif %}
+        <form action="/portafolio/importar" method="post" enctype="multipart/form-data" class="modal-form">
+            <div class="upload-zone" id="upload-zone">
+                <div class="upload-icon">📂</div>
+                <div class="upload-text">Arrastra tu archivo aquí o</div>
+                <label class="btn btn--ghost" style="cursor:pointer; margin-top:8px;">
+                    Seleccionar archivo
+                    <input type="file" name="archivo" id="file-input" accept=".xlsx,.xls,.csv"
+                           style="display:none;" onchange="mostrarArchivo(this)">
+                </label>
+                <div id="file-name" style="margin-top:8px; font-size:12px; color:var(--accent); display:none;"></div>
+                <div style="margin-top:12px; font-size:11px; color:var(--text-dim);">
+                    Formatos: .xlsx, .xls, .csv · Máx 5MB
+                </div>
+            </div>
+            <div style="margin-top:8px; font-size:13px; color:var(--text-secondary);">
+                ⚠ Los activos importados <b>reemplazarán</b> los existentes con el mismo símbolo.
+            </div>
+            <button type="submit" class="btn btn--primary" style="margin-top:12px;">
+                Importar portafolio
+            </button>
+        </form>
+    </div>
+
+    {% if activos_preview %}
+    <!-- Preview -->
+    <div class="importar-card" style="grid-column: 1 / -1;">
+        <h3 class="perfil-section-title">
+            Activos detectados
+            <span style="color:var(--accent); font-size:13px; font-weight:400;">{{ activos_preview | length }} activos</span>
+        </h3>
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Símbolo</th>
+                        <th>Cantidad</th>
+                        <th>Precio promedio (Bs)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in activos_preview %}
+                    <tr>
+                        <td><b>{{ a.simbolo }}</b></td>
+                        <td class="mono">{{ a.cantidad }}</td>
+                        <td class="mono">{{ a.precio_promedio | format_bs }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <form action="/portafolio/importar/confirmar" method="post" style="margin-top:16px;">
+            <input type="hidden" name="datos" value="{{ activos_json }}">
+            <div style="display:flex; gap:10px;">
+                <a href="/portafolio/importar" class="btn btn--ghost">Cancelar</a>
+                <button type="submit" class="btn btn--primary">
+                    ✓ Confirmar importación
+                </button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function mostrarArchivo(input) {
+    const fn = document.getElementById('file-name');
+    fn.textContent = input.files[0]?.name || '';
+    fn.style.display = input.files[0] ? 'block' : 'none';
+}
+
+// Drag and drop
+const zone = document.getElementById('upload-zone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+        const input = document.getElementById('file-input');
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        mostrarArchivo(input);
+    }
+});
+</script>
+{% endblock %}

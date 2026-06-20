@@ -35,6 +35,7 @@
                 <th class="sortable" data-col="7">Vol. Transado (Bs)</th>
                 <th class="sortable active-sort desc" data-col="8">Var. %</th>
                 <th class="sortable" data-col="9">Var. Bs</th>
+                <th>★</th>
             </tr>
         </thead>
         <tbody id="tabla-body">
@@ -60,6 +61,10 @@
                     {{ "%.2f"|format(var) }}%
                 </td>
                 <td class="mono var-{{ dir }}">{{ item.VAR_ABS | float | format_bs }}</td>
+                <td>
+                    <button class="wl-btn" onclick="toggleWatchlist(this, '{{ item.COD_SIMB }}')"
+                        title="Agregar a watchlist">☆</button>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -129,5 +134,18 @@ document.querySelectorAll('.sortable').forEach(th => {
         rows.forEach(r => tbody.appendChild(r));
     });
 });
+
+// ── Watchlist ─────────────────────────────────────────────────────────────
+async function toggleWatchlist(btn, simbolo) {
+    const isActive = btn.textContent === '★';
+    const action = isActive ? '/watchlist/eliminar' : '/watchlist/agregar';
+    const form = new FormData();
+    form.append('simbolo', simbolo);
+    try {
+        await fetch(action, { method: 'POST', body: form });
+        btn.textContent = isActive ? '☆' : '★';
+        btn.style.color = isActive ? '' : 'var(--gold)';
+    } catch(e) {}
+}
 </script>
 {% endblock %}

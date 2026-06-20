@@ -8,6 +8,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
     <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#00c896">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CaracasBull">
     {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -31,6 +36,9 @@
                 <a href="/portafolio" class="nav-link {% if active == 'portafolio' %}active{% endif %}">
                     <i class="ti ti-briefcase" style="font-size:13px"></i> Portafolio
                 </a>
+                <a href="/watchlist" class="nav-link {% if active == 'watchlist' %}active{% endif %}">
+                    <i class="ti ti-star" style="font-size:13px"></i> Watchlist
+                </a>
                 <a href="/alertas" class="nav-link {% if active == 'alertas' %}active{% endif %}">
                     <i class="ti ti-bell" style="font-size:13px"></i> Alertas
                 </a>
@@ -52,6 +60,9 @@
                             <div style="padding:10px 16px 6px; font-size:12px; color:var(--text-secondary); border-bottom:1px solid var(--border); margin-bottom:4px;">{{ usuario.nombre }}</div>
                             <a href="/perfil">
                                 <i class="ti ti-user" style="font-size:14px"></i> Mi perfil
+                            </a>
+                            <a href="/portafolio/importar">
+                                <i class="ti ti-upload" style="font-size:14px"></i> Importar portafolio
                             </a>
                             <a href="/suscripcion">
                                 <i class="ti ti-crown" style="font-size:14px"></i> Suscripción
@@ -78,6 +89,11 @@
     </footer>
 
     <script src="/static/js/main.js"></script>
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+    </script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>
