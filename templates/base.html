@@ -13,7 +13,7 @@
 <body>
     <header class="site-header">
         <div class="header-inner">
-            <a href="/" class="logo">
+            <a href="/landing" class="logo">
                 <div class="logo-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                         <path d="M3 17c2-4 5-6 9-6s7 2 9 6" stroke="#080f0f" stroke-width="2.5" stroke-linecap="round"/>
@@ -46,6 +46,10 @@
                     <div class="user-menu">
                         <div class="user-avatar">{{ usuario.nombre[0].upper() }}</div>
                         <div class="user-dropdown">
+                            <div style="padding:10px 16px 6px; font-size:12px; color:var(--text-secondary); border-bottom:1px solid var(--border); margin-bottom:4px;">{{ usuario.nombre }}</div>
+                            <a href="/perfil">
+                                <i class="ti ti-user" style="font-size:14px"></i> Mi perfil
+                            </a>
                             <a href="/suscripcion">
                                 <i class="ti ti-crown" style="font-size:14px"></i> Suscripción
                             </a>

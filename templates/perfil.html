@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Mi Perfil — Caracas Bull{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Mi <span class="dim">Perfil</span></h1>
+</div>
+
+<div class="perfil-grid">
+
+    <!-- Tarjeta de identidad -->
+    <div class="perfil-card">
+        <div class="perfil-avatar-section">
+            <div class="perfil-avatar-grande">
+                {{ usuario.nombre[0].upper() }}
+            </div>
+            <div>
+                <div class="perfil-nombre">{{ usuario.nombre }}</div>
+                <div class="perfil-email">{{ usuario.email }}</div>
+                <div class="perfil-plan plan-{{ usuario.suscripcion.plan if usuario.suscripcion else 'trial' }}">
+                    ● Plan {{ (usuario.suscripcion.plan if usuario.suscripcion else 'trial') | capitalize }}
+                    {% if dias > 0 %}· {{ dias }} días restantes{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Editar información -->
+    <div class="perfil-card">
+        <h3 class="perfil-section-title">Información personal</h3>
+        {% if msg_info %}
+        <div class="perfil-msg perfil-msg--ok">✓ {{ msg_info }}</div>
+        {% endif %}
+        <form action="/perfil/info" method="post" class="modal-form">
+            <label>Nombre</label>
+            <input type="text" name="nombre" value="{{ usuario.nombre }}" required>
+            <label>Email</label>
+            <input type="email" name="email" value="{{ usuario.email }}" required>
+            <label>Broker preferido</label>
+            <select name="broker" style="width:100%; padding:9px 12px; background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-size:13px; font-family:var(--font-body);">
+                <option value="">— Seleccionar —</option>
+                <option value="mercosur" {% if usuario.broker == 'mercosur' %}selected{% endif %}>Mercosur Casa de Bolsa</option>
+                <option value="percapital" {% if usuario.broker == 'percapital' %}selected{% endif %}>Per Capital</option>
+                <option value="otro" {% if usuario.broker == 'otro' %}selected{% endif %}>Otro</option>
+            </select>
+            <button type="submit" class="btn btn--primary" style="margin-top:8px;">Guardar cambios</button>
+        </form>
+    </div>
+
+    <!-- Cambiar contraseña -->
+    <div class="perfil-card">
+        <h3 class="perfil-section-title">Cambiar contraseña</h3>
+        {% if msg_pass %}
+        <div class="perfil-msg {% if error_pass %}perfil-msg--err{% else %}perfil-msg--ok{% endif %}">
+            {% if error_pass %}⚠{% else %}✓{% endif %} {{ msg_pass }}
+        </div>
+        {% endif %}
+        <form action="/perfil/password" method="post" class="modal-form">
+            <label>Contraseña actual</label>
+            <input type="password" name="password_actual" placeholder="••••••••" required>
+            <label>Nueva contraseña</label>
+            <input type="password" name="password_nueva" placeholder="Mínimo 8 caracteres" minlength="8" required>
+            <label>Confirmar nueva contraseña</label>
+            <input type="password" name="password_nueva2" placeholder="Repite la contraseña" minlength="8" required>
+            <button type="submit" class="btn btn--ghost" style="margin-top:8px;">Cambiar contraseña</button>
+        </form>
+    </div>
+
+    <!-- Telegram -->
+    <div class="perfil-card">
+        <h3 class="perfil-section-title">
+            Alertas por Telegram
+            <span class="coming-soon-badge">Próximamente</span>
+        </h3>
+        <p style="color:var(--text-secondary); font-size:13px; line-height:1.7; margin-bottom:16px;">
+            Vincula tu cuenta de Telegram para recibir alertas de precio instantáneas. Cuando una acción suba o baje el % que configures, te avisamos al instante.
+        </p>
+        <div class="telegram-preview">
+            <div class="telegram-icon">✈</div>
+            <div>
+                <div style="font-weight:600; font-size:13px;">@CaracasBullBot</div>
+                <div style="color:var(--text-secondary); font-size:12px;">Disponible en el próximo update</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Suscripción -->
+    <div class="perfil-card">
+        <h3 class="perfil-section-title">Suscripción</h3>
+        {% if usuario.suscripcion %}
+        <div class="sus-info-row">
+            <span class="sus-info-label">Plan actual</span>
+            <span class="sus-info-val">{{ usuario.suscripcion.plan | capitalize }}</span>
+        </div>
+        <div class="sus-info-row">
+            <span class="sus-info-label">Estado</span>
+            <span class="sus-info-val {% if usuario.suscripcion.activa %}var-up{% else %}var-down{% endif %}">
+                {{ '● Activa' if usuario.suscripcion.activa else '● Inactiva' }}
+            </span>
+        </div>
+        {% if usuario.suscripcion.fecha_vence %}
+        <div class="sus-info-row">
+            <span class="sus-info-label">Vence</span>
+            <span class="sus-info-val mono">{{ usuario.suscripcion.fecha_vence.strftime('%d/%m/%Y') }}</span>
+        </div>
+        {% endif %}
+        {% endif %}
+        <a href="/suscripcion" class="btn btn--primary" style="margin-top:16px; width:100%; justify-content:center;">
+            Gestionar suscripción
+        </a>
+    </div>
+
+    <!-- Zona peligrosa -->
+    <div class="perfil-card perfil-card--danger">
+        <h3 class="perfil-section-title" style="color:var(--sell)">Zona de peligro</h3>
+        <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
+            Estas acciones son permanentes y no se pueden deshacer.
+        </p>
+        <button class="btn btn--danger" onclick="abrirModal('modal-eliminar')">
+            Eliminar mi cuenta
+        </button>
+    </div>
+
+</div>
+
+<!-- Modal eliminar cuenta -->
+<div id="modal-eliminar" class="overlay" onclick="cerrarSiOverlay(event, this)">
+    <div class="modal modal--sm">
+        <button class="modal-close" onclick="cerrarModal('modal-eliminar')">&times;</button>
+        <h3 class="modal-title" style="color:var(--sell)">⚠ Eliminar cuenta</h3>
+        <p class="modal-text">Se eliminarán tu cuenta, portafolio y todos tus datos. Esta acción es permanente.</p>
+        <form action="/perfil/eliminar" method="post" class="modal-form">
+            <label>Escribe tu contraseña para confirmar</label>
+            <input type="password" name="password" placeholder="••••••••" required>
+            <div style="display:flex; gap:10px; margin-top:12px;">
+                <button type="button" class="btn btn--ghost" style="flex:1" onclick="cerrarModal('modal-eliminar')">Cancelar</button>
+                <button type="submit" class="btn btn--danger" style="flex:1">Eliminar todo</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function abrirModal(id) { document.getElementById(id).style.display = 'flex'; }
+function cerrarModal(id) { document.getElementById(id).style.display = 'none'; }
+function cerrarSiOverlay(e, el) { if (e.target === el) cerrarModal(el.id); }
+</script>
+{% endblock %}

@@ -739,3 +739,126 @@ a { color: inherit; text-decoration: none; }
     background: var(--gold);
     animation: pulse-dot 1.5s infinite;
 }
+
+/* ── Fix dropdown gap ─────────────────────────────────────────────────────── */
+.user-menu::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 100%;
+    height: 12px; /* puente invisible entre avatar y dropdown */
+}
+.user-dropdown {
+    top: calc(100% + 2px); /* reducir gap */
+}
+
+/* ── Perfil ───────────────────────────────────────────────────────────────── */
+.perfil-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 20px;
+}
+.perfil-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.perfil-card--danger { border-color: #ff4d6a33; }
+.perfil-section-title {
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.perfil-avatar-section {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+.perfil-avatar-grande {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent) 0%, #00957a 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: 700;
+    color: #080f0f;
+    flex-shrink: 0;
+    border: 3px solid var(--bg-raised);
+}
+.perfil-nombre { font-size: 17px; font-weight: 700; margin-bottom: 3px; }
+.perfil-email  { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.perfil-plan {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 99px;
+    letter-spacing: .3px;
+}
+.plan-pro   { background: var(--gold-dim); border: 1px solid #f0c04033; color: var(--gold); }
+.plan-basico { background: var(--accent-dim); border: 1px solid #00c89633; color: var(--accent); }
+.plan-trial  { background: var(--bg-raised); border: 1px solid var(--border); color: var(--text-secondary); }
+
+.perfil-msg {
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+}
+.perfil-msg--ok  { background: #00c89615; border: 1px solid #00c89633; color: var(--buy); }
+.perfil-msg--err { background: #ff4d6a15; border: 1px solid #ff4d6a33; color: var(--sell); }
+
+.coming-soon-badge {
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--gold-dim);
+    border: 1px solid #f0c04033;
+    color: var(--gold);
+    padding: 2px 8px;
+    border-radius: 99px;
+    letter-spacing: .3px;
+}
+
+.telegram-preview {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    opacity: .6;
+}
+.telegram-icon {
+    width: 40px;
+    height: 40px;
+    background: #2AABEE22;
+    border: 1px solid #2AABEE44;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.sus-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13px;
+}
+.sus-info-row:last-of-type { border-bottom: none; }
+.sus-info-label { color: var(--text-secondary); }
+.sus-info-val   { font-weight: 600; }
