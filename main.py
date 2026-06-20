@@ -1095,9 +1095,8 @@ async def favicon_svg():
 
 @app.get("/manifest.json")
 async def manifest():
-    import json as json_mod
-    with open("static/manifest.json") as f:
-        return JSONResponse(json_mod.load(f))
+    from fastapi.responses import FileResponse
+    return FileResponse("static/manifest.json", media_type="application/manifest+json")
 
 @app.get("/sw.js")
 async def service_worker():
