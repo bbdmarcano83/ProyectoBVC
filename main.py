@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 
-from database import init_db, get_db
+from database import init_db, get_db, SessionLocal
 from services.bvc import obtener_datos_bvc, obtener_detalle_profundo, obtener_historico, _to_float, formatear_bs, formatear_entero, formatear_millones, mercado_abierto
 from services.portafolio import calcular_fila, resumen_portafolio
 from services.auth import (
@@ -26,6 +26,53 @@ app = FastAPI(title="Caracas Bull")
 @app.on_event("startup")
 def startup():
     init_db()
+    _crear_admin_si_no_existe()
+
+
+def _crear_admin_si_no_existe():
+    """Crea la cuenta admin en producción si no existe. Lee credenciales de variables de entorno."""
+    import os
+    from datetime import datetime, timedelta
+    from services.auth import hash_password
+
+    email    = os.environ.get("ADMIN_EMAIL", "")
+    password = os.environ.get("ADMIN_PASSWORD", "")
+    nombre   = os.environ.get("ADMIN_NOMBRE", "Admin")
+
+    if not email or not password:
+        return  # No configurado, saltar
+
+    db = SessionLocal()
+    try:
+        from database import Usuario, Suscripcion
+        if db.query(Usuario).filter(Usuario.email == email).first():
+            return  # Ya existe
+
+        usuario = Usuario(
+            nombre=nombre,
+            email=email,
+            password_hash=hash_password(password),
+            es_admin=True,
+            activo=True,
+        )
+        db.add(usuario)
+        db.flush()
+
+        suscripcion = Suscripcion(
+            usuario_id=usuario.id,
+            plan="pro",
+            activa=True,
+            fecha_inicio=datetime.utcnow(),
+            fecha_vence=datetime.utcnow() + timedelta(days=365 * 100),
+        )
+        db.add(suscripcion)
+        db.commit()
+        print(f"[startup] Admin creado: {email}")
+    except Exception as e:
+        print(f"[startup] Error creando admin: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 # ── Archivos estáticos ─────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="static"), name="static")
