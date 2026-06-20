@@ -84,6 +84,10 @@
 <div class="pago-modal">
     <h3 class="pago-titulo">Completa tu pago</h3>
     <p class="pago-instruccion">Envía exactamente <b class="var-up">{{ pago.pay_amount }} {{ pago.pay_currency | upper }}</b> a esta dirección:</p>
+    <div class="pago-qr-wrap">
+        <div id="qr-code"></div>
+        <p class="pago-qr-label">Escanea con tu wallet</p>
+    </div>
     <div class="pago-address">
         <code id="wallet-address">{{ pago.pay_address }}</code>
         <button class="btn btn--sm btn--ghost" onclick="copiar()">Copiar</button>
@@ -104,7 +108,19 @@
 
 {% block extra_scripts %}
 {% if pago %}
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script>
+// Generar QR de la dirección
+QRCode.toCanvas(document.createElement('canvas'), '{{ pago.pay_address }}', {
+    width: 180,
+    color: { dark: '#00c896', light: '#0f1a1a' }
+}, function(err, canvas) {
+    if (!err) {
+        canvas.style.borderRadius = '10px';
+        document.getElementById('qr-code').appendChild(canvas);
+    }
+});
+
 function copiar() {
     navigator.clipboard.writeText("{{ pago.pay_address }}");
     event.target.textContent = "¡Copiado!";

@@ -998,3 +998,22 @@ a { color: inherit; text-decoration: none; }
 }
 .wl-btn:hover { color: var(--gold); transform: scale(1.2); }
 .wl-btn.active { color: var(--gold); }
+
+/* ── QR Code pago ─────────────────────────────────────────────────────────── */
+.pago-qr-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+.pago-qr-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+#qr-code canvas {
+    border: 3px solid var(--accent);
+    border-radius: 12px;
+    padding: 8px;
+    background: #0f1a1a;
+}
