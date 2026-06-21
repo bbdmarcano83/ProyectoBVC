@@ -21,6 +21,9 @@ from services.auth import (
 )
 from services.pagos import crear_pago, verificar_firma_ipn, procesar_webhook, verificar_estado_pago
 from services.importador import importar_archivo
+import httpx as httpx_client
+from services.pdf_reporte import generar_reporte
+from services.pdf_reporte import generar_reporte_pdf
 from services.email import email_recuperar_password, email_bienvenida
 from database import ActivoPortafolio, Watchlist
 
@@ -923,6 +926,141 @@ async def recuperar_token_post(
     return render("recuperar.html", {"request": request, "modo": "ok", "error": None, "mensaje": None, "token": None})
 
 
+# ── Chat Asistente ───────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT = """Eres el asistente virtual de Caracas Bull, una plataforma de INFORMACION y ANALISIS del mercado bursatil de Caracas (BVC).
+
+IMPORTANTE:
+- NO somos broker, NO realizamos operaciones bursatiles
+- NO damos asesoria de inversion ni recomendaciones para comprar/vender
+- Solo proporcionamos informacion y herramientas de analisis
+
+Puedes ayudar con:
+- Como usar las funciones de la app (pizarra, portafolio, alertas, watchlist, comparador, ISLR, historial)
+- Informacion general sobre la BVC y como funciona
+- Problemas tecnicos con la plataforma
+- Dudas sobre pagos y suscripciones (planes: Basico 1.5 USDT/mes, Pro 2.99 USDT/mes lanzamiento)
+- Como vincular Telegram para alertas
+- Como importar portafolio desde Excel/CSV
+
+Si el usuario tiene un problema urgente de pago o tecnico grave, dile que escribe "soporte" para notificar al equipo.
+
+Responde siempre en español, de forma amigable y concisa. Maximo 3 parrafos."""
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    return render("chat.html", {
+        "request": request, "usuario": usuario,
+        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
+    })
+
+
+@app.post("/chat")
+async def chat_api(request: Request, db: Session = Depends(get_db)):
+    import os
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"error": "no autorizado"}, status_code=401)
+
+    body = await request.json()
+    messages = body.get("messages", [])
+    necesita_soporte = body.get("necesita_soporte", False)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    respuesta = ""
+
+    if api_key:
+        try:
+            async with httpx_client.AsyncClient(timeout=30.0) as client:
+                r = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-haiku-4-5-20251001",
+                        "max_tokens": 500,
+                        "system": SYSTEM_PROMPT,
+                        "messages": messages[-10:],  # últimos 10 mensajes
+                    }
+                )
+                if r.status_code == 200:
+                    respuesta = r.json()["content"][0]["text"]
+                else:
+                    respuesta = "Lo siento, tuve un problema técnico. Intenta de nuevo en un momento."
+        except Exception as e:
+            print(f"[Chat] Error: {e}")
+            respuesta = "Lo siento, no puedo responder en este momento. Escribe 'soporte' para contactar al equipo."
+    else:
+        respuesta = "El asistente de IA no está configurado aún. Por favor contacta al soporte."
+
+    # Notificar por Telegram si necesita soporte humano
+    soporte_notificado = False
+    if necesita_soporte and usuario.telegram_chat_id:
+        from services.telegram import enviar_mensaje, TELEGRAM_TOKEN
+        import os
+        # Notificar al admin
+        admin_chat = os.environ.get("ADMIN_TELEGRAM_CHAT_ID", "")
+        if admin_chat:
+            from services.telegram import enviar_mensaje
+            await enviar_mensaje(admin_chat,
+                f"🆘 <b>Soporte requerido</b>\n"
+                f"Usuario: <b>{usuario.nombre}</b> ({usuario.email})\n"
+                f"Mensaje: {messages[-1]['content'] if messages else 'N/A'}"
+            )
+            soporte_notificado = True
+
+    return JSONResponse({"respuesta": respuesta, "soporte_notificado": soporte_notificado})
+
+
+# ── Reporte PDF ──────────────────────────────────────────────────────────────────
+
+@app.get("/portafolio/pdf")
+async def descargar_pdf(request: Request, db: Session = Depends(get_db)):
+    from fastapi.responses import StreamingResponse
+    import io
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+
+    datos_bolsa = await obtener_datos_bvc()
+    tasa_auto   = await obtener_tasa_bcv()
+    config_tasa = tasa_auto if tasa_auto > 0 else 0
+
+    from database import ActivoPortafolio as AP
+    activos_db = db.query(AP).filter(AP.usuario_id == usuario.id).all()
+    portafolio = {
+        a.simbolo: {"cantidad": a.cantidad, "precio_promedio": a.precio_promedio,
+                    "comision": a.comision, "registro": a.registro, "iva": a.iva}
+        for a in activos_db
+    }
+    mapa_precios = {i["COD_SIMB"]: _to_float(i.get("PRECIO") or 0) for i in datos_bolsa}
+    total_mkt = sum(
+        _to_float(d["cantidad"]) * mapa_precios.get(s, _to_float(d["precio_promedio"]))
+        for s, d in portafolio.items()
+    )
+    from services.portafolio import resumen_portafolio
+    filas   = [calcular_fila(s, d, mapa_precios.get(s, _to_float(d["precio_promedio"])), total_mkt, config_tasa)
+               for s, d in portafolio.items()]
+    resumen = resumen_portafolio(portafolio, datos_bolsa, config_tasa)
+
+    pdf_bytes = generar_reporte_pdf(usuario, filas, resumen, config_tasa)
+    from datetime import datetime
+    nombre = f"CaracasBull_Reporte_{datetime.now().strftime('%Y%m')}.pdf"
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={nombre}"}
+    )
+
+
 # ── Watchlist ────────────────────────────────────────────────────────────────────
 
 @app.get("/watchlist", response_class=HTMLResponse)
@@ -1126,6 +1264,153 @@ async def manifest():
 async def service_worker():
     from fastapi.responses import FileResponse
     return FileResponse("static/sw.js", media_type="application/javascript")
+
+
+# ── Chat Asistente ───────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT = """Eres el asistente virtual de Caracas Bull, una plataforma de INFORMACION y ANALISIS del mercado bursatil de Caracas (BVC).
+
+IMPORTANTE:
+- NO somos broker, NO realizamos operaciones bursatiles
+- NO damos asesoria de inversion ni recomendaciones para comprar/vender
+- Solo proporcionamos informacion y herramientas de analisis
+
+Puedes ayudar con:
+- Como usar las funciones de la app (pizarra, portafolio, alertas, watchlist, comparador, ISLR, historial)
+- Informacion general sobre la BVC y como funciona
+- Problemas tecnicos con la plataforma
+- Dudas sobre pagos y suscripciones (planes: Basico 1.5 USDT/mes, Pro 2.99 USDT/mes lanzamiento)
+- Como vincular Telegram para alertas
+- Como importar portafolio desde Excel/CSV
+
+Si el usuario tiene un problema urgente de pago o tecnico grave, dile que escribe "soporte" para notificar al equipo.
+
+Responde siempre en español, de forma amigable y concisa. Maximo 3 parrafos."""
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    return render("chat.html", {
+        "request": request, "usuario": usuario,
+        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
+    })
+
+
+@app.post("/chat")
+async def chat_api(request: Request, db: Session = Depends(get_db)):
+    import os
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"error": "no autorizado"}, status_code=401)
+
+    body = await request.json()
+    messages = body.get("messages", [])
+    necesita_soporte = body.get("necesita_soporte", False)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    respuesta = ""
+
+    if api_key:
+        try:
+            async with httpx_client.AsyncClient(timeout=30.0) as client:
+                r = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-haiku-4-5-20251001",
+                        "max_tokens": 500,
+                        "system": SYSTEM_PROMPT,
+                        "messages": messages[-10:],  # últimos 10 mensajes
+                    }
+                )
+                if r.status_code == 200:
+                    respuesta = r.json()["content"][0]["text"]
+                else:
+                    respuesta = "Lo siento, tuve un problema técnico. Intenta de nuevo en un momento."
+        except Exception as e:
+            print(f"[Chat] Error: {e}")
+            respuesta = "Lo siento, no puedo responder en este momento. Escribe 'soporte' para contactar al equipo."
+    else:
+        respuesta = "El asistente de IA no está configurado aún. Por favor contacta al soporte."
+
+    # Notificar por Telegram si necesita soporte humano
+    soporte_notificado = False
+    if necesita_soporte and usuario.telegram_chat_id:
+        from services.telegram import enviar_mensaje, TELEGRAM_TOKEN
+        import os
+        # Notificar al admin
+        admin_chat = os.environ.get("ADMIN_TELEGRAM_CHAT_ID", "")
+        if admin_chat:
+            from services.telegram import enviar_mensaje
+            await enviar_mensaje(admin_chat,
+                f"🆘 <b>Soporte requerido</b>\n"
+                f"Usuario: <b>{usuario.nombre}</b> ({usuario.email})\n"
+                f"Mensaje: {messages[-1]['content'] if messages else 'N/A'}"
+            )
+            soporte_notificado = True
+
+    return JSONResponse({"respuesta": respuesta, "soporte_notificado": soporte_notificado})
+
+
+# ── Reporte PDF ──────────────────────────────────────────────────────────────────
+
+@app.get("/reporte/pdf")
+async def descargar_reporte(request: Request, db: Session = Depends(get_db)):
+    from fastapi.responses import Response
+    from datetime import datetime
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+
+    datos_bolsa = await obtener_datos_bvc()
+    tasa_auto   = await obtener_tasa_bcv()
+    config_tasa = tasa_auto if tasa_auto > 0 else 0
+
+    from database import ActivoPortafolio as AP
+    activos_db = db.query(AP).filter(AP.usuario_id == usuario.id).all()
+    portafolio = {
+        a.simbolo: {"cantidad": a.cantidad, "precio_promedio": a.precio_promedio,
+                    "comision": a.comision, "registro": a.registro, "iva": a.iva}
+        for a in activos_db
+    }
+
+    mapa_precios = {i["COD_SIMB"]: _to_float(i.get("PRECIO")) for i in datos_bolsa}
+    total_mkt = sum(
+        _to_float(d["cantidad"]) * mapa_precios.get(s, _to_float(d["precio_promedio"]))
+        for s, d in portafolio.items()
+    )
+
+    from services.portafolio import calcular_fila, resumen_portafolio
+    filas   = [calcular_fila(s, d, mapa_precios.get(s, _to_float(d["precio_promedio"])), total_mkt, config_tasa)
+               for s, d in portafolio.items()]
+    resumen = resumen_portafolio(portafolio, datos_bolsa, config_tasa)
+
+    plan = usuario.suscripcion.plan if usuario.suscripcion else "trial"
+    mes  = datetime.now().strftime("%B %Y")
+
+    pdf_bytes = generar_reporte(
+        usuario_nombre=usuario.nombre,
+        usuario_email=usuario.email,
+        plan=plan,
+        filas=filas,
+        resumen=resumen,
+        tasa=config_tasa,
+        mes=mes,
+    )
+
+    filename = f"reporte_caracasbull_{datetime.now().strftime('%Y%m')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 # ── Historial de transacciones ───────────────────────────────────────────────────

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Asistente — Caracas Bull{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Asistente <span class="dim">CaracasBull</span></h1>
+    <span class="badge--live" style="background:#2AABEE18;border-color:#2AABEE44;color:#2AABEE;">
+        🤖 IA + Soporte
+    </span>
+</div>
+
+<div class="chat-container">
+    <div class="chat-messages" id="chat-messages">
+        <div class="chat-msg chat-msg--bot">
+            <div class="chat-avatar">🐂</div>
+            <div class="chat-bubble">
+                <p>¡Hola <b>{{ usuario.nombre.split()[0] }}</b>! Soy el asistente de <b>Caracas Bull</b>.</p>
+                <p style="margin-top:8px;">Puedo ayudarte con:</p>
+                <div class="chat-sugerencias">
+                    <button class="chat-sug" onclick="enviarSugerencia(this)">¿Cómo configuro una alerta?</button>
+                    <button class="chat-sug" onclick="enviarSugerencia(this)">¿Cómo importo mi portafolio?</button>
+                    <button class="chat-sug" onclick="enviarSugerencia(this)">¿Cómo pago mi suscripción?</button>
+                    <button class="chat-sug" onclick="enviarSugerencia(this)">¿Qué es la BVC?</button>
+                    <button class="chat-sug" onclick="enviarSugerencia(this)">Tengo un problema con mi pago</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-input-area">
+        <div class="chat-input-row">
+            <textarea
+                id="chat-input"
+                class="chat-input"
+                placeholder="Escribe tu pregunta..."
+                rows="1"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviar()}"
+                oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
+            ></textarea>
+            <button class="btn btn--primary chat-send-btn" onclick="enviar()" id="send-btn">
+                ➤
+            </button>
+        </div>
+        <p class="chat-disclaimer">
+            ⚠ El asistente proporciona información general. Para soporte urgente de pagos, escribe "hablar con soporte".
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const messages = [];
+let esperandoRespuesta = false;
+
+function addMsg(role, text) {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = `chat-msg chat-msg--${role === 'user' ? 'user' : 'bot'}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-avatar';
+    avatar.textContent = role === 'user' ? '{{ usuario.nombre[0].upper() }}' : '🐂';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    bubble.innerHTML = text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+
+    if (role === 'user') {
+        div.appendChild(bubble);
+        div.appendChild(avatar);
+    } else {
+        div.appendChild(avatar);
+        div.appendChild(bubble);
+    }
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function addTyping() {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg chat-msg--bot';
+    div.id = 'typing-indicator';
+    div.innerHTML = '<div class="chat-avatar">🐂</div><div class="chat-bubble"><div class="chat-typing"><span></span><span></span><span></span></div></div>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function removeTyping() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+}
+
+async function enviar() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text || esperandoRespuesta) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    esperandoRespuesta = true;
+    document.getElementById('send-btn').disabled = true;
+
+    addMsg('user', text);
+    messages.push({ role: 'user', content: text });
+
+    // Detectar si pide soporte humano
+    const keywords = ['soporte', 'humano', 'persona', 'hablar con', 'pago', 'problema', 'error', 'no funciona', 'ayuda urgente'];
+    const necesitaSoporte = keywords.some(k => text.toLowerCase().includes(k));
+
+    addTyping();
+
+    try {
+        const r = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages, necesita_soporte: necesitaSoporte })
+        });
+        const d = await r.json();
+        removeTyping();
+
+        addMsg('bot', d.respuesta);
+        messages.push({ role: 'assistant', content: d.respuesta });
+
+        if (d.soporte_notificado) {
+            addMsg('bot', '✅ He notificado al equipo de soporte. Te contactarán por Telegram o email en breve.');
+        }
+    } catch(e) {
+        removeTyping();
+        addMsg('bot', 'Lo siento, tuve un error. Intenta de nuevo o escribe a soporte.');
+    }
+
+    esperandoRespuesta = false;
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('chat-input').focus();
+}
+
+function enviarSugerencia(btn) {
+    document.getElementById('chat-input').value = btn.textContent;
+    btn.parentElement.style.display = 'none';
+    enviar();
+}
+</script>
+{% endblock %}

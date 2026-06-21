@@ -85,6 +85,9 @@
                             <a href="/suscripcion">
                                 <i class="ti ti-crown" style="font-size:14px"></i> Suscripción
                             </a>
+                            <a href="/chat">
+                                <i class="ti ti-message-circle" style="font-size:14px"></i> Asistente
+                            </a>
                             <a href="/logout" class="logout-link">
                                 <i class="ti ti-logout" style="font-size:14px"></i> Cerrar sesión
                             </a>
@@ -100,6 +103,9 @@
         {% block content %}{% endblock %}
     </main>
 
+    <div class="disclaimer-bar">
+        ⚠ Caracas Bull es una plataforma de <b>información y análisis bursátil</b>. No somos broker, no realizamos operaciones y no ofrecemos asesoría de inversión. Toda la información es referencial.
+    </div>
     <footer class="ticker-bar">
         <div class="ticker-inner">
             {% block ticker %}{% endblock %}
@@ -107,6 +113,11 @@
     </footer>
 
     <script src="/static/js/main.js"></script>
+    {% if usuario %}
+    <a href="/chat" class="chat-float-btn" title="Asistente CaracasBull">
+        <span style="font-size:20px;">🐂</span>
+    </a>
+    {% endif %}
     <script>
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
