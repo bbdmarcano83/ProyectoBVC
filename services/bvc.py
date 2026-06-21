@@ -177,3 +177,43 @@ def mercado_abierto() -> bool:
         return False
     hora = ahora.hour + ahora.minute / 60
     return 9.0 <= hora < 13.0
+
+
+async def obtener_tasa_bcv() -> float:
+    """Obtiene la tasa BCV USD/VES desde la API de dolarapi.com."""
+    key = "tasa_bcv"
+    cached = _cache_get(key)
+    if cached:
+        return cached
+
+    urls = [
+        "https://ve.dolarapi.com/v1/dolares/oficial",
+        "https://pydolarve.org/api/v1/dollar?page=bcv",
+    ]
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        # Intentar dolarapi.com
+        try:
+            r = await client.get(urls[0])
+            if r.status_code == 200:
+                data = r.json()
+                tasa = float(data.get("promedio") or data.get("venta") or 0)
+                if tasa > 0:
+                    _cache_set(key, tasa)
+                    return tasa
+        except Exception as e:
+            print(f"[BCV] Error dolarapi: {e}")
+
+        # Fallback: pydolarve
+        try:
+            r = await client.get(urls[1])
+            if r.status_code == 200:
+                data = r.json()
+                tasa = float(data.get("price") or 0)
+                if tasa > 0:
+                    _cache_set(key, tasa)
+                    return tasa
+        except Exception as e:
+            print(f"[BCV] Error pydolarve: {e}")
+
+    return 0.0

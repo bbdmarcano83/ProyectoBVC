@@ -99,8 +99,13 @@
     </div>
     <p class="pago-expira">Este pago expira en 30 minutos. Una vez confirmado, tu cuenta se activa automáticamente.</p>
     <div class="pago-status" id="pago-status">
-        <span class="spinner"></span> Esperando confirmación...
+        <span class="spinner"></span>
+        <span id="status-text">Esperando transacción en la red...</span>
     </div>
+    <p style="color:var(--text-secondary);font-size:12px;margin-top:10px;line-height:1.7;">
+        Una vez detectada la transacción en la red BEP20, tu cuenta se activará automáticamente sin que tengas que hacer nada más.
+        Esto puede tardar entre <b style="color:var(--text)">1 y 5 minutos</b>.
+    </p>
 </div>
 {% endif %}
 
@@ -128,16 +133,33 @@ function copiar() {
     setTimeout(() => event.target.textContent = "Copiar", 2000);
 }
 
-// Polling cada 15s para verificar el estado del pago
 const paymentId = "{{ pago.payment_id }}";
-setInterval(async () => {
-    const r = await fetch(`/suscripcion/estado/${paymentId}`);
-    const d = await r.json();
-    if (d.status === "finished" || d.status === "confirmed") {
-        document.getElementById("pago-status").innerHTML =
-            '<span style="color:#22c55e">✓ ¡Pago confirmado! Recargando...</span>';
-        setTimeout(() => location.reload(), 2000);
-    }
+const statusText = document.getElementById("status-text");
+const statusMap = {
+    "waiting":    "⏳ Esperando transacción en la red...",
+    "confirming": "🔄 Transacción detectada, confirmando...",
+    "confirmed":  "✅ ¡Confirmado! Activando tu cuenta...",
+    "finished":   "✅ ¡Pago completado! Activando tu cuenta...",
+    "failed":     "❌ Pago fallido. Intenta de nuevo.",
+};
+let intentos = 0;
+const poll = setInterval(async () => {
+    try {
+        const r = await fetch(`/suscripcion/estado/${paymentId}`);
+        const d = await r.json();
+        if (statusMap[d.status]) statusText.textContent = statusMap[d.status];
+        if (d.status === "finished" || d.status === "confirmed") {
+            clearInterval(poll);
+            document.getElementById("pago-status").style.color = "var(--buy)";
+            setTimeout(() => location.href = "/portafolio", 2000);
+        }
+        if (d.status === "failed") clearInterval(poll);
+        intentos++;
+        if (intentos > 40) { // 10 minutos máximo
+            clearInterval(poll);
+            statusText.textContent = "⚠ Verificación detenida. Si pagaste, tu cuenta se activará en minutos.";
+        }
+    } catch(e) {}
 }, 15000);
 </script>
 {% endif %}

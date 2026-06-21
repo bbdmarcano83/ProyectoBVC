@@ -11,7 +11,14 @@
     <h1 class="page-title">Mi <span class="dim">Portafolio</span></h1>
     <div class="header-actions">
         <form action="/configurar" method="post" class="inline-form">
-            <label class="form-label">Tasa BCV</label>
+            <label class="form-label">
+                Tasa BCV
+                {% if tasa_auto > 0 %}
+                <span style="color:var(--buy);font-size:10px;font-weight:600;">● Auto</span>
+                {% else %}
+                <span style="color:var(--gold);font-size:10px;font-weight:600;">Manual</span>
+                {% endif %}
+            </label>
             <input type="number" name="tasa" value="{{ tasa }}" step="any" class="input-sm" required>
             <button type="submit" class="btn btn--ghost">Fijar</button>
         </form>

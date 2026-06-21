@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from database import init_db, get_db, SessionLocal, AlertaPrecio
 from services.alertas_worker import loop_alertas
-from services.bvc import obtener_datos_bvc, obtener_detalle_profundo, obtener_historico, _to_float, formatear_bs, formatear_entero, formatear_millones, mercado_abierto
+from services.bvc import obtener_datos_bvc, obtener_detalle_profundo, obtener_historico, _to_float, formatear_bs, formatear_entero, formatear_millones, mercado_abierto, obtener_tasa_bcv
 from services.portafolio import calcular_fila, resumen_portafolio
 from services.auth import (
     crear_usuario, autenticar_usuario, crear_token,
@@ -295,7 +295,9 @@ async def ver_portafolio(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url="/suscripcion", status_code=302)
 
     datos_bolsa = await obtener_datos_bvc()
-    config_tasa = float(os.environ.get("TASA_BCV", "0"))
+    # Tasa BCV automática con fallback a la configurada manualmente
+    tasa_auto = await obtener_tasa_bcv()
+    config_tasa = tasa_auto if tasa_auto > 0 else float(os.environ.get("TASA_BCV", "0"))
 
     activos_db = db.query(ActivoPortafolio).filter(ActivoPortafolio.usuario_id == usuario.id).all()
     portafolio = {
@@ -355,11 +357,13 @@ async def agregar(
         ActivoPortafolio.simbolo == simb.upper()
     ).first()
     if existente:
-        existente.cantidad = cant
-        existente.precio_promedio = precio
-        existente.comision = com
-        existente.registro = reg
-        existente.iva = iva
+        # Promediar precio y sumar cantidades automaticamente
+        cant_total = existente.cantidad + cant
+        precio_prom = ((existente.precio_promedio * existente.cantidad) + (precio * cant)) / cant_total
+        existente.cantidad = cant_total
+        existente.precio_promedio = round(precio_prom, 2)
+        existente.comision = existente.comision + com
+        existente.registro = existente.registro + reg
     else:
         db.add(ActivoPortafolio(
             usuario_id=usuario.id, simbolo=simb.upper(),
@@ -825,6 +829,13 @@ async def reset_alerta(
 
 
 # ── API endpoints ────────────────────────────────────────────────────────────────
+
+@app.get("/api/tasa")
+async def api_tasa():
+    """Devuelve la tasa BCV actual."""
+    tasa = await obtener_tasa_bcv()
+    return JSONResponse({"tasa": tasa, "fuente": "BCV" if tasa > 0 else "manual"})
+
 
 @app.get("/api/precio/{simbolo}")
 async def api_precio(simbolo: str, request: Request, db: Session = Depends(get_db)):
