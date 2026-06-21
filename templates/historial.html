@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Historial — Caracas Bull{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Historial <span class="dim">de transacciones</span></h1>
+    <button class="btn btn--primary" onclick="abrirModal('modal-tx')" style="margin-left:auto;">
+        + Registrar operación
+    </button>
+</div>
+
+{% if not transacciones %}
+<div class="empty-state">
+    <div class="empty-icon">📋</div>
+    <p>No hay transacciones registradas.</p>
+    <button class="btn btn--primary" onclick="abrirModal('modal-tx')">Registrar primera operación</button>
+</div>
+{% else %}
+
+<!-- Resumen -->
+<div class="stats-grid" style="margin-bottom:24px;">
+    <div class="stat-card">
+        <span class="stat-label">Total operaciones</span>
+        <span class="stat-value mono">{{ transacciones|length }}</span>
+    </div>
+    <div class="stat-card stat-card--up">
+        <span class="stat-label">Compras</span>
+        <span class="stat-value mono">{{ compras }}</span>
+    </div>
+    <div class="stat-card stat-card--down">
+        <span class="stat-label">Ventas</span>
+        <span class="stat-value mono">{{ ventas }}</span>
+    </div>
+    <div class="stat-card {% if ganancia_total >= 0 %}stat-card--up{% else %}stat-card--down{% endif %}">
+        <span class="stat-label">Ganancia realizada</span>
+        <span class="stat-value mono">{{ ganancia_total | format_bs }} Bs</span>
+    </div>
+</div>
+
+<div class="table-wrapper">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Fecha</th>
+                <th>Símbolo</th>
+                <th>Tipo</th>
+                <th>Cantidad</th>
+                <th>Precio (Bs)</th>
+                <th>Total (Bs)</th>
+                <th>Comisión</th>
+                <th>Notas</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in transacciones %}
+            <tr>
+                <td class="mono" style="font-size:12px;color:var(--text-secondary);">
+                    {{ t.fecha.strftime('%d/%m/%Y') if t.fecha else '—' }}
+                </td>
+                <td>
+                    <a href="/detalle/{{ t.simbolo }}" class="simb-link">
+                        <b>{{ t.simbolo }}</b>
+                    </a>
+                </td>
+                <td>
+                    {% if t.tipo == 'compra' %}
+                    <span class="var-up" style="font-size:12px;font-weight:700;">▲ Compra</span>
+                    {% else %}
+                    <span class="var-down" style="font-size:12px;font-weight:700;">▼ Venta</span>
+                    {% endif %}
+                </td>
+                <td class="mono">{{ t.cantidad | int }}</td>
+                <td class="mono">{{ t.precio | format_bs }}</td>
+                <td class="mono">{{ (t.cantidad * t.precio) | format_bs }}</td>
+                <td class="mono" style="color:var(--text-secondary);">{{ t.comision | format_bs }}</td>
+                <td style="color:var(--text-secondary);font-size:12px;">{{ t.notas or '—' }}</td>
+                <td>
+                    <form action="/historial/eliminar" method="post" style="display:inline;">
+                        <input type="hidden" name="tx_id" value="{{ t.id }}">
+                        <button class="btn btn--sm btn--danger">✕</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Modal nueva transacción -->
+<div id="modal-tx" class="overlay" onclick="cerrarSiOverlay(event, this)">
+    <div class="modal">
+        <button class="modal-close" onclick="cerrarModal('modal-tx')">&times;</button>
+        <h3 class="modal-title">Registrar operación</h3>
+        <form action="/historial/agregar" method="post" class="modal-form">
+            <label>Símbolo</label>
+            <select name="simbolo" required style="width:100%;padding:9px 12px;background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
+                {% for s in simbolos %}
+                <option value="{{ s }}">{{ s }}</option>
+                {% endfor %}
+            </select>
+            <label>Tipo</label>
+            <select name="tipo" required style="width:100%;padding:9px 12px;background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
+                <option value="compra">▲ Compra</option>
+                <option value="venta">▼ Venta</option>
+            </select>
+            <label>Fecha</label>
+            <input type="date" name="fecha" required value="{{ hoy }}">
+            <label>Cantidad (títulos)</label>
+            <input type="number" name="cantidad" placeholder="0" step="1" min="1" required>
+            <label>Precio por título (Bs)</label>
+            <input type="number" name="precio" placeholder="0.00" step="any" required>
+            <label>Comisión (Bs)</label>
+            <input type="number" name="comision" placeholder="0" step="any" value="0">
+            <label>Notas (opcional)</label>
+            <input type="text" name="notas" placeholder="Ej: Dividendo, Split, etc.">
+            <button type="submit" class="btn btn--primary" style="margin-top:8px;">Registrar</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function abrirModal(id) { document.getElementById(id).style.display = 'flex'; }
+function cerrarModal(id) { document.getElementById(id).style.display = 'none'; }
+function cerrarSiOverlay(e, el) { if (e.target === el) cerrarModal(el.id); }
+</script>
+{% endblock %}

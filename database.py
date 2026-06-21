@@ -27,9 +27,11 @@ class Usuario(Base):
     activo        = Column(Boolean, default=True)
     creado_en     = Column(DateTime, server_default=func.now())
 
-    telegram_chat_id = Column(String(50), nullable=True)
-    telegram_codigo  = Column(String(10), nullable=True)
-    broker           = Column(String(50), nullable=True)
+    telegram_chat_id   = Column(String(50), nullable=True)
+    telegram_codigo    = Column(String(10), nullable=True)
+    broker             = Column(String(50), nullable=True)
+    token_recuperacion = Column(String(100), nullable=True)
+    token_expira       = Column(DateTime, nullable=True)
 
     suscripcion   = relationship("Suscripcion", back_populates="usuario", uselist=False)
     activos       = relationship("ActivoPortafolio", back_populates="usuario", cascade="all, delete-orphan")
@@ -79,6 +81,24 @@ class Watchlist(Base):
     creado_en   = Column(DateTime, server_default=func.now())
 
     usuario     = relationship("Usuario", back_populates="watchlist")
+
+
+class TransaccionHistorial(Base):
+    __tablename__ = "transacciones"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    usuario_id  = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    simbolo     = Column(String(20), nullable=False)
+    tipo        = Column(String(10), nullable=False)   # "compra" | "venta"
+    cantidad    = Column(Float, nullable=False)
+    precio      = Column(Float, nullable=False)
+    comision    = Column(Float, default=0)
+    registro    = Column(Float, default=0)
+    iva         = Column(Float, default=16)
+    fecha       = Column(DateTime, server_default=func.now())
+    notas       = Column(String(200), nullable=True)
+
+    usuario     = relationship("Usuario", backref="transacciones")
 
 
 class PagoHistorial(Base):

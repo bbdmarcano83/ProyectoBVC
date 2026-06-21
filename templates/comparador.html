@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Comparador — Caracas Bull{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Comparador <span class="dim">de acciones</span></h1>
+</div>
+
+<div class="comparador-form">
+    <form action="/comparador" method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        {% for i in range(3) %}
+        <div>
+            <label style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px;">
+                Acción {{ i+1 }}{% if i == 0 %} *{% endif %}
+            </label>
+            <select name="s{{ i+1 }}" style="padding:8px 12px;background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;min-width:120px;">
+                <option value="">— Ninguna —</option>
+                {% for s in simbolos %}
+                <option value="{{ s }}" {% if seleccionados[i] == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn--primary">Comparar</button>
+    </form>
+</div>
+
+{% if datos_comparacion %}
+<!-- Tabla comparativa -->
+<div class="table-wrapper" style="margin-top:24px;">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Métrica</th>
+                {% for item in datos_comparacion %}
+                <th>{{ item.simbolo }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="color:var(--text-secondary);font-size:12px;">Último precio</td>
+                {% for item in datos_comparacion %}
+                <td class="mono">{{ item.precio | format_bs }} Bs</td>
+                {% endfor %}
+            </tr>
+            <tr>
+                <td style="color:var(--text-secondary);font-size:12px;">Variación %</td>
+                {% for item in datos_comparacion %}
+                {% set v = item.var_rel | float %}
+                <td class="mono {% if v > 0 %}var-up{% elif v < 0 %}var-down{% endif %}">
+                    {{ "%.2f"|format(v) }}%
+                </td>
+                {% endfor %}
+            </tr>
+            <tr>
+                <td style="color:var(--text-secondary);font-size:12px;">Vol. transado (Bs)</td>
+                {% for item in datos_comparacion %}
+                <td class="mono">{{ item.vol_transado | format_bs }}</td>
+                {% endfor %}
+            </tr>
+            <tr>
+                <td style="color:var(--text-secondary);font-size:12px;">Títulos</td>
+                {% for item in datos_comparacion %}
+                <td class="mono">{{ item.titulos }}</td>
+                {% endfor %}
+            </tr>
+            <tr>
+                <td style="color:var(--text-secondary);font-size:12px;">P. Compra</td>
+                {% for item in datos_comparacion %}
+                <td class="mono buy">{{ item.p_compra | format_bs }} Bs</td>
+                {% endfor %}
+            </tr>
+            <tr>
+                <td style="color:var(--text-secondary);font-size:12px;">P. Venta</td>
+                {% for item in datos_comparacion %}
+                <td class="mono sell">{{ item.p_venta | format_bs }} Bs</td>
+                {% endfor %}
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Gráfica de barras comparativa -->
+<div class="chart-wrap" style="margin-top:20px;">
+    <div id="chart-comparador"></div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if datos_comparacion %}
+<script>
+const labels = {{ datos_comparacion | map(attribute='simbolo') | list | tojson }};
+const variaciones = {{ datos_comparacion | map(attribute='var_rel') | list | tojson }};
+const colors = variaciones.map(v => v > 0 ? '#00c896' : v < 0 ? '#ff4d6a' : '#60a5fa');
+
+new ApexCharts(document.getElementById('chart-comparador'), {
+    series: [{ name: 'Variación %', data: variaciones }],
+    chart: { type: 'bar', height: 280, background: 'transparent', foreColor: '#6b9090', toolbar: { show: false } },
+    theme: { mode: 'dark' },
+    plotOptions: { bar: { columnWidth: '40%', distributed: true } },
+    colors: colors,
+    dataLabels: { enabled: true, formatter: v => v.toFixed(2) + '%' },
+    xaxis: { categories: labels },
+    yaxis: { labels: { formatter: v => v.toFixed(2) + '%' } },
+    legend: { show: false },
+    grid: { borderColor: '#1e3030' },
+    title: { text: 'Variación % del día', style: { color: '#6b9090', fontSize: '13px' } }
+}).render();
+</script>
+{% endif %}
+{% endblock %}

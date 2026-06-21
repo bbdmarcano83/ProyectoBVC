@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Índice vs Mercado — Caracas Bull{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Índice <span class="dim">vs Mercado</span></h1>
+    <span class="badge--live">● Tiempo real</span>
+</div>
+
+<!-- Stats comparación -->
+<div class="stats-grid" style="margin-bottom:24px;">
+    <div class="stat-card {% if rend_port >= 0 %}stat-card--up{% else %}stat-card--down{% endif %}">
+        <span class="stat-label">Rendimiento portafolio</span>
+        <span class="stat-value mono">{{ "%.2f"|format(rend_port) }}%</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Promedio mercado hoy</span>
+        <span class="stat-value mono {% if rend_mercado >= 0 %}var-up{% else %}var-down{% endif %}">
+            {{ "%.2f"|format(rend_mercado) }}%
+        </span>
+    </div>
+    <div class="stat-card {% if rend_port >= rend_mercado %}stat-card--up{% else %}stat-card--down{% endif %}">
+        <span class="stat-label">vs Mercado</span>
+        <span class="stat-value mono">
+            {% set diff = rend_port - rend_mercado %}
+            {% if diff >= 0 %}+{% endif %}{{ "%.2f"|format(diff) }}%
+        </span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Acciones en portafolio</span>
+        <span class="stat-value mono">{{ filas|length }}</span>
+    </div>
+</div>
+
+{% if filas %}
+<!-- Gráfica rendimiento individual -->
+<div class="chart-wrap" style="margin-bottom:20px;">
+    <div id="chart-indice"></div>
+</div>
+
+<!-- Tabla detallada -->
+<div class="table-wrapper">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Símbolo</th>
+                <th>Precio compra</th>
+                <th>Precio mercado</th>
+                <th>Rend. %</th>
+                <th>Var. hoy %</th>
+                <th>Peso %</th>
+                <th>Ganancia Bs</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in filas %}
+            {% set var_hoy = vars_hoy.get(f.simb, 0) %}
+            <tr>
+                <td><a href="/detalle/{{ f.simb }}" class="simb-link"><b>{{ f.simb }}</b></a></td>
+                <td class="mono">{{ f.precio_prom | format_bs }} Bs</td>
+                <td class="mono">{{ f.precio_actual | format_bs }} Bs</td>
+                <td class="mono {% if f.rend_pct >= 0 %}var-up{% else %}var-down{% endif %}">
+                    {{ "%.2f"|format(f.rend_pct) }}%
+                </td>
+                <td class="mono {% if var_hoy >= 0 %}var-up{% else %}var-down{% endif %}">
+                    {{ "%.2f"|format(var_hoy) }}%
+                </td>
+                <td class="mono">{{ "%.1f"|format(f.peso_pct) }}%</td>
+                <td class="mono {% if f.ganancia >= 0 %}var-up{% else %}var-down{% endif %}">
+                    {{ f.ganancia | format_bs }} Bs
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">📊</div>
+    <p>Agrega activos a tu portafolio para ver el índice.</p>
+    <a href="/portafolio" class="btn btn--primary">Ir al portafolio</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if filas %}
+<script>
+const simbolos   = {{ filas | map(attribute='simb') | list | tojson }};
+const rendPort   = {{ filas | map(attribute='rend_pct') | list | tojson }};
+const varsHoy    = {{ vars_hoy_list | tojson }};
+const mercadoAvg = {{ rend_mercado }};
+
+new ApexCharts(document.getElementById('chart-indice'), {
+    series: [
+        { name: 'Rendimiento acumulado %', data: rendPort },
+        { name: 'Variación hoy %', data: varsHoy },
+    ],
+    chart: { type: 'bar', height: 320, background: 'transparent', foreColor: '#6b9090', toolbar: { show: false } },
+    theme: { mode: 'dark' },
+    plotOptions: { bar: { columnWidth: '60%', grouped: true } },
+    colors: ['#00c896', '#f0c040'],
+    dataLabels: { enabled: false },
+    xaxis: { categories: simbolos },
+    yaxis: { labels: { formatter: v => v.toFixed(1) + '%' } },
+    grid: { borderColor: '#1e3030' },
+    annotations: {
+        yaxis: [{
+            y: mercadoAvg,
+            borderColor: '#ff4d6a',
+            borderWidth: 2,
+            strokeDashArray: 4,
+            label: { text: 'Mercado ' + mercadoAvg.toFixed(2) + '%', style: { color: '#080f0f', background: '#ff4d6a' } }
+        }]
+    },
+    legend: { position: 'top' }
+}).render();
+</script>
+{% endif %}
+{% endblock %}

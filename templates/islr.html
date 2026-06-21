@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Calculadora ISLR — Caracas Bull{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Calculadora <span class="dim">ISLR</span></h1>
+</div>
+
+<div class="islr-grid">
+    <div class="perfil-card">
+        <h3 class="perfil-section-title">¿Qué es el ISLR sobre acciones?</h3>
+        <p style="color:var(--text-secondary);font-size:13px;line-height:1.8;">
+            En Venezuela, las ganancias de capital provenientes de la venta de acciones están sujetas al <b style="color:var(--text)">Impuesto Sobre la Renta (ISLR)</b>.
+            La tasa aplicable depende del enriquecimiento neto anual del contribuyente según la tarifa del SENIAT.
+        </p>
+        <div style="background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:8px;">
+            <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                <thead>
+                    <tr style="color:var(--text-secondary);">
+                        <th style="padding:6px;text-align:left;">Desde (UT)</th>
+                        <th style="padding:6px;text-align:left;">Hasta (UT)</th>
+                        <th style="padding:6px;text-align:left;">% Impuesto</th>
+                        <th style="padding:6px;text-align:left;">Sustraendo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="padding:6px;">0</td><td style="padding:6px;">1.000</td><td style="padding:6px;color:var(--buy);">6%</td><td style="padding:6px;">0</td></tr>
+                    <tr><td style="padding:6px;">1.000</td><td style="padding:6px;">1.500</td><td style="padding:6px;color:var(--gold);">9%</td><td style="padding:6px;">30</td></tr>
+                    <tr><td style="padding:6px;">1.500</td><td style="padding:6px;">2.000</td><td style="padding:6px;color:var(--gold);">12%</td><td style="padding:6px;">75</td></tr>
+                    <tr><td style="padding:6px;">2.000</td><td style="padding:6px;">2.500</td><td style="padding:6px;color:var(--sell);">16%</td><td style="padding:6px;">155</td></tr>
+                    <tr><td style="padding:6px;">2.500</td><td style="padding:6px;">3.000</td><td style="padding:6px;color:var(--sell);">20%</td><td style="padding:6px;">255</td></tr>
+                    <tr><td style="padding:6px;">3.000</td><td style="padding:6px;">4.000</td><td style="padding:6px;color:var(--sell);">24%</td><td style="padding:6px;">375</td></tr>
+                    <tr><td style="padding:6px;">4.000</td><td style="padding:6px;">6.000</td><td style="padding:6px;color:var(--sell);">29%</td><td style="padding:6px;">575</td></tr>
+                    <tr><td style="padding:6px;">6.000</td><td style="padding:6px;">∞</td><td style="padding:6px;color:var(--sell);">34%</td><td style="padding:6px;">875</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="perfil-card">
+        <h3 class="perfil-section-title">Calcular mi ISLR</h3>
+        <form id="islr-form" class="modal-form" onsubmit="calcular(event)">
+            <label>Valor de la UT (Bs) — año fiscal</label>
+            <input type="number" id="valor-ut" placeholder="Ej: 9600" step="any" required value="{{ ut_actual }}">
+            <label>Ganancia bruta de capital (Bs)</label>
+            <input type="number" id="ganancia-bruta" placeholder="Tu ganancia total del año" step="any" value="{{ ganancia_portafolio | round(2) }}">
+            <label>Otros ingresos gravables (Bs) — opcional</label>
+            <input type="number" id="otros-ingresos" placeholder="0" step="any" value="0">
+            <label>Deducciones (Bs) — gastos deducibles</label>
+            <input type="number" id="deducciones" placeholder="0" step="any" value="0">
+            <button type="submit" class="btn btn--primary" style="margin-top:8px;">Calcular ISLR</button>
+        </form>
+
+        <div id="resultado-islr" style="display:none; margin-top:20px;">
+            <div style="background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;">
+                <h4 style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--accent);">Resultado estimado</h4>
+                <div class="sus-info-row"><span class="sus-info-label">Enriquecimiento neto (Bs)</span><span id="r-neto" class="sus-info-val mono"></span></div>
+                <div class="sus-info-row"><span class="sus-info-label">Enriquecimiento neto (UT)</span><span id="r-ut" class="sus-info-val mono"></span></div>
+                <div class="sus-info-row"><span class="sus-info-label">Tarifa aplicable</span><span id="r-tarifa" class="sus-info-val mono"></span></div>
+                <div class="sus-info-row"><span class="sus-info-label">ISLR a pagar (UT)</span><span id="r-islr-ut" class="sus-info-val mono"></span></div>
+                <div class="sus-info-row" style="border-top:1px solid var(--accent);padding-top:12px;margin-top:4px;">
+                    <span class="sus-info-label" style="font-weight:700;">ISLR a pagar (Bs)</span>
+                    <span id="r-islr-bs" class="sus-info-val mono" style="color:var(--sell);font-size:18px;"></span>
+                </div>
+                <p style="color:var(--text-secondary);font-size:11px;margin-top:12px;">
+                    ⚠ Este cálculo es referencial. Consulta con un contador para tu declaración oficial.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const TARIFAS = [
+    {desde:0,    hasta:1000, pct:0.06, sust:0},
+    {desde:1000, hasta:1500, pct:0.09, sust:30},
+    {desde:1500, hasta:2000, pct:0.12, sust:75},
+    {desde:2000, hasta:2500, pct:0.16, sust:155},
+    {desde:2500, hasta:3000, pct:0.20, sust:255},
+    {desde:3000, hasta:4000, pct:0.24, sust:375},
+    {desde:4000, hasta:6000, pct:0.29, sust:575},
+    {desde:6000, hasta:Infinity, pct:0.34, sust:875},
+];
+
+function calcular(e) {
+    e.preventDefault();
+    const ut        = parseFloat(document.getElementById('valor-ut').value) || 0;
+    const ganancia  = parseFloat(document.getElementById('ganancia-bruta').value) || 0;
+    const otros     = parseFloat(document.getElementById('otros-ingresos').value) || 0;
+    const deduc     = parseFloat(document.getElementById('deducciones').value) || 0;
+    const neto_bs   = ganancia + otros - deduc;
+    const neto_ut   = neto_bs / ut;
+
+    const tarifa = TARIFAS.find(t => neto_ut >= t.desde && neto_ut < t.hasta) || TARIFAS[TARIFAS.length-1];
+    const islr_ut = (neto_ut * tarifa.pct) - tarifa.sust;
+    const islr_bs = Math.max(0, islr_ut * ut);
+
+    const fmt = v => v.toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+    document.getElementById('r-neto').textContent    = fmt(neto_bs) + ' Bs';
+    document.getElementById('r-ut').textContent      = fmt(neto_ut) + ' UT';
+    document.getElementById('r-tarifa').textContent  = (tarifa.pct * 100) + '%';
+    document.getElementById('r-islr-ut').textContent = fmt(islr_ut) + ' UT';
+    document.getElementById('r-islr-bs').textContent = fmt(islr_bs) + ' Bs';
+    document.getElementById('resultado-islr').style.display = 'block';
+}
+</script>
+{% endblock %}
