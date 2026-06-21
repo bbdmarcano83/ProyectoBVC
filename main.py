@@ -23,6 +23,7 @@ from services.pagos import crear_pago, verificar_firma_ipn, procesar_webhook, ve
 from services.importador import importar_archivo
 import httpx as httpx_client
 from services.pdf_reporte import generar_reporte
+from services.pdf_reporte import generar_reporte_pdf
 from services.email import email_recuperar_password, email_bienvenida
 from database import ActivoPortafolio, Watchlist
 
@@ -969,35 +970,36 @@ async def chat_api(request: Request, db: Session = Depends(get_db)):
     messages = body.get("messages", [])
     necesita_soporte = body.get("necesita_soporte", False)
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     respuesta = ""
-
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     if api_key:
         try:
+            # Construir historial en formato Gemini
+            gemini_messages = []
+            for m in messages[-10:]:
+                role = "user" if m["role"] == "user" else "model"
+                gemini_messages.append({"role": role, "parts": [{"text": m["content"]}]})
+
             async with httpx_client.AsyncClient(timeout=30.0) as client:
                 r = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json",
-                    },
+                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+                    headers={"Content-Type": "application/json"},
                     json={
-                        "model": "claude-haiku-4-5-20251001",
-                        "max_tokens": 500,
-                        "system": SYSTEM_PROMPT,
-                        "messages": messages[-10:],  # últimos 10 mensajes
+                        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                        "contents": gemini_messages,
+                        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.7},
                     }
                 )
                 if r.status_code == 200:
-                    respuesta = r.json()["content"][0]["text"]
+                    respuesta = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 else:
+                    print(f"[Gemini] Error {r.status_code}: {r.text[:200]}")
                     respuesta = "Lo siento, tuve un problema técnico. Intenta de nuevo en un momento."
         except Exception as e:
             print(f"[Chat] Error: {e}")
             respuesta = "Lo siento, no puedo responder en este momento. Escribe 'soporte' para contactar al equipo."
     else:
-        respuesta = "El asistente de IA no está configurado aún. Por favor contacta al soporte."
+        respuesta = "El asistente no está configurado. Por favor contacta al soporte en soporte@caracasbull.com"
 
     # Notificar por Telegram si necesita soporte humano
     soporte_notificado = False
@@ -1309,35 +1311,36 @@ async def chat_api(request: Request, db: Session = Depends(get_db)):
     messages = body.get("messages", [])
     necesita_soporte = body.get("necesita_soporte", False)
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     respuesta = ""
-
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     if api_key:
         try:
+            # Construir historial en formato Gemini
+            gemini_messages = []
+            for m in messages[-10:]:
+                role = "user" if m["role"] == "user" else "model"
+                gemini_messages.append({"role": role, "parts": [{"text": m["content"]}]})
+
             async with httpx_client.AsyncClient(timeout=30.0) as client:
                 r = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json",
-                    },
+                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+                    headers={"Content-Type": "application/json"},
                     json={
-                        "model": "claude-haiku-4-5-20251001",
-                        "max_tokens": 500,
-                        "system": SYSTEM_PROMPT,
-                        "messages": messages[-10:],  # últimos 10 mensajes
+                        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                        "contents": gemini_messages,
+                        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.7},
                     }
                 )
                 if r.status_code == 200:
-                    respuesta = r.json()["content"][0]["text"]
+                    respuesta = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 else:
+                    print(f"[Gemini] Error {r.status_code}: {r.text[:200]}")
                     respuesta = "Lo siento, tuve un problema técnico. Intenta de nuevo en un momento."
         except Exception as e:
             print(f"[Chat] Error: {e}")
             respuesta = "Lo siento, no puedo responder en este momento. Escribe 'soporte' para contactar al equipo."
     else:
-        respuesta = "El asistente de IA no está configurado aún. Por favor contacta al soporte."
+        respuesta = "El asistente no está configurado. Por favor contacta al soporte en soporte@caracasbull.com"
 
     # Notificar por Telegram si necesita soporte humano
     soporte_notificado = False
