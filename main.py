@@ -343,7 +343,7 @@ async def ver_portafolio(request: Request, db: Session = Depends(get_db)):
         "request": request,
         "filas": filas,
         "resumen": resumen,
-        "tasa": config_tasa,
+        "tasa_auto": config_tasa,
         "labels": [f["simb"] for f in filas],
         "valores": [round(f["val_mkt"], 2) for f in filas],
         "ganancias": [round(f["ganancia"], 2) for f in filas],
