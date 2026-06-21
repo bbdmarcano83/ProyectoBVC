@@ -982,7 +982,7 @@ async def chat_api(request: Request, db: Session = Depends(get_db)):
 
             async with httpx_client.AsyncClient(timeout=30.0) as client:
                 r = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}",
                     headers={"Content-Type": "application/json"},
                     json={
                         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
