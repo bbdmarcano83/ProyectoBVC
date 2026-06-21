@@ -23,7 +23,7 @@ from services.pagos import crear_pago, verificar_firma_ipn, procesar_webhook, ve
 from services.importador import importar_archivo
 import httpx as httpx_client
 from services.pdf_reporte import generar_reporte
-from services.pdf_reporte import generar_reporte_pdf
+from services.pdf_reporte import generar_reporte
 from services.email import email_recuperar_password, email_bienvenida
 from database import ActivoPortafolio, Watchlist
 
@@ -1051,7 +1051,7 @@ async def descargar_pdf(request: Request, db: Session = Depends(get_db)):
                for s, d in portafolio.items()]
     resumen = resumen_portafolio(portafolio, datos_bolsa, config_tasa)
 
-    pdf_bytes = generar_reporte_pdf(usuario, filas, resumen, config_tasa)
+    pdf_bytes = generar_reporte(usuario, filas, resumen, config_tasa)
     from datetime import datetime
     nombre = f"CaracasBull_Reporte_{datetime.now().strftime('%Y%m')}.pdf"
 
