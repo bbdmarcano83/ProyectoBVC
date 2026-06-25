@@ -1226,3 +1226,25 @@ a { color: inherit; text-decoration: none; }
 .logo-img-header:hover {
     filter: drop-shadow(0 0 12px rgba(0, 200, 150, 0.4));
 }
+
+/* ── Logo PNG ajustado ────────────────────────────────────────────────────── */
+.logo-png-link {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+    flex-shrink: 0;
+}
+.logo-png {
+    height: 44px;
+    width: auto;
+    object-fit: contain;
+    object-position: left center;
+    filter: drop-shadow(0 2px 8px rgba(0, 200, 150, 0.25));
+    transition: filter 0.2s ease;
+}
+.logo-png:hover {
+    filter: drop-shadow(0 2px 16px rgba(0, 200, 150, 0.5));
+}
+@media (max-width: 768px) {
+    .logo-png { height: 36px; }
+}
