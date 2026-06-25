@@ -343,7 +343,7 @@ async def ver_portafolio(request: Request, db: Session = Depends(get_db)):
         "request": request,
         "filas": filas,
         "resumen": resumen,
-        "tasa_auto": config_tasa,
+        "tasa": config_tasa,
         "labels": [f["simb"] for f in filas],
         "valores": [round(f["val_mkt"], 2) for f in filas],
         "ganancias": [round(f["ganancia"], 2) for f in filas],
@@ -982,7 +982,7 @@ async def chat_api(request: Request, db: Session = Depends(get_db)):
 
             async with httpx_client.AsyncClient(timeout=30.0) as client:
                 r = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}",
+                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
                     headers={"Content-Type": "application/json"},
                     json={
                         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
@@ -1248,12 +1248,12 @@ async def admin_desactivar(request: Request, usuario_id: int = Form(...), db: Se
 @app.get("/favicon.ico")
 async def favicon_ico():
     from fastapi.responses import FileResponse
-    return FileResponse("static/favicon.svg", media_type="image/svg+xml")
+    return FileResponse("static/logo.png", media_type="image/png")
 
-@app.get("/favicon.svg")
-async def favicon_svg():
+@app.get("/favicon.png")
+async def favicon_png():
     from fastapi.responses import FileResponse
-    return FileResponse("static/favicon.svg", media_type="image/svg+xml")
+    return FileResponse("static/logo.png", media_type="image/png")
 
 
 @app.get("/manifest.json")

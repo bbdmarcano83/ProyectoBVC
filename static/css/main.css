@@ -1215,3 +1215,14 @@ a { color: inherit; text-decoration: none; }
     transform: scale(1.1);
     box-shadow: 0 6px 30px var(--accent-glow);
 }
+
+/* ── Logo PNG header ──────────────────────────────────────────────────────── */
+.logo-img-header {
+    height: 36px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px rgba(0, 200, 150, 0.2));
+    transition: var(--transition);
+}
+.logo-img-header:hover {
+    filter: drop-shadow(0 0 12px rgba(0, 200, 150, 0.4));
+}
