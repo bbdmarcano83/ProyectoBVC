@@ -13,7 +13,7 @@
         <form action="/configurar" method="post" class="inline-form">
             <label class="form-label">
                 Tasa BCV
-                {% if tasa_auto > 0 %}
+                {% if tasa_auto is defined and tasa_auto > 0 %}
                 <span style="color:var(--buy);font-size:10px;font-weight:600;">● Auto</span>
                 {% else %}
                 <span style="color:var(--gold);font-size:10px;font-weight:600;">Manual</span>
