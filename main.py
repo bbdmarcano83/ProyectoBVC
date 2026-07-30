@@ -300,6 +300,42 @@ async def pizarra(request: Request, db: Session = Depends(get_db)):
     })
 
 
+# ── Scoring (Rotación Sectorial) ──────────────────────────────────────────────
+
+from services.scoring import calcular_scoring_completo
+
+@app.get("/scoring", response_class=HTMLResponse)
+async def ver_scoring(request: Request, deval: float = 148.0, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    if not suscripcion_activa(usuario):
+        return RedirectResponse(url="/suscripcion", status_code=302)
+
+    resultados = await calcular_scoring_completo(devaluacion_pct=deval)
+
+    return render("scoring.html", {
+        "request": request,
+        "resultados": resultados,
+        "deval": deval,
+        "active": "scoring",
+        "usuario": usuario,
+        "dias": dias_restantes(usuario),
+        "mercado": mercado_abierto(),
+    })
+
+
+@app.get("/api/scoring", response_class=JSONResponse)
+async def api_scoring(deval: float = 148.0, request: Request = None, db: Session = Depends(get_db)):
+    """API JSON para consumo externo o futuras integraciones."""
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+
+    resultados = await calcular_scoring_completo(devaluacion_pct=deval)
+    return JSONResponse({"deval": deval, "resultados": resultados})
+
+
 # ── Portafolio ────────────────────────────────────────────────────────────────
 
 @app.get("/portafolio", response_class=HTMLResponse)
