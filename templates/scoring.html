@@ -8,7 +8,8 @@
     <div>
       <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Motor de Scoring</h1>
       <p style="font-size:12px; color:var(--text-secondary); margin:0;">
-        {{ resultados|length }} títulos IBC · Devaluación BCV: {{ deval }}%
+        {{ resultados|length }} títulos IBC · Devaluación BCV YTD: {{ deval }}% (auto)
+        · Liquidación T+3
       </p>
     </div>
     <form method="GET" action="/scoring" style="display:flex; align-items:center; gap:8px;">
@@ -26,25 +27,25 @@
 
   <!-- Resumen rápido -->
   <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
-    {% set core = resultados|selectattr('accion.label','eq','Core')|list|length %}
-    {% set satelite = resultados|selectattr('accion.label','eq','Satélite')|list|length %}
-    {% set observar = resultados|selectattr('accion.label','eq','Observar')|list|length %}
-    {% set vender = resultados|selectattr('accion.label','eq','Vender')|list|length %}
+    {% set alto = resultados|selectattr('accion.label','eq','Score alto')|list|length %}
+    {% set medio = resultados|selectattr('accion.label','eq','Score medio')|list|length %}
+    {% set bajo = resultados|selectattr('accion.label','eq','Score bajo')|list|length %}
+    {% set minimo = resultados|selectattr('accion.label','eq','Score mínimo')|list|length %}
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Core</div>
-      <div style="font-size:22px; font-weight:600; color:#1baf7a;">{{ core }}</div>
+      <div style="font-size:11px; color:var(--text-secondary);">Score alto</div>
+      <div style="font-size:22px; font-weight:600; color:#1baf7a;">{{ alto }}</div>
     </div>
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Satélite</div>
-      <div style="font-size:22px; font-weight:600; color:#2a78d6;">{{ satelite }}</div>
+      <div style="font-size:11px; color:var(--text-secondary);">Score medio</div>
+      <div style="font-size:22px; font-weight:600; color:#2a78d6;">{{ medio }}</div>
     </div>
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Observar</div>
-      <div style="font-size:22px; font-weight:600; color:#eda100;">{{ observar }}</div>
+      <div style="font-size:11px; color:var(--text-secondary);">Score bajo</div>
+      <div style="font-size:22px; font-weight:600; color:#eda100;">{{ bajo }}</div>
     </div>
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Vender</div>
-      <div style="font-size:22px; font-weight:600; color:#d03b3b;">{{ vender }}</div>
+      <div style="font-size:11px; color:var(--text-secondary);">Score mínimo</div>
+      <div style="font-size:22px; font-weight:600; color:#d03b3b;">{{ minimo }}</div>
     </div>
   </div>
 
@@ -72,7 +73,9 @@
             <div style="font-weight:500;">{{ r.simbolo }}</div>
             <div style="font-size:11px; color:var(--text-secondary);">{{ r.sector }}</div>
           </td>
-          <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">{{ r.rend_score|round(0)|int }}</td>
+          <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">
+            <span title="{{ r.rend_pct }}% ({{ r.dias_datos|default(0) }} días)">{{ r.rend_score|round(0)|int }}</span>
+          </td>
           <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">{{ r.liq_score }}</td>
           <td style="padding:8px 8px; text-align:center;">
             <span style="font-size:10px; padding:2px 6px; border-radius:6px; font-weight:500;
@@ -99,7 +102,14 @@
                   <div style="font-weight:500; color:{{ '#1baf7a' if r.rend_pct > 0 else '#d03b3b' }};">
                     {{ '%+.1f'|format(r.rend_pct) }}%
                   </div>
-                  <div style="font-size:11px; color:var(--text-secondary);">{{ r.rend_score|round(0)|int }}/40 pts</div>
+                  <div style="font-size:11px; color:var(--text-secondary);">
+                    {{ r.rend_score|round(0)|int }}/40 pts · {{ r.dias_datos|default('?') }} días
+                  </div>
+                  {% if r.precio_inicio %}
+                  <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
+                    Bs {{ '{:,.2f}'.format(r.precio_inicio) }} → Bs {{ '{:,.2f}'.format(r.precio_actual) }}
+                  </div>
+                  {% endif %}
                 </div>
                 <div>
                   <div style="color:var(--text-secondary); margin-bottom:2px;">Liquidez semanal</div>
@@ -149,11 +159,25 @@
     Dinamismo (20pts) — detecta precios congelados vs activos.
     Tendencia (15pts) — dirección en los últimos 30 días.
     <br>
-    <strong>Acciones:</strong>
-    <span style="color:#1baf7a;">Core ≥75</span> ·
-    <span style="color:#2a78d6;">Satélite ≥50</span> ·
-    <span style="color:#eda100;">Observar ≥30</span> ·
-    <span style="color:#d03b3b;">Vender &lt;30</span>
+    <strong>Clasificación:</strong>
+    <span style="color:#1baf7a;">Score alto ≥75</span> ·
+    <span style="color:#2a78d6;">Score medio ≥50</span> ·
+    <span style="color:#eda100;">Score bajo ≥30</span> ·
+    <span style="color:#d03b3b;">Score mínimo &lt;30</span>
+  </div>
+
+  <!-- Nota T+3 -->
+  <div style="margin-top:8px; padding:10px 12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.6; border-left:3px solid #eda100;">
+    <strong>⚠ Liquidación T+3:</strong> Las operaciones en la BVC tardan 3 días hábiles en acreditarse.
+    Al comprar hoy, los títulos se reflejan el 4to día hábil.
+    Al vender hoy, el efectivo se libera el 4to día hábil.
+    Planifica tus rotaciones considerando este plazo.
+  </div>
+
+  <!-- Disclaimer legal -->
+  <div style="margin-top:8px; padding:10px 12px; background:transparent; border-radius:10px; font-size:10px; color:var(--text-muted); line-height:1.6; text-align:center;">
+    El scoring es una herramienta de análisis cuantitativo basada en datos públicos de la BVC.
+    No constituye asesoría de inversión. Las decisiones de inversión son responsabilidad exclusiva del usuario.
   </div>
 
 </div>

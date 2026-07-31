@@ -98,18 +98,30 @@ async def obtener_detalle_profundo(simbolo: str) -> dict:
             return {}
 
 
-async def obtener_historico(simbolo: str) -> list[dict]:
-    """Histórico de precios OHLC del símbolo."""
-    key = f"hist_{simbolo}"
+async def obtener_historico(simbolo: str, fecha_desde: str = None) -> list[dict]:
+    """
+    Histórico de precios OHLC del símbolo.
+    fecha_desde: formato 'YYYY-MM-DD' para pedir rango específico.
+    Si no se proporciona, pide todo el histórico disponible.
+    """
+    key = f"hist_{simbolo}_{fecha_desde or 'all'}"
     cached = _cache_get(key)
     if cached:
         return cached
 
-    async with httpx.AsyncClient(timeout=8.0) as client:
+    payload = {
+        "action": "getHistoricoSimbolo",
+        "simbolo": simbolo,
+    }
+    if fecha_desde:
+        payload["fecha_desde"] = fecha_desde
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
         try:
-            r = await client.post(BVC_URL, data={"action": "getHistoricoSimbolo", "simbolo": simbolo}, headers=HEADERS)
+            r = await client.post(BVC_URL, data=payload, headers=HEADERS)
             datos = r.json().get("cur_hist_mov_emisora", [])
-            _cache_set(key, datos)
+            if datos:
+                _cache_set(key, datos)
             return datos
         except Exception as e:
             print(f"[BVC] Error histórico {simbolo}: {e}")
