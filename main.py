@@ -312,7 +312,7 @@ async def ver_scoring(request: Request, deval: float = 148.0, db: Session = Depe
     if not suscripcion_activa(usuario):
         return RedirectResponse(url="/suscripcion", status_code=302)
 
-    resultados = await calcular_scoring_completo(devaluacion_pct=deval)
+    resultados, deval, metadata = await calcular_scoring_completo(devaluacion_pct=deval)
 
     return render("scoring.html", {
         "request": request,
@@ -332,8 +332,8 @@ async def api_scoring(deval: float = 148.0, request: Request = None, db: Session
     if not usuario:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
 
-    resultados = await calcular_scoring_completo(devaluacion_pct=deval)
-    return JSONResponse({"deval": deval, "resultados": resultados})
+    resultados, deval, metadata = await calcular_scoring_completo(devaluacion_pct=deval)
+    return JSONResponse({"deval": deval, "resultados": resultados, "metadata": metadata})
 
 
 # ── Portafolio ────────────────────────────────────────────────────────────────
