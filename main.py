@@ -321,12 +321,16 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
         "resultados": resultados,
         "deval": deval_usado,
         "metadata": metadata,
+        "ibc_count": sum(1 for r in resultados if r.get("ibc")),
+        "alto_count": sum(1 for r in resultados if r.get("accion", {}).get("label") == "Score alto"),
+        "medio_count": sum(1 for r in resultados if r.get("accion", {}).get("label") == "Score medio"),
+        "bajo_count": sum(1 for r in resultados if r.get("accion", {}).get("label") == "Score bajo"),
+        "minimo_count": sum(1 for r in resultados if r.get("accion", {}).get("label") == "Score mínimo"),
         "active": "scoring",
         "usuario": usuario,
         "dias": dias_restantes(usuario),
         "mercado": mercado_abierto(),
     })
-
 
 @app.get("/api/scoring", response_class=JSONResponse)
 async def api_scoring(deval: float = 0, request: Request = None, db: Session = Depends(get_db)):
