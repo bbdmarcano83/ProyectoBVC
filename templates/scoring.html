@@ -8,7 +8,7 @@
     <div>
       <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Motor de Scoring</h1>
       <p style="font-size:12px; color:var(--text-secondary); margin:0;">
-        {{ resultados|length }} títulos BVC · {{ resultados|selectattr('ibc')|list|length }} en IBC · Devaluación BCV: {{ deval }}%
+        {{ resultados|length }} títulos BVC · {{ ibc_count }} en IBC · Devaluación BCV: {{ deval }}%
         · Liquidación T+3
       </p>
     </div>
@@ -27,10 +27,10 @@
 
   <!-- Resumen rápido -->
   <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
-    {% set alto = resultados|selectattr('accion.label','eq','Score alto')|list|length %}
-    {% set medio = resultados|selectattr('accion.label','eq','Score medio')|list|length %}
-    {% set bajo = resultados|selectattr('accion.label','eq','Score bajo')|list|length %}
-    {% set minimo = resultados|selectattr('accion.label','eq','Score mínimo')|list|length %}
+    {% set alto = alto_count %}
+    {% set medio = medio_count %}
+    {% set bajo = bajo_count %}
+    {% set minimo = minimo_count %}
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
       <div style="font-size:11px; color:var(--text-secondary);">Score alto</div>
       <div style="font-size:22px; font-weight:600; color:#1baf7a;">{{ alto }}</div>
