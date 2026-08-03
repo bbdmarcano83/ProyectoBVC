@@ -97,6 +97,12 @@ class TransaccionHistorial(Base):
     iva         = Column(Float, default=16)
     fecha       = Column(DateTime, server_default=func.now())
     notas       = Column(String(200), nullable=True)
+    # Campos de bitácora
+    motivo      = Column(String(50), nullable=True)    # "acumulacion_caida" | "toma_ganancias" | "rotacion_trimestral" | "cortar_congelado" | "dividendo"
+    tasa_bcv    = Column(Float, nullable=True)          # Tasa BCV al momento de la operación
+    score       = Column(Integer, nullable=True)        # Score del título al momento de operar
+    fee_total   = Column(Float, nullable=True)          # Fee total pagado en Bs (comisión + IVA + ISLR + registro)
+    neto        = Column(Float, nullable=True)          # Monto neto recibido/pagado después de fees
 
     usuario     = relationship("Usuario", backref="transacciones")
 
