@@ -10,27 +10,13 @@ Notas:
 """
 
 from datetime import datetime, timedelta
-from services.bvc import obtener_historico, obtener_tasa_bcv, _to_float
+from services.bvc import obtener_historico, obtener_datos_bvc, obtener_tasa_bcv, _to_float
 
-# ── Universo IBC vigente desde 09-Mar-2026 ─────────────────────────────────
-IBC_UNIVERSE = [
-    {"simbolo": "BPV",   "nombre": "Banco Provincial",        "sector": "Financiero", "ibc": True},
-    {"simbolo": "BNC",   "nombre": "Banco Nal. Crédito",      "sector": "Financiero", "ibc": True},
-    {"simbolo": "BVCC",  "nombre": "Bolsa de Caracas",        "sector": "Financiero", "ibc": True},
-    {"simbolo": "BVL",   "nombre": "Banco de Venezuela",      "sector": "Financiero", "ibc": True},
-    {"simbolo": "MVZ.A", "nombre": "Mercantil A",             "sector": "Financiero", "ibc": True},
-    {"simbolo": "ABC.A", "nombre": "Bancaribe A",             "sector": "Financiero", "ibc": True},
-    {"simbolo": "MVZ.B", "nombre": "Mercantil B",             "sector": "Financiero", "ibc": True},
-    {"simbolo": "RST",   "nombre": "Ron Santa Teresa",        "sector": "Industrial", "ibc": True},
-    {"simbolo": "RST.B", "nombre": "Ron Sta Teresa B",        "sector": "Industrial", "ibc": True},
-    {"simbolo": "TDV.D", "nombre": "CANTV D",                 "sector": "Industrial", "ibc": True},
-    {"simbolo": "SVS",   "nombre": "Sivensa",                 "sector": "Industrial", "ibc": True},
-    {"simbolo": "ENV",   "nombre": "Envases Venezolanos",     "sector": "Industrial", "ibc": True},
-    {"simbolo": "CRM.A", "nombre": "Corimon A",               "sector": "Industrial", "ibc": True},
-    {"simbolo": "DOM",   "nombre": "Domínguez & Cía.",        "sector": "Industrial", "ibc": True},
-    {"simbolo": "MPA",   "nombre": "Manpa",                   "sector": "Industrial", "ibc": True},
-    {"simbolo": "PIV.B", "nombre": "PIVCA B",                 "sector": "Industrial", "ibc": True},
-]
+# ── Títulos que conforman el IBC (para marcar la bandera) ─────────────────
+IBC_SIMBOLOS = {
+    "BPV", "BNC", "BVCC", "BVL", "MVZ.A", "ABC.A", "MVZ.B",
+    "RST", "RST.B", "TDV.D", "SVS", "ENV", "CRM.A", "DOM", "MPA", "PIV.B",
+}
 
 # ── Tasa BCV de referencia al 01-Ene-2026 ──────────────────────────────────
 # Usada para calcular devaluación YTD automáticamente
@@ -258,24 +244,29 @@ async def _obtener_devaluacion_ytd() -> float:
 
 async def calcular_scoring_completo(devaluacion_pct: float | None = None) -> tuple[list[dict], float, dict]:
     """
-    Calcula el score de los 16 títulos del IBC.
+    Calcula el score de TODAS las acciones listadas en la BVC.
+    Trae la lista directamente de la pizarra en vivo.
 
     Returns:
         (resultados, devaluacion_usada, metadata)
-
-    Nota BVC: Las operaciones se liquidan en T+3 (3 días hábiles).
-    Al comprar hoy, los títulos se acreditan el 4to día hábil.
-    Al vender hoy, el efectivo se libera el 4to día hábil.
     """
-    # Calcular devaluación automáticamente si no se proporcionó
     if devaluacion_pct is None or devaluacion_pct <= 0:
         devaluacion_pct = await _obtener_devaluacion_ytd()
+
+    # Traer TODAS las acciones de la pizarra BVC
+    pizarra = await obtener_datos_bvc()
+    if not pizarra:
+        return [], devaluacion_pct, {"error": "No se pudo obtener la pizarra BVC"}
 
     resultados = []
     errores = []
 
-    for titulo in IBC_UNIVERSE:
-        simbolo = titulo["simbolo"]
+    for item in pizarra:
+        simbolo = item.get("COD_SIMB", "")
+        nombre = item.get("DESC_SIMB", simbolo)
+        if not simbolo:
+            continue
+
         try:
             historico = await obtener_historico(simbolo)
             if not historico:
@@ -294,20 +285,16 @@ async def calcular_scoring_completo(devaluacion_pct: float | None = None) -> tup
         total = round(rend["score"] + liq["score"] + din["score"] + tend["score"])
         accion = _determinar_accion(total)
 
-        # Precio actual y datos de la última sesión
         precio_actual = _to_float(historico[0].get("PRECIO_CIE", 0))
         fecha_ultimo = historico[0].get("FEC", "N/A")
-
-        # Cantidad de datos YTD disponibles
         ytd_data = _filtrar_ytd(historico)
         dias_ytd = len(ytd_data)
 
         resultados.append({
             "simbolo": simbolo,
-            "nombre": titulo["nombre"],
-            "sector": titulo["sector"],
-            "ibc": titulo["ibc"],
-            # Scores individuales
+            "nombre": nombre,
+            "sector": item.get("TIPO_INDI_SECTOR", "—"),
+            "ibc": simbolo in IBC_SIMBOLOS,
             "rend_score": rend["score"],
             "rend_pct": rend["ret_pct"],
             "liq_score": liq["score"],
@@ -321,14 +308,11 @@ async def calcular_scoring_completo(devaluacion_pct: float | None = None) -> tup
             "tend_score": tend["score"],
             "tend_label": tend["label"],
             "tend_trend": tend["trend"],
-            # Total
             "total": total,
             "accion": accion,
-            # Datos adicionales
             "precio": precio_actual,
             "fecha_ultimo": fecha_ultimo,
             "dias_ytd": dias_ytd,
-            # Debug rendimiento
             "precio_actual": rend.get("precio_actual", 0),
             "precio_inicio": rend.get("precio_inicio", 0),
             "dias_datos": rend.get("dias_datos", 0),
@@ -339,7 +323,9 @@ async def calcular_scoring_completo(devaluacion_pct: float | None = None) -> tup
 
     metadata = {
         "fecha_calculo": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "titulos_total": len(pizarra),
         "titulos_ok": len(resultados),
+        "titulos_ibc": sum(1 for r in resultados if r["ibc"]),
         "titulos_error": errores,
         "nota_t3": "Liquidación T+3: al comprar/vender, la operación se acredita en 3 días hábiles.",
     }
