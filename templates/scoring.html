@@ -8,7 +8,7 @@
     <div>
       <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Motor de Scoring</h1>
       <p style="font-size:12px; color:var(--text-secondary); margin:0;">
-        {{ resultados|length }} títulos IBC · Devaluación BCV YTD: {{ deval }}% (auto)
+        {{ resultados|length }} títulos BVC · {{ resultados|selectattr('ibc')|list|length }} en IBC · Devaluación BCV: {{ deval }}%
         · Liquidación T+3
       </p>
     </div>
@@ -70,7 +70,7 @@
             onclick="toggleDetail('detail-{{ r.simbolo }}')">
           <td style="padding:8px 12px; color:var(--text-secondary); font-size:12px;">{{ loop.index }}</td>
           <td style="padding:8px 8px;">
-            <div style="font-weight:500;">{{ r.simbolo }}</div>
+            <div style="font-weight:500;">{{ r.simbolo }}{% if r.ibc %} <span style="font-size:8px; padding:1px 4px; border-radius:4px; background:var(--accent, #1baf7a); color:#fff; font-weight:500; vertical-align:middle;">IBC</span>{% endif %}</div>
             <div style="font-size:11px; color:var(--text-secondary);">{{ r.sector }}</div>
           </td>
           <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">
