@@ -305,19 +305,22 @@ async def pizarra(request: Request, db: Session = Depends(get_db)):
 from services.scoring import calcular_scoring_completo
 
 @app.get("/scoring", response_class=HTMLResponse)
-async def ver_scoring(request: Request, deval: float = 148.0, db: Session = Depends(get_db)):
+async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(get_db)):
     usuario = get_usuario_actual(request, db)
     if not usuario:
         return RedirectResponse(url="/login", status_code=302)
     if not suscripcion_activa(usuario):
         return RedirectResponse(url="/suscripcion", status_code=302)
 
-    resultados, deval, metadata = await calcular_scoring_completo(devaluacion_pct=deval)
+    # deval=0 → calcula automáticamente desde tasa BCV
+    deval_input = deval if deval > 0 else None
+    resultados, deval_usado, metadata = await calcular_scoring_completo(devaluacion_pct=deval_input)
 
     return render("scoring.html", {
         "request": request,
         "resultados": resultados,
-        "deval": deval,
+        "deval": deval_usado,
+        "metadata": metadata,
         "active": "scoring",
         "usuario": usuario,
         "dias": dias_restantes(usuario),
@@ -326,14 +329,100 @@ async def ver_scoring(request: Request, deval: float = 148.0, db: Session = Depe
 
 
 @app.get("/api/scoring", response_class=JSONResponse)
-async def api_scoring(deval: float = 148.0, request: Request = None, db: Session = Depends(get_db)):
+async def api_scoring(deval: float = 0, request: Request = None, db: Session = Depends(get_db)):
     """API JSON para consumo externo o futuras integraciones."""
     usuario = get_usuario_actual(request, db)
     if not usuario:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
 
-    resultados, deval, metadata = await calcular_scoring_completo(devaluacion_pct=deval)
-    return JSONResponse({"deval": deval, "resultados": resultados, "metadata": metadata})
+    deval_input = deval if deval > 0 else None
+    resultados, deval_usado, metadata = await calcular_scoring_completo(devaluacion_pct=deval_input)
+    return JSONResponse({"deval": deval_usado, "resultados": resultados, "metadata": metadata})
+
+
+# ── Bitácora ──────────────────────────────────────────────────────────────────
+
+@app.get("/bitacora", response_class=HTMLResponse)
+async def ver_bitacora(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+    if not suscripcion_activa(usuario):
+        return RedirectResponse(url="/suscripcion", status_code=302)
+
+    transacciones = db.query(TransaccionHistorial).filter(
+        TransaccionHistorial.usuario_id == usuario.id
+    ).order_by(TransaccionHistorial.fecha.desc()).all()
+
+    compras = sum(1 for t in transacciones if t.tipo == "compra")
+    ventas = sum(1 for t in transacciones if t.tipo == "venta")
+    total_fees = sum(t.fee_total or 0 for t in transacciones)
+    total_bruto = sum((t.cantidad or 0) * (t.precio or 0) for t in transacciones)
+    fee_pct = round((total_fees / total_bruto * 100), 2) if total_bruto > 0 else 0
+
+    tasa_bcv = await obtener_tasa_bcv()
+
+    return render("bitacora.html", {
+        "request": request,
+        "transacciones": transacciones,
+        "compras": compras,
+        "ventas": ventas,
+        "total_fees": total_fees,
+        "fee_pct": fee_pct,
+        "tasa_bcv": tasa_bcv,
+        "active": "bitacora",
+        "usuario": usuario,
+        "dias": dias_restantes(usuario),
+        "mercado": mercado_abierto(),
+    })
+
+
+@app.post("/api/bitacora", response_class=JSONResponse)
+async def crear_entrada_bitacora(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+
+    data = await request.json()
+    simbolo = data.get("simbolo", "").upper().strip()
+    tipo = data.get("tipo", "compra")
+    cantidad = float(data.get("cantidad", 0))
+    precio = float(data.get("precio", 0))
+    motivo = data.get("motivo", "")
+    notas = data.get("notas", "")
+
+    if not simbolo or cantidad <= 0 or precio <= 0:
+        return JSONResponse({"detail": "Datos incompletos"}, status_code=400)
+
+    bruto = cantidad * precio
+    corretaje = bruto * 0.04
+    iva = corretaje * 0.16
+    islr = bruto * 0.01 if tipo == "venta" else 0
+    registro = bruto * 0.001
+    fee_total = corretaje + iva + islr + registro
+    neto = bruto - fee_total if tipo == "venta" else bruto + fee_total
+
+    tasa_bcv = await obtener_tasa_bcv()
+
+    nueva = TransaccionHistorial(
+        usuario_id=usuario.id,
+        simbolo=simbolo,
+        tipo=tipo,
+        cantidad=cantidad,
+        precio=precio,
+        comision=4.0,
+        registro=0.1,
+        iva=16,
+        motivo=motivo,
+        notas=notas,
+        tasa_bcv=tasa_bcv,
+        fee_total=fee_total,
+        neto=neto,
+    )
+    db.add(nueva)
+    db.commit()
+
+    return JSONResponse({"ok": True, "id": nueva.id})
 
 
 # ── Portafolio ────────────────────────────────────────────────────────────────
