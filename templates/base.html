@@ -1,124 +1,257 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Caracas Bull{% endblock %}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-    <link rel="stylesheet" href="/static/css/main.css">
-    <link rel="icon" type="image/png" href="/static/logo.png">
-    <link rel="apple-touch-icon" href="/static/logo.png">
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#00c896">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="CaracasBull">
-    {% block extra_head %}{% endblock %}
-</head>
-<body>
-    <header class="site-header">
-        <div class="header-inner">
-            <a href="/landing" class="logo">
-                <img src="/static/logo.png" alt="Caracas Bull" style="height:48px;object-fit:contain;">
-            </a>
-            <nav class="header-nav">
-                <a href="/pizarra" class="nav-link {% if active == 'pizarra' %}active{% endif %}">
-                    <i class="ti ti-chart-candle" style="font-size:13px"></i> Pizarra
-                </a>
-                <a href="/portafolio" class="nav-link {% if active == 'portafolio' %}active{% endif %}">
-                    <i class="ti ti-briefcase" style="font-size:13px"></i> Portafolio
-                </a>
-                <a href="/watchlist" class="nav-link {% if active == 'watchlist' %}active{% endif %}">
-                    <i class="ti ti-star" style="font-size:13px"></i> Watchlist
-                </a>
-                <a href="/alertas" class="nav-link {% if active == 'alertas' %}active{% endif %}">
-                    <i class="ti ti-bell" style="font-size:13px"></i> Alertas
-                </a>
-                <a href="/scoring" class="nav-link {% if active == 'scoring' %}active{% endif %}">
-                    <i class="ti ti-target" style="font-size:13px"></i> Scoring
-                </a>
-            </nav>
-            <div class="header-right">
-                <div class="market-status {% if not mercado %}market-status--cerrado{% endif %}">
-                    <span class="market-dot {% if not mercado %}market-dot--off{% endif %}"></span>
-                    {% if mercado %}Mercado abierto{% else %}Mercado cerrado{% endif %}
-                </div>
-                {% if usuario %}
-                    {% if dias is defined and dias <= 5 %}
-                    <a href="/suscripcion" class="dias-badge dias-badge--warn">
-                        <i class="ti ti-clock" style="font-size:11px"></i> {{ dias }}d restantes
-                    </a>
-                    {% endif %}
-                    <div class="user-menu">
-                        <div class="user-avatar">{{ usuario.nombre[0].upper() }}</div>
-                        <div class="user-dropdown">
-                            <div style="padding:10px 16px 6px; font-size:12px; color:var(--text-secondary); border-bottom:1px solid var(--border); margin-bottom:4px;">{{ usuario.nombre }}</div>
-                            {% if usuario.es_admin %}
-                            <a href="/admin" style="color:var(--gold) !important;">
-                                <i class="ti ti-crown" style="font-size:14px"></i> Panel Admin
-                            </a>
-                            {% endif %}
-                            <a href="/perfil">
-                                <i class="ti ti-user" style="font-size:14px"></i> Mi perfil
-                            </a>
-                            <a href="/portafolio/importar">
-                                <i class="ti ti-upload" style="font-size:14px"></i> Importar portafolio
-                            </a>
-                            <a href="/historial">
-                                <i class="ti ti-history" style="font-size:14px"></i> Historial
-                            </a>
-                            <a href="/comparador">
-                                <i class="ti ti-chart-bar" style="font-size:14px"></i> Comparador
-                            </a>
-                            <a href="/islr">
-                                <i class="ti ti-calculator" style="font-size:14px"></i> Calculadora ISLR
-                            </a>
-                            <a href="/indice">
-                                <i class="ti ti-trending-up" style="font-size:14px"></i> Índice vs Mercado
-                            </a>
-                            <a href="/suscripcion">
-                                <i class="ti ti-crown" style="font-size:14px"></i> Suscripción
-                            </a>
-                            <a href="/chat">
-                                <i class="ti ti-message-circle" style="font-size:14px"></i> Asistente
-                            </a>
-                            <a href="/logout" class="logout-link">
-                                <i class="ti ti-logout" style="font-size:14px"></i> Cerrar sesión
-                            </a>
-                        </div>
-                    </div>
-                {% endif %}
-                <div class="header-time" id="reloj">--:--:--</div>
-            </div>
-        </div>
-    </header>
+{% extends "base.html" %}
+{% block title %}Bitácora — Caracas Bull{% endblock %}
 
-    <main class="main-content">
-        {% block content %}{% endblock %}
-    </main>
+{% block content %}
+<div class="container" style="max-width:900px; padding:20px 16px;">
 
-    <div class="disclaimer-bar">
-        ⚠ Caracas Bull es una plataforma de <b>información y análisis bursátil</b>. No somos broker, no realizamos operaciones y no ofrecemos asesoría de inversión. Toda la información es referencial.
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+    <div>
+      <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Bitácora de Operaciones</h1>
+      <p style="font-size:12px; color:var(--text-secondary); margin:0;">
+        {{ transacciones|length }} operaciones registradas · Fees acumulados: Bs {{ '{:,.0f}'.format(total_fees) }}
+      </p>
     </div>
-    <footer class="ticker-bar">
-        <div class="ticker-inner">
-            {% block ticker %}{% endblock %}
-        </div>
-    </footer>
+    <button onclick="document.getElementById('modal-nueva').style.display='flex'"
+            style="padding:8px 16px; border:none; border-radius:8px;
+                   background:var(--accent); color:#fff; font-size:13px; font-weight:500; cursor:pointer;">
+      + Registrar operación
+    </button>
+  </div>
 
-    <script src="/static/js/main.js"></script>
-    {% if usuario %}
-    <a href="/chat" class="chat-float-btn" title="Asistente CaracasBull">
-        <span style="font-size:20px;">🐂</span>
-    </a>
+  <!-- Resumen de rendimiento -->
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Compras</div>
+      <div style="font-size:20px; font-weight:600; color:#1baf7a;">{{ compras }}</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Ventas</div>
+      <div style="font-size:20px; font-weight:600; color:#d03b3b;">{{ ventas }}</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Total fees</div>
+      <div style="font-size:16px; font-weight:600; color:var(--text-secondary);">{{ fee_pct }}%</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Tasa BCV hoy</div>
+      <div style="font-size:16px; font-weight:600;">{{ '{:,.0f}'.format(tasa_bcv) }}</div>
+    </div>
+  </div>
+
+  <!-- Lista de operaciones -->
+  <div style="background:var(--bg-card); border-radius:12px; overflow:hidden;">
+    {% if transacciones %}
+    {% for t in transacciones %}
+    <div style="padding:12px 16px; border-bottom:0.5px solid var(--border); display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:start;">
+      <div>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+          <span style="font-size:10px; padding:2px 8px; border-radius:6px; font-weight:500;
+                       background:{{ '#1baf7a22' if t.tipo == 'compra' else '#d03b3b22' }};
+                       color:{{ '#1baf7a' if t.tipo == 'compra' else '#d03b3b' }};">
+            {{ t.tipo|upper }}
+          </span>
+          <span style="font-weight:500; font-size:14px;">{{ t.simbolo }}</span>
+          {% if t.motivo %}
+          <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:var(--bg-body); color:var(--text-secondary);">
+            {% if t.motivo == 'acumulacion_caida' %}📉 Caída
+            {% elif t.motivo == 'toma_ganancias' %}💰 Ganancia
+            {% elif t.motivo == 'rotacion_trimestral' %}🔄 Rotación
+            {% elif t.motivo == 'cortar_congelado' %}❄️ Congelado
+            {% elif t.motivo == 'dividendo' %}📊 Dividendo
+            {% else %}{{ t.motivo }}{% endif %}
+          </span>
+          {% endif %}
+        </div>
+        <div style="font-size:12px; color:var(--text-secondary); display:flex; gap:16px; flex-wrap:wrap;">
+          <span>{{ t.cantidad|int }} títulos × Bs {{ '{:,.2f}'.format(t.precio) }}</span>
+          <span>Bruto: Bs {{ '{:,.0f}'.format(t.cantidad * t.precio) }}</span>
+          {% if t.fee_total %}
+          <span style="color:#c47a20;">Fee: Bs {{ '{:,.0f}'.format(t.fee_total) }}</span>
+          {% endif %}
+          {% if t.neto %}
+          <span>Neto: Bs {{ '{:,.0f}'.format(t.neto) }}</span>
+          {% endif %}
+        </div>
+        {% if t.notas %}
+        <div style="font-size:11px; color:var(--text-muted); margin-top:4px; font-style:italic;">
+          "{{ t.notas }}"
+        </div>
+        {% endif %}
+        <div style="font-size:11px; color:var(--text-muted); margin-top:2px; display:flex; gap:12px;">
+          {% if t.score %}<span>Score: {{ t.score }}</span>{% endif %}
+          {% if t.tasa_bcv %}<span>BCV: {{ '{:,.0f}'.format(t.tasa_bcv) }} Bs/$</span>{% endif %}
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:12px; color:var(--text-secondary);">{{ t.fecha.strftime('%d/%m/%Y') }}</div>
+        <div style="font-size:11px; color:var(--text-muted);">{{ t.fecha.strftime('%H:%M') }}</div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div style="padding:40px; text-align:center; color:var(--text-secondary);">
+      <p style="font-size:14px; margin:0 0 8px;">Sin operaciones registradas</p>
+      <p style="font-size:12px; color:var(--text-muted); margin:0;">Registra tu primera compra o venta para empezar la bitácora.</p>
+    </div>
     {% endif %}
-    <script>
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+  </div>
+
+  <!-- Nota T+3 -->
+  <div style="margin-top:12px; padding:10px 12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.6; border-left:3px solid #eda100;">
+    <strong>⚠ Liquidación T+3:</strong> Las operaciones se acreditan en 3 días hábiles.
+    Al registrar una compra hoy, los títulos aparecen el 4to día hábil.
+  </div>
+</div>
+
+<!-- Modal nueva operación -->
+<div id="modal-nueva" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:flex-end; justify-content:center;">
+  <div style="background:var(--bg-card); border-radius:16px 16px 0 0; padding:20px; width:100%; max-width:500px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h2 style="font-size:16px; font-weight:600; margin:0;">Registrar operación</h2>
+      <button onclick="document.getElementById('modal-nueva').style.display='none'"
+              style="background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer;">✕</button>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-bottom:12px;" id="tipo-selector">
+      <button onclick="setTipo('compra')" id="btn-compra"
+              style="flex:1; padding:8px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;
+                     border:1.5px solid #1baf7a; background:#1baf7a22; color:#1baf7a;">
+        Compra
+      </button>
+      <button onclick="setTipo('venta')" id="btn-venta"
+              style="flex:1; padding:8px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;
+                     border:1px solid var(--border); background:transparent; color:var(--text-secondary);">
+        Venta
+      </button>
+    </div>
+
+    <input type="hidden" id="tipo-value" value="compra">
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+      <div>
+        <label style="font-size:11px; color:var(--text-secondary);">Símbolo</label>
+        <input type="text" id="inp-simbolo" placeholder="RST" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px; text-transform:uppercase;">
+      </div>
+      <div>
+        <label style="font-size:11px; color:var(--text-secondary);">Cantidad</label>
+        <input type="number" id="inp-cantidad" placeholder="100" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px;">
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+      <div>
+        <label style="font-size:11px; color:var(--text-secondary);">Precio (Bs)</label>
+        <input type="number" step="0.01" id="inp-precio" placeholder="515.00" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px;">
+      </div>
+      <div>
+        <label style="font-size:11px; color:var(--text-secondary);">Motivo</label>
+        <select id="inp-motivo" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
+          <option value="acumulacion_caida">📉 Comprar caída</option>
+          <option value="toma_ganancias">💰 Toma de ganancias</option>
+          <option value="rotacion_trimestral">🔄 Rotación trimestral</option>
+          <option value="cortar_congelado">❄️ Cortar congelado</option>
+          <option value="dividendo">📊 Dividendo</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="margin-bottom:8px;">
+      <label style="font-size:11px; color:var(--text-secondary);">Notas (opcional)</label>
+      <input type="text" id="inp-notas" placeholder="Cayó 18% sin evento corporativo" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
+    </div>
+
+    <!-- Cálculo automático de fees -->
+    <div id="fee-preview" style="background:var(--bg-body); border-radius:8px; padding:10px; margin-bottom:12px; font-size:12px; color:var(--text-secondary); display:none;">
+      <div style="display:flex; justify-content:space-between;"><span>Monto bruto:</span><span id="fp-bruto">—</span></div>
+      <div style="display:flex; justify-content:space-between;"><span>Corretaje (4%):</span><span id="fp-corretaje">—</span></div>
+      <div style="display:flex; justify-content:space-between;"><span>IVA (0.64%):</span><span id="fp-iva">—</span></div>
+      <div style="display:flex; justify-content:space-between;"><span>ISLR (1%):</span><span id="fp-islr">—</span></div>
+      <div style="display:flex; justify-content:space-between;"><span>Registro BVC (0.1%):</span><span id="fp-registro">—</span></div>
+      <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border); padding-top:4px; margin-top:4px; font-weight:500; color:var(--text-primary);">
+        <span>Neto:</span><span id="fp-neto">—</span>
+      </div>
+    </div>
+
+    <button onclick="guardarOperacion()"
+            style="width:100%; padding:12px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-size:14px; font-weight:500; cursor:pointer;">
+      Guardar en bitácora
+    </button>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let tipoActual = 'compra';
+
+function setTipo(tipo) {
+    tipoActual = tipo;
+    document.getElementById('tipo-value').value = tipo;
+    const bc = document.getElementById('btn-compra');
+    const bv = document.getElementById('btn-venta');
+    if (tipo === 'compra') {
+        bc.style.border = '1.5px solid #1baf7a'; bc.style.background = '#1baf7a22'; bc.style.color = '#1baf7a';
+        bv.style.border = '1px solid var(--border)'; bv.style.background = 'transparent'; bv.style.color = 'var(--text-secondary)';
+    } else {
+        bv.style.border = '1.5px solid #d03b3b'; bv.style.background = '#d03b3b22'; bv.style.color = '#d03b3b';
+        bc.style.border = '1px solid var(--border)'; bc.style.background = 'transparent'; bc.style.color = 'var(--text-secondary)';
     }
-    </script>
-    {% block extra_scripts %}{% endblock %}
-</body>
-</html>
+    calcularFees();
+}
+
+function calcularFees() {
+    const cant = parseFloat(document.getElementById('inp-cantidad').value) || 0;
+    const precio = parseFloat(document.getElementById('inp-precio').value) || 0;
+    const bruto = cant * precio;
+    const preview = document.getElementById('fee-preview');
+
+    if (bruto <= 0) { preview.style.display = 'none'; return; }
+    preview.style.display = 'block';
+
+    const corretaje = bruto * 0.04;
+    const iva = corretaje * 0.16;
+    const islr = tipoActual === 'venta' ? bruto * 0.01 : 0;
+    const registro = bruto * 0.001;
+    const totalFee = corretaje + iva + islr + registro;
+    const neto = tipoActual === 'venta' ? bruto - totalFee : bruto + totalFee;
+
+    document.getElementById('fp-bruto').textContent = 'Bs ' + bruto.toLocaleString('es', {maximumFractionDigits:0});
+    document.getElementById('fp-corretaje').textContent = 'Bs ' + corretaje.toLocaleString('es', {maximumFractionDigits:0});
+    document.getElementById('fp-iva').textContent = 'Bs ' + iva.toLocaleString('es', {maximumFractionDigits:0});
+    document.getElementById('fp-islr').textContent = tipoActual === 'venta' ? 'Bs ' + islr.toLocaleString('es', {maximumFractionDigits:0}) : 'N/A (solo venta)';
+    document.getElementById('fp-registro').textContent = 'Bs ' + registro.toLocaleString('es', {maximumFractionDigits:0});
+    document.getElementById('fp-neto').textContent = 'Bs ' + neto.toLocaleString('es', {maximumFractionDigits:0});
+}
+
+document.getElementById('inp-cantidad')?.addEventListener('input', calcularFees);
+document.getElementById('inp-precio')?.addEventListener('input', calcularFees);
+
+async function guardarOperacion() {
+    const data = {
+        simbolo: document.getElementById('inp-simbolo').value.toUpperCase().trim(),
+        tipo: tipoActual,
+        cantidad: parseFloat(document.getElementById('inp-cantidad').value),
+        precio: parseFloat(document.getElementById('inp-precio').value),
+        motivo: document.getElementById('inp-motivo').value,
+        notas: document.getElementById('inp-notas').value.trim(),
+    };
+
+    if (!data.simbolo || !data.cantidad || !data.precio) {
+        alert('Completa símbolo, cantidad y precio'); return;
+    }
+
+    const resp = await fetch('/api/bitacora', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+    });
+
+    if (resp.ok) {
+        window.location.reload();
+    } else {
+        const err = await resp.json();
+        alert(err.detail || 'Error al guardar');
+    }
+}
+</script>
+{% endblock %}
