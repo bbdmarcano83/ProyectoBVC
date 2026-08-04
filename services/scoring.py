@@ -20,7 +20,7 @@ IBC_SIMBOLOS = {
 
 # ── Tasa BCV de referencia al 01-Ene-2026 ──────────────────────────────────
 # Usada para calcular devaluación YTD automáticamente
-TASA_BCV_INICIO_2026 = 78.13  # Bs/USD al 01-Ene-2026 (post-reconversión)
+TASA_BCV_INICIO_2026 = 301.70  # Bs/USD al 01-Ene-2026 (post-reconversión)
 
 
 def _parse_fecha_bvc(fecha_str: str) -> datetime | None:
