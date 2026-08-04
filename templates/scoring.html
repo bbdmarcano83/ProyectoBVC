@@ -1,10 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Scoring{% endblock %}
-
 {% block content %}
 <div style="max-width:900px; margin:0 auto; padding:20px 16px;">
 
-  <h1 style="font-size:20px; font-weight:600; margin:0 0 16px;">Motor de Scoring</h1>
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+    <div>
+      <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Motor de Scoring</h1>
+      <p style="font-size:12px; color:var(--text-secondary); margin:0;">
+        {{ resultados|length }} títulos BVC · {{ ibc_count }} en IBC · Devaluación BCV: {{ deval }}%
+      </p>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Score alto</div>
+      <div style="font-size:22px; font-weight:600; color:#1baf7a;">{{ alto_count }}</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Score medio</div>
+      <div style="font-size:22px; font-weight:600; color:#2a78d6;">{{ medio_count }}</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Score bajo</div>
+      <div style="font-size:22px; font-weight:600; color:#eda100;">{{ bajo_count }}</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Score mínimo</div>
+      <div style="font-size:22px; font-weight:600; color:#d03b3b;">{{ minimo_count }}</div>
+    </div>
+  </div>
 
   <div style="background:var(--bg-card); border-radius:12px; overflow:hidden;">
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
@@ -17,18 +42,44 @@
           <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Din</th>
           <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Tend</th>
           <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Total</th>
+          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Acción</th>
         </tr>
       </thead>
       <tbody>
         {% for r in resultados %}
         <tr style="border-bottom:0.5px solid var(--border);">
           <td style="padding:8px;">{{ loop.index }}</td>
-          <td style="padding:8px; font-weight:500;">{{ r.simbolo }}</td>
+          <td style="padding:8px;">
+            <span style="font-weight:500;">{{ r.simbolo }}</span>
+            {% if r.ibc %}
+            <span style="font-size:8px; padding:1px 4px; border-radius:4px; background:#1baf7a; color:#fff; margin-left:4px;">IBC</span>
+            {% endif %}
+            <div style="font-size:11px; color:var(--text-secondary);">{{ r.sector }}</div>
+          </td>
           <td style="padding:8px; text-align:center;">{{ r.rend_score }}</td>
           <td style="padding:8px; text-align:center;">{{ r.liq_score }}</td>
-          <td style="padding:8px; text-align:center;">{{ r.din_score }}</td>
+          <td style="padding:8px; text-align:center;">
+            {% if r.din_score >= 15 %}
+            <span style="font-size:10px; padding:2px 6px; border-radius:6px; background:#1baf7a33; color:#1baf7a;">{{ r.din_score }}</span>
+            {% elif r.din_score >= 5 %}
+            <span style="font-size:10px; padding:2px 6px; border-radius:6px; background:#c47a2033; color:#c47a20;">{{ r.din_score }}</span>
+            {% else %}
+            <span style="font-size:10px; padding:2px 6px; border-radius:6px; background:#d03b3b33; color:#d03b3b;">{{ r.din_score }}</span>
+            {% endif %}
+          </td>
           <td style="padding:8px; text-align:center;">{{ r.tend_score }}</td>
           <td style="padding:8px; text-align:center; font-weight:600; font-size:15px;">{{ r.total }}</td>
+          <td style="padding:8px; text-align:center;">
+            {% if r.total >= 75 %}
+            <span style="font-size:10px; padding:3px 10px; border-radius:8px; background:#1baf7a22; color:#0F6E56;">Score alto</span>
+            {% elif r.total >= 50 %}
+            <span style="font-size:10px; padding:3px 10px; border-radius:8px; background:#2a78d622; color:#185FA5;">Score medio</span>
+            {% elif r.total >= 30 %}
+            <span style="font-size:10px; padding:3px 10px; border-radius:8px; background:#eda10022; color:#854F0B;">Score bajo</span>
+            {% else %}
+            <span style="font-size:10px; padding:3px 10px; border-radius:8px; background:#d03b3b22; color:#d03b3b;">Score mínimo</span>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
