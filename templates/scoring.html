@@ -23,7 +23,7 @@
         {% for r in resultados %}
         <tr style="border-bottom:0.5px solid var(--border);">
           <td style="padding:8px;">{{ loop.index }}</td>
-          <td style="padding:8px; font-weight:500;">{{ r.simbolo }}</td>
+          <td style="padding:8px; font-weight:500;">{{ r.simbolo }}{% if r.ibc %} <span style="font-size:8px; padding:1px 4px; border-radius:4px; background:#1baf7a; color:#fff;">IBC</span>{% endif %}</td>
           <td style="padding:8px; text-align:center;">{{ r.rend_score }}</td>
           <td style="padding:8px; text-align:center;">{{ r.liq_score }}</td>
           <td style="padding:8px; text-align:center;">{{ r.din_score }}</td>
