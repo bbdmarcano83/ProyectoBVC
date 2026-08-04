@@ -27,25 +27,21 @@
 
   <!-- Resumen rápido -->
   <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
-    {% set alto = alto_count %}
-    {% set medio = medio_count %}
-    {% set bajo = bajo_count %}
-    {% set minimo = minimo_count %}
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
       <div style="font-size:11px; color:var(--text-secondary);">Score alto</div>
-      <div style="font-size:22px; font-weight:600; color:#1baf7a;">{{ alto }}</div>
+      <div style="font-size:22px; font-weight:600; color:#1baf7a;">{{ alto_count }}</div>
     </div>
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
       <div style="font-size:11px; color:var(--text-secondary);">Score medio</div>
-      <div style="font-size:22px; font-weight:600; color:#2a78d6;">{{ medio }}</div>
+      <div style="font-size:22px; font-weight:600; color:#2a78d6;">{{ medio_count }}</div>
     </div>
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
       <div style="font-size:11px; color:var(--text-secondary);">Score bajo</div>
-      <div style="font-size:22px; font-weight:600; color:#eda100;">{{ bajo }}</div>
+      <div style="font-size:22px; font-weight:600; color:#eda100;">{{ bajo_count }}</div>
     </div>
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
       <div style="font-size:11px; color:var(--text-secondary);">Score mínimo</div>
-      <div style="font-size:22px; font-weight:600; color:#d03b3b;">{{ minimo }}</div>
+      <div style="font-size:22px; font-weight:600; color:#d03b3b;">{{ minimo_count }}</div>
     </div>
   </div>
 
@@ -74,7 +70,7 @@
             <div style="font-size:11px; color:var(--text-secondary);">{{ r.sector }}</div>
           </td>
           <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">
-            <span title="{{ r.rend_pct }}% ({{ r.dias_datos|default(0) }} días)">{{ r.rend_score|round(0)|int }}</span>
+            <span title="{{ r.rend_pct }}%">{{ r.rend_score|round(0)|int }}</span>
           </td>
           <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">{{ r.liq_score }}</td>
           <td style="padding:8px 8px; text-align:center;">
@@ -100,25 +96,25 @@
                 <div>
                   <div style="color:var(--text-secondary); margin-bottom:2px;">Rendimiento</div>
                   <div style="font-weight:500; color:{{ '#1baf7a' if r.rend_pct > 0 else '#d03b3b' }};">
-                    {{ '%+.1f'|format(r.rend_pct) }}%
+                    {{ r.rend_pct }}%
                   </div>
                   <div style="font-size:11px; color:var(--text-secondary);">
-                    {{ r.rend_score|round(0)|int }}/40 pts · {{ r.dias_datos|default('?') }} días
+                    {{ r.rend_score|round(0)|int }}/40 pts · {{ r.dias_datos }} días
                   </div>
                   {% if r.precio_inicio %}
                   <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
-                    Bs {{ '{:,.2f}'.format(r.precio_inicio) }} → Bs {{ '{:,.2f}'.format(r.precio_actual) }}
+                    Bs {{ r.precio_inicio }} → Bs {{ r.precio_actual }}
                   </div>
                   {% endif %}
                 </div>
                 <div>
                   <div style="color:var(--text-secondary); margin-bottom:2px;">Liquidez semanal</div>
-                  <div style="font-weight:500;">Bs {{ '{:,.0f}'.format(r.liq_vol) }}</div>
+                  <div style="font-weight:500;">Bs {{ r.liq_vol|int }}</div>
                   <div style="font-size:11px; color:var(--text-secondary);">{{ r.liq_score }}/25 pts</div>
                 </div>
                 <div>
                   <div style="color:var(--text-secondary); margin-bottom:2px;">Precio actual</div>
-                  <div style="font-weight:500;">Bs {{ '{:,.2f}'.format(r.precio) }}</div>
+                  <div style="font-weight:500;">Bs {{ r.precio }}</div>
                 </div>
               </div>
               <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:12px; margin-top:10px; padding-top:10px; border-top:0.5px solid var(--border);">
