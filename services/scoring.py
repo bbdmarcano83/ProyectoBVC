@@ -20,7 +20,7 @@ IBC_SIMBOLOS = {
 
 # ── Tasa BCV de referencia al 01-Ene-2026 ──────────────────────────────────
 # Usada para calcular devaluación YTD automáticamente
-TASA_BCV_INICIO_2026 = 301.37  # Bs/USD al 01-Ene-2026
+TASA_BCV_INICIO_2026 = 78.13  # Bs/USD al 01-Ene-2026 (post-reconversión)
 
 
 def _parse_fecha_bvc(fecha_str: str) -> datetime | None:
@@ -231,6 +231,35 @@ def _determinar_accion(score: int) -> dict:
         return {"label": "Score mínimo", "color": "#d03b3b", "bg": "rgba(208,59,59,0.12)"}
 
 
+def _detectar_miedo(historico: list[dict], window: int = 30) -> dict:
+    """
+    Detecta caídas desde máximo reciente.
+    Si la acción cayó >15% desde su máximo de los últimos N días,
+    marca como oportunidad de compra (si el score es alto).
+    """
+    if len(historico) < 5:
+        return {"caida_pct": 0, "max_precio": 0, "precio_actual": 0, "es_oportunidad": False}
+
+    datos = historico[:window]
+    cierres = [_to_float(d.get("PRECIO_CIE", 0)) for d in datos]
+    maximos = [_to_float(d.get("PRECIO_MAX", 0)) for d in datos]
+
+    precio_actual = cierres[0] if cierres[0] > 0 else 0
+    max_precio = max(max(maximos), max(cierres)) if maximos and cierres else 0
+
+    if max_precio <= 0 or precio_actual <= 0:
+        return {"caida_pct": 0, "max_precio": 0, "precio_actual": precio_actual, "es_oportunidad": False}
+
+    caida_pct = round(((precio_actual / max_precio) - 1) * 100, 1)
+
+    return {
+        "caida_pct": caida_pct,
+        "max_precio": round(max_precio, 2),
+        "precio_actual": round(precio_actual, 2),
+        "es_oportunidad": caida_pct <= -15,
+    }
+
+
 async def _obtener_devaluacion_ytd() -> float:
     """Calcula la devaluación BCV acumulada YTD automáticamente."""
     try:
@@ -285,9 +314,13 @@ async def calcular_scoring_completo(devaluacion_pct: float | None = None) -> tup
         liq = _calcular_liquidez(historico)
         din = _calcular_dinamismo(historico)
         tend = _calcular_tendencia(historico)
+        miedo = _detectar_miedo(historico)
 
         total = round(rend["score"] + liq["score"] + din["score"] + tend["score"])
         accion = _determinar_accion(total)
+
+        # Señal de compra: caída >15% + score >65
+        señal_compra = miedo["es_oportunidad"] and total >= 65
 
         precio_actual = _to_float(historico[0].get("PRECIO_CIE", 0))
         fecha_ultimo = historico[0].get("FEC", "N/A")
@@ -323,6 +356,10 @@ async def calcular_scoring_completo(devaluacion_pct: float | None = None) -> tup
             "precio_inicio": rend.get("precio_inicio", 0),
             "dias_datos": rend.get("dias_datos", 0),
             "periodo_rend": rend.get("periodo", ""),
+            # Fear detector
+            "caida_pct": miedo["caida_pct"],
+            "max_precio": miedo["max_precio"],
+            "señal_compra": señal_compra,
         })
 
     resultados.sort(key=lambda x: x["total"], reverse=True)
