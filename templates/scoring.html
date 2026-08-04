@@ -25,6 +25,25 @@
     </form>
   </div>
 
+  <!-- Señales de compra (Fear Detector) -->
+  {% if señales_compra %}
+  <div style="background:#1baf7a15; border:1px solid #1baf7a44; border-radius:10px; padding:12px 16px; margin-bottom:16px;">
+    <div style="font-size:13px; font-weight:600; color:#1baf7a; margin-bottom:8px;">📉 Señales de compra detectadas</div>
+    {% for s in señales_compra %}
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:0.5px solid #1baf7a22;">
+      <div>
+        <span style="font-weight:500;">{{ s.simbolo }}</span>
+        <span style="font-size:11px; color:var(--text-secondary);">Score {{ s.total }}</span>
+      </div>
+      <div style="text-align:right;">
+        <span style="font-size:13px; font-weight:600; color:#d03b3b;">{{ s.caida_pct }}%</span>
+        <span style="font-size:11px; color:var(--text-secondary);"> desde máx Bs {{ s.max_precio }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <!-- Resumen rápido -->
   <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
@@ -56,17 +75,22 @@
           <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Liq</th>
           <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Din</th>
           <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Tend</th>
+          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Caída</th>
           <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Total</th>
           <th style="padding:10px 12px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Acción</th>
         </tr>
       </thead>
       <tbody>
         {% for r in resultados %}
-        <tr style="border-bottom:0.5px solid var(--border); cursor:pointer;"
+        <tr style="border-bottom:0.5px solid var(--border); cursor:pointer;{% if r.señal_compra %} background:rgba(27,175,122,0.05);{% endif %}"
             onclick="toggleDetail('detail-{{ r.simbolo }}')">
           <td style="padding:8px 12px; color:var(--text-secondary); font-size:12px;">{{ loop.index }}</td>
           <td style="padding:8px 8px;">
-            <div style="font-weight:500;">{{ r.simbolo }}{% if r.ibc %} <span style="font-size:8px; padding:1px 4px; border-radius:4px; background:var(--accent, #1baf7a); color:#fff; font-weight:500; vertical-align:middle;">IBC</span>{% endif %}</div>
+            <div style="font-weight:500;">
+              {{ r.simbolo }}
+              {% if r.ibc %}<span style="font-size:8px; padding:1px 4px; border-radius:4px; background:var(--accent, #1baf7a); color:#fff; font-weight:500; vertical-align:middle; margin-left:3px;">IBC</span>{% endif %}
+              {% if r.señal_compra %}<span style="font-size:8px; padding:1px 4px; border-radius:4px; background:#d03b3b; color:#fff; font-weight:500; vertical-align:middle; margin-left:3px;">COMPRA</span>{% endif %}
+            </div>
             <div style="font-size:11px; color:var(--text-secondary);">{{ r.sector }}</div>
           </td>
           <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">
@@ -83,6 +107,17 @@
             {% endif %}
           </td>
           <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">{{ r.tend_score }}</td>
+          <td style="padding:8px 8px; text-align:center; font-size:11px;">
+            {% if r.caida_pct <= -15 %}
+            <span style="color:#d03b3b; font-weight:600;">{{ r.caida_pct }}%</span>
+            {% elif r.caida_pct <= -8 %}
+            <span style="color:#c47a20;">{{ r.caida_pct }}%</span>
+            {% elif r.caida_pct < 0 %}
+            <span style="color:var(--text-secondary);">{{ r.caida_pct }}%</span>
+            {% else %}
+            <span style="color:var(--text-muted);">0%</span>
+            {% endif %}
+          </td>
           <td style="padding:8px 8px; text-align:center; font-weight:600; font-size:15px;">{{ r.total }}</td>
           <td style="padding:8px 12px; text-align:center;">
             {% if r.total >= 75 %}
@@ -98,7 +133,7 @@
         </tr>
         <!-- Detalle expandible -->
         <tr id="detail-{{ r.simbolo }}" style="display:none;">
-          <td colspan="8" style="padding:0 12px 12px 12px;">
+          <td colspan="9" style="padding:0 12px 12px 12px;">
             <div style="background:var(--bg-body); border-radius:8px; padding:12px; margin-top:4px;">
               <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:12px;">
                 <div>
@@ -123,8 +158,15 @@
                   <div style="font-size:11px; color:var(--text-secondary);">{{ r.liq_score }}/25 pts</div>
                 </div>
                 <div>
-                  <div style="color:var(--text-secondary); margin-bottom:2px;">Precio actual</div>
-                  <div style="font-weight:500;">Bs {{ r.precio }}</div>
+                  <div style="color:var(--text-secondary); margin-bottom:2px;">Caída desde máximo</div>
+                  {% if r.caida_pct <= -15 %}
+                  <div style="font-weight:500; color:#d03b3b;">{{ r.caida_pct }}%</div>
+                  {% elif r.caida_pct < 0 %}
+                  <div style="font-weight:500; color:#c47a20;">{{ r.caida_pct }}%</div>
+                  {% else %}
+                  <div style="font-weight:500; color:var(--text-muted);">En máximos</div>
+                  {% endif %}
+                  <div style="font-size:11px; color:var(--text-secondary);">Máx 30d: Bs {{ r.max_precio }}</div>
                 </div>
               </div>
               <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:12px; margin-top:10px; padding-top:10px; border-top:0.5px solid var(--border);">
@@ -173,6 +215,8 @@
     <span style="color:#2a78d6;">Score medio ≥50</span> ·
     <span style="color:#eda100;">Score bajo ≥30</span> ·
     <span style="color:#d03b3b;">Score mínimo &lt;30</span>
+    <br>
+    <strong>Señal de compra:</strong> Acción con Score ≥65 que cayó ≥15% desde su máximo de 30 días sin evento corporativo.
   </div>
 
   <!-- Nota T+3 -->
