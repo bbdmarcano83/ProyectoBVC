@@ -1,39 +1,193 @@
 {% extends "base.html" %}
-{% block title %}Scoring{% endblock %}
+{% block title %}Scoring — Caracas Bull{% endblock %}
 
 {% block content %}
-<div style="max-width:900px; margin:0 auto; padding:20px 16px;">
+<div class="container" style="max-width:900px; padding:20px 16px;">
 
-  <h1 style="font-size:20px; font-weight:600; margin:0 0 16px;">Motor de Scoring</h1>
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+    <div>
+      <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Motor de Scoring</h1>
+      <p style="font-size:12px; color:var(--text-secondary); margin:0;">
+        {{ resultados|length }} títulos BVC · {{ resultados|selectattr('ibc')|list|length }} en IBC · Devaluación BCV: {{ deval }}%
+        · Liquidación T+3
+      </p>
+    </div>
+    <form method="GET" action="/scoring" style="display:flex; align-items:center; gap:8px;">
+      <label style="font-size:12px; color:var(--text-secondary);">Deval. BCV %</label>
+      <input type="number" name="deval" value="{{ deval }}" step="1"
+             style="width:70px; padding:6px 8px; border:1px solid var(--border); border-radius:8px;
+                    background:var(--bg-card); color:var(--text-primary); font-size:14px; text-align:center;">
+      <button type="submit"
+              style="padding:6px 14px; border:none; border-radius:8px;
+                     background:var(--accent); color:#fff; font-size:12px; font-weight:500; cursor:pointer;">
+        Recalcular
+      </button>
+    </form>
+  </div>
 
+  <!-- Resumen rápido -->
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
+    {% set alto = resultados|selectattr('accion.label','eq','Score alto')|list|length %}
+    {% set medio = resultados|selectattr('accion.label','eq','Score medio')|list|length %}
+    {% set bajo = resultados|selectattr('accion.label','eq','Score bajo')|list|length %}
+    {% set minimo = resultados|selectattr('accion.label','eq','Score mínimo')|list|length %}
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Score alto</div>
+      <div style="font-size:22px; font-weight:600; color:#1baf7a;">{{ alto }}</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Score medio</div>
+      <div style="font-size:22px; font-weight:600; color:#2a78d6;">{{ medio }}</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Score bajo</div>
+      <div style="font-size:22px; font-weight:600; color:#eda100;">{{ bajo }}</div>
+    </div>
+    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
+      <div style="font-size:11px; color:var(--text-secondary);">Score mínimo</div>
+      <div style="font-size:22px; font-weight:600; color:#d03b3b;">{{ minimo }}</div>
+    </div>
+  </div>
+
+  <!-- Tabla de scoring -->
   <div style="background:var(--bg-card); border-radius:12px; overflow:hidden;">
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
       <thead>
         <tr style="border-bottom:1px solid var(--border);">
-          <th style="padding:10px 8px; text-align:left; font-size:11px; color:var(--text-secondary);">#</th>
-          <th style="padding:10px 8px; text-align:left; font-size:11px; color:var(--text-secondary);">Título</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Rend</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Liq</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Din</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Tend</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Total</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:500; font-size:11px; color:var(--text-secondary);">#</th>
+          <th style="padding:10px 8px; text-align:left; font-weight:500; font-size:11px; color:var(--text-secondary);">Título</th>
+          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Rend</th>
+          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Liq</th>
+          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Din</th>
+          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Tend</th>
+          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Total</th>
+          <th style="padding:10px 12px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Acción</th>
         </tr>
       </thead>
       <tbody>
         {% for r in resultados %}
-        <tr style="border-bottom:0.5px solid var(--border);">
-          <td style="padding:8px;">{{ loop.index }}</td>
-          <td style="padding:8px; font-weight:500;">{{ r.simbolo }}{% if r.ibc %} <span style="font-size:8px; padding:1px 4px; border-radius:4px; background:#1baf7a; color:#fff;">IBC</span>{% endif %}</td>
-          <td style="padding:8px; text-align:center;">{{ r.rend_score }}</td>
-          <td style="padding:8px; text-align:center;">{{ r.liq_score }}</td>
-          <td style="padding:8px; text-align:center;">{{ r.din_score }}</td>
-          <td style="padding:8px; text-align:center;">{{ r.tend_score }}</td>
-          <td style="padding:8px; text-align:center; font-weight:600; font-size:15px;">{{ r.total }}</td>
+        <tr style="border-bottom:0.5px solid var(--border); cursor:pointer;"
+            onclick="toggleDetail('detail-{{ r.simbolo }}')">
+          <td style="padding:8px 12px; color:var(--text-secondary); font-size:12px;">{{ loop.index }}</td>
+          <td style="padding:8px 8px;">
+            <div style="font-weight:500;">{{ r.simbolo }}{% if r.ibc %} <span style="font-size:8px; padding:1px 4px; border-radius:4px; background:var(--accent, #1baf7a); color:#fff; font-weight:500; vertical-align:middle;">IBC</span>{% endif %}</div>
+            <div style="font-size:11px; color:var(--text-secondary);">{{ r.sector }}</div>
+          </td>
+          <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">
+            <span title="{{ r.rend_pct }}% ({{ r.dias_datos|default(0) }} días)">{{ r.rend_score|round(0)|int }}</span>
+          </td>
+          <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">{{ r.liq_score }}</td>
+          <td style="padding:8px 8px; text-align:center;">
+            <span style="font-size:10px; padding:2px 6px; border-radius:6px; font-weight:500;
+                         background:{{ r.din_color }}18; color:{{ r.din_color }};">
+              {{ r.din_score }}
+            </span>
+          </td>
+          <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">{{ r.tend_score }}</td>
+          <td style="padding:8px 8px; text-align:center; font-weight:600; font-size:15px;">{{ r.total }}</td>
+          <td style="padding:8px 12px; text-align:center;">
+            <span style="font-size:10px; padding:3px 10px; border-radius:8px; font-weight:500;
+                         background:{{ r.accion.bg }}; color:{{ r.accion.color }};">
+              {{ r.accion.label }}
+            </span>
+          </td>
+        </tr>
+        <!-- Detalle expandible -->
+        <tr id="detail-{{ r.simbolo }}" style="display:none;">
+          <td colspan="8" style="padding:0 12px 12px 12px;">
+            <div style="background:var(--bg-body); border-radius:8px; padding:12px; margin-top:4px;">
+              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:12px;">
+                <div>
+                  <div style="color:var(--text-secondary); margin-bottom:2px;">Rendimiento</div>
+                  <div style="font-weight:500; color:{{ '#1baf7a' if r.rend_pct > 0 else '#d03b3b' }};">
+                    {{ '%+.1f'|format(r.rend_pct) }}%
+                  </div>
+                  <div style="font-size:11px; color:var(--text-secondary);">
+                    {{ r.rend_score|round(0)|int }}/40 pts · {{ r.dias_datos|default('?') }} días
+                  </div>
+                  {% if r.precio_inicio %}
+                  <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
+                    Bs {{ '{:,.2f}'.format(r.precio_inicio) }} → Bs {{ '{:,.2f}'.format(r.precio_actual) }}
+                  </div>
+                  {% endif %}
+                </div>
+                <div>
+                  <div style="color:var(--text-secondary); margin-bottom:2px;">Liquidez semanal</div>
+                  <div style="font-weight:500;">Bs {{ '{:,.0f}'.format(r.liq_vol) }}</div>
+                  <div style="font-size:11px; color:var(--text-secondary);">{{ r.liq_score }}/25 pts</div>
+                </div>
+                <div>
+                  <div style="color:var(--text-secondary); margin-bottom:2px;">Precio actual</div>
+                  <div style="font-weight:500;">Bs {{ '{:,.2f}'.format(r.precio) }}</div>
+                </div>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:12px; margin-top:10px; padding-top:10px; border-top:0.5px solid var(--border);">
+                <div>
+                  <div style="color:var(--text-secondary); margin-bottom:2px;">Dinamismo</div>
+                  <span style="font-size:11px; padding:2px 8px; border-radius:6px; font-weight:500;
+                               background:{{ r.din_color }}18; color:{{ r.din_color }};">
+                    {{ r.din_label }}
+                  </span>
+                  <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">
+                    Cambio: {{ r.din_change_pct }}% · Spread: {{ r.din_spread_pct }}% · {{ r.din_avg_ops|int }} ops/día
+                  </div>
+                </div>
+                <div>
+                  <div style="color:var(--text-secondary); margin-bottom:2px;">Tendencia 30d</div>
+                  <div style="font-weight:500;">{{ r.tend_label }}</div>
+                  <div style="font-size:11px; color:var(--text-secondary);">{{ r.tend_score }}/15 pts</div>
+                </div>
+                <div>
+                  <div style="color:var(--text-secondary); margin-bottom:2px;">Detalle</div>
+                  <a href="/detalle/{{ r.simbolo }}" style="font-size:11px; color:var(--accent);">
+                    Ver gráfico →
+                  </a>
+                </div>
+              </div>
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
+  <!-- Leyenda -->
+  <div style="margin-top:16px; padding:12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.7;">
+    <strong>Ponderación:</strong> Rendimiento (40pts) — retorno acumulado vs devaluación BCV.
+    Liquidez (25pts) — volumen semanal negociado.
+    Dinamismo (20pts) — detecta precios congelados vs activos.
+    Tendencia (15pts) — dirección en los últimos 30 días.
+    <br>
+    <strong>Clasificación:</strong>
+    <span style="color:#1baf7a;">Score alto ≥75</span> ·
+    <span style="color:#2a78d6;">Score medio ≥50</span> ·
+    <span style="color:#eda100;">Score bajo ≥30</span> ·
+    <span style="color:#d03b3b;">Score mínimo &lt;30</span>
+  </div>
+
+  <!-- Nota T+3 -->
+  <div style="margin-top:8px; padding:10px 12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.6; border-left:3px solid #eda100;">
+    <strong>⚠ Liquidación T+3:</strong> Las operaciones en la BVC tardan 3 días hábiles en acreditarse.
+    Al comprar hoy, los títulos se reflejan el 4to día hábil.
+    Al vender hoy, el efectivo se libera el 4to día hábil.
+    Planifica tus rotaciones considerando este plazo.
+  </div>
+
+  <!-- Disclaimer legal -->
+  <div style="margin-top:8px; padding:10px 12px; background:transparent; border-radius:10px; font-size:10px; color:var(--text-muted); line-height:1.6; text-align:center;">
+    El scoring es una herramienta de análisis cuantitativo basada en datos públicos de la BVC.
+    No constituye asesoría de inversión. Las decisiones de inversión son responsabilidad exclusiva del usuario.
+  </div>
+
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function toggleDetail(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
+}
+</script>
 {% endblock %}
