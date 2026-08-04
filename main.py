@@ -328,6 +328,7 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
         "medio_count": sum(1 for r in resultados if r.get("accion_label") == "Score medio"),
         "bajo_count": sum(1 for r in resultados if r.get("accion_label") == "Score bajo"),
         "minimo_count": sum(1 for r in resultados if r.get("accion_label") == "Score mínimo"),
+        "señales_compra": [r for r in resultados if r.get("señal_compra")],
         "active": "scoring",
         "usuario": usuario,
         "dias": dias_restantes(usuario),
