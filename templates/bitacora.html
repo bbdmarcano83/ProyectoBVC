@@ -8,7 +8,7 @@
     <div>
       <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Bitácora de Operaciones</h1>
       <p style="font-size:12px; color:var(--text-secondary); margin:0;">
-        {{ transacciones|length }} operaciones registradas · Fees acumulados: Bs {{ '{:,.0f}'.format(total_fees) }}
+        {{ transacciones|length }} operaciones registradas · Fees acumulados: Bs {{ total_fees|int }}
       </p>
     </div>
     <button onclick="document.getElementById('modal-nueva').style.display='flex'"
@@ -18,7 +18,7 @@
     </button>
   </div>
 
-  <!-- Resumen de rendimiento -->
+  <!-- Resumen -->
   <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
       <div style="font-size:11px; color:var(--text-secondary);">Compras</div>
@@ -34,7 +34,7 @@
     </div>
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
       <div style="font-size:11px; color:var(--text-secondary);">Tasa BCV hoy</div>
-      <div style="font-size:16px; font-weight:600;">{{ '{:,.0f}'.format(tasa_bcv) }}</div>
+      <div style="font-size:16px; font-weight:600;">{{ tasa_bcv|int }}</div>
     </div>
   </div>
 
@@ -45,41 +45,40 @@
     <div style="padding:12px 16px; border-bottom:0.5px solid var(--border); display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:start;">
       <div>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-          <span style="font-size:10px; padding:2px 8px; border-radius:6px; font-weight:500;
-                       background:{{ '#1baf7a22' if t.tipo == 'compra' else '#d03b3b22' }};
-                       color:{{ '#1baf7a' if t.tipo == 'compra' else '#d03b3b' }};">
-            {{ t.tipo|upper }}
-          </span>
+          {% if t.tipo == 'compra' %}
+          <span style="font-size:10px; padding:2px 8px; border-radius:6px; font-weight:500; background:#1baf7a22; color:#1baf7a;">COMPRA</span>
+          {% else %}
+          <span style="font-size:10px; padding:2px 8px; border-radius:6px; font-weight:500; background:#d03b3b22; color:#d03b3b;">VENTA</span>
+          {% endif %}
           <span style="font-weight:500; font-size:14px;">{{ t.simbolo }}</span>
           {% if t.motivo %}
           <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:var(--bg-body); color:var(--text-secondary);">
-            {% if t.motivo == 'acumulacion_caida' %}📉 Caída
-            {% elif t.motivo == 'toma_ganancias' %}💰 Ganancia
-            {% elif t.motivo == 'rotacion_trimestral' %}🔄 Rotación
-            {% elif t.motivo == 'cortar_congelado' %}❄️ Congelado
-            {% elif t.motivo == 'dividendo' %}📊 Dividendo
+            {% if t.motivo == 'acumulacion_caida' %}Caída
+            {% elif t.motivo == 'toma_ganancias' %}Ganancia
+            {% elif t.motivo == 'rotacion_trimestral' %}Rotación
+            {% elif t.motivo == 'cortar_congelado' %}Congelado
+            {% elif t.motivo == 'dividendo' %}Dividendo
             {% else %}{{ t.motivo }}{% endif %}
           </span>
           {% endif %}
         </div>
         <div style="font-size:12px; color:var(--text-secondary); display:flex; gap:16px; flex-wrap:wrap;">
-          <span>{{ t.cantidad|int }} títulos × Bs {{ '{:,.2f}'.format(t.precio) }}</span>
-          <span>Bruto: Bs {{ '{:,.0f}'.format(t.cantidad * t.precio) }}</span>
+          <span>{{ t.cantidad|int }} títulos a Bs {{ t.precio }}</span>
           {% if t.fee_total %}
-          <span style="color:#c47a20;">Fee: Bs {{ '{:,.0f}'.format(t.fee_total) }}</span>
+          <span style="color:#c47a20;">Fee: Bs {{ t.fee_total|int }}</span>
           {% endif %}
           {% if t.neto %}
-          <span>Neto: Bs {{ '{:,.0f}'.format(t.neto) }}</span>
+          <span>Neto: Bs {{ t.neto|int }}</span>
           {% endif %}
         </div>
         {% if t.notas %}
         <div style="font-size:11px; color:var(--text-muted); margin-top:4px; font-style:italic;">
-          "{{ t.notas }}"
+          {{ t.notas }}
         </div>
         {% endif %}
         <div style="font-size:11px; color:var(--text-muted); margin-top:2px; display:flex; gap:12px;">
           {% if t.score %}<span>Score: {{ t.score }}</span>{% endif %}
-          {% if t.tasa_bcv %}<span>BCV: {{ '{:,.0f}'.format(t.tasa_bcv) }} Bs/$</span>{% endif %}
+          {% if t.tasa_bcv %}<span>BCV: {{ t.tasa_bcv|int }} Bs/$</span>{% endif %}
         </div>
       </div>
       <div style="text-align:right;">
@@ -96,23 +95,21 @@
     {% endif %}
   </div>
 
-  <!-- Nota T+3 -->
   <div style="margin-top:12px; padding:10px 12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.6; border-left:3px solid #eda100;">
-    <strong>⚠ Liquidación T+3:</strong> Las operaciones se acreditan en 3 días hábiles.
-    Al registrar una compra hoy, los títulos aparecen el 4to día hábil.
+    <strong>Liquidación T+3:</strong> Las operaciones se acreditan en 3 días hábiles.
   </div>
 </div>
 
-<!-- Modal nueva operación -->
+<!-- Modal -->
 <div id="modal-nueva" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:flex-end; justify-content:center;">
   <div style="background:var(--bg-card); border-radius:16px 16px 0 0; padding:20px; width:100%; max-width:500px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
       <h2 style="font-size:16px; font-weight:600; margin:0;">Registrar operación</h2>
       <button onclick="document.getElementById('modal-nueva').style.display='none'"
-              style="background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer;">✕</button>
+              style="background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer;">X</button>
     </div>
 
-    <div style="display:flex; gap:8px; margin-bottom:12px;" id="tipo-selector">
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
       <button onclick="setTipo('compra')" id="btn-compra"
               style="flex:1; padding:8px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;
                      border:1.5px solid #1baf7a; background:#1baf7a22; color:#1baf7a;">
@@ -146,11 +143,11 @@
       <div>
         <label style="font-size:11px; color:var(--text-secondary);">Motivo</label>
         <select id="inp-motivo" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
-          <option value="acumulacion_caida">📉 Comprar caída</option>
-          <option value="toma_ganancias">💰 Toma de ganancias</option>
-          <option value="rotacion_trimestral">🔄 Rotación trimestral</option>
-          <option value="cortar_congelado">❄️ Cortar congelado</option>
-          <option value="dividendo">📊 Dividendo</option>
+          <option value="acumulacion_caida">Comprar caída</option>
+          <option value="toma_ganancias">Toma de ganancias</option>
+          <option value="rotacion_trimestral">Rotación trimestral</option>
+          <option value="cortar_congelado">Cortar congelado</option>
+          <option value="dividendo">Dividendo</option>
         </select>
       </div>
     </div>
@@ -160,15 +157,14 @@
       <input type="text" id="inp-notas" placeholder="Cayó 18% sin evento corporativo" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
     </div>
 
-    <!-- Cálculo automático de fees -->
     <div id="fee-preview" style="background:var(--bg-body); border-radius:8px; padding:10px; margin-bottom:12px; font-size:12px; color:var(--text-secondary); display:none;">
-      <div style="display:flex; justify-content:space-between;"><span>Monto bruto:</span><span id="fp-bruto">—</span></div>
-      <div style="display:flex; justify-content:space-between;"><span>Corretaje (4%):</span><span id="fp-corretaje">—</span></div>
-      <div style="display:flex; justify-content:space-between;"><span>IVA (0.64%):</span><span id="fp-iva">—</span></div>
-      <div style="display:flex; justify-content:space-between;"><span>ISLR (1%):</span><span id="fp-islr">—</span></div>
-      <div style="display:flex; justify-content:space-between;"><span>Registro BVC (0.1%):</span><span id="fp-registro">—</span></div>
+      <div style="display:flex; justify-content:space-between;"><span>Monto bruto:</span><span id="fp-bruto"></span></div>
+      <div style="display:flex; justify-content:space-between;"><span>Corretaje (4%):</span><span id="fp-corretaje"></span></div>
+      <div style="display:flex; justify-content:space-between;"><span>IVA (0.64%):</span><span id="fp-iva"></span></div>
+      <div style="display:flex; justify-content:space-between;"><span>ISLR (1%):</span><span id="fp-islr"></span></div>
+      <div style="display:flex; justify-content:space-between;"><span>Registro (0.1%):</span><span id="fp-registro"></span></div>
       <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border); padding-top:4px; margin-top:4px; font-weight:500; color:var(--text-primary);">
-        <span>Neto:</span><span id="fp-neto">—</span>
+        <span>Neto:</span><span id="fp-neto"></span>
       </div>
     </div>
 
@@ -183,49 +179,41 @@
 {% block extra_scripts %}
 <script>
 let tipoActual = 'compra';
-
 function setTipo(tipo) {
     tipoActual = tipo;
     document.getElementById('tipo-value').value = tipo;
     const bc = document.getElementById('btn-compra');
     const bv = document.getElementById('btn-venta');
     if (tipo === 'compra') {
-        bc.style.border = '1.5px solid #1baf7a'; bc.style.background = '#1baf7a22'; bc.style.color = '#1baf7a';
-        bv.style.border = '1px solid var(--border)'; bv.style.background = 'transparent'; bv.style.color = 'var(--text-secondary)';
+        bc.style.cssText = 'flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid #1baf7a;background:#1baf7a22;color:#1baf7a';
+        bv.style.cssText = 'flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-secondary)';
     } else {
-        bv.style.border = '1.5px solid #d03b3b'; bv.style.background = '#d03b3b22'; bv.style.color = '#d03b3b';
-        bc.style.border = '1px solid var(--border)'; bc.style.background = 'transparent'; bc.style.color = 'var(--text-secondary)';
+        bv.style.cssText = 'flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid #d03b3b;background:#d03b3b22;color:#d03b3b';
+        bc.style.cssText = 'flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-secondary)';
     }
     calcularFees();
 }
-
 function calcularFees() {
     const cant = parseFloat(document.getElementById('inp-cantidad').value) || 0;
     const precio = parseFloat(document.getElementById('inp-precio').value) || 0;
     const bruto = cant * precio;
     const preview = document.getElementById('fee-preview');
-
     if (bruto <= 0) { preview.style.display = 'none'; return; }
     preview.style.display = 'block';
-
     const corretaje = bruto * 0.04;
     const iva = corretaje * 0.16;
     const islr = tipoActual === 'venta' ? bruto * 0.01 : 0;
     const registro = bruto * 0.001;
-    const totalFee = corretaje + iva + islr + registro;
-    const neto = tipoActual === 'venta' ? bruto - totalFee : bruto + totalFee;
-
-    document.getElementById('fp-bruto').textContent = 'Bs ' + bruto.toLocaleString('es', {maximumFractionDigits:0});
-    document.getElementById('fp-corretaje').textContent = 'Bs ' + corretaje.toLocaleString('es', {maximumFractionDigits:0});
-    document.getElementById('fp-iva').textContent = 'Bs ' + iva.toLocaleString('es', {maximumFractionDigits:0});
-    document.getElementById('fp-islr').textContent = tipoActual === 'venta' ? 'Bs ' + islr.toLocaleString('es', {maximumFractionDigits:0}) : 'N/A (solo venta)';
-    document.getElementById('fp-registro').textContent = 'Bs ' + registro.toLocaleString('es', {maximumFractionDigits:0});
-    document.getElementById('fp-neto').textContent = 'Bs ' + neto.toLocaleString('es', {maximumFractionDigits:0});
+    const neto = tipoActual === 'venta' ? bruto - corretaje - iva - islr - registro : bruto + corretaje + iva + registro;
+    document.getElementById('fp-bruto').textContent = 'Bs ' + Math.round(bruto).toLocaleString();
+    document.getElementById('fp-corretaje').textContent = 'Bs ' + Math.round(corretaje).toLocaleString();
+    document.getElementById('fp-iva').textContent = 'Bs ' + Math.round(iva).toLocaleString();
+    document.getElementById('fp-islr').textContent = tipoActual === 'venta' ? 'Bs ' + Math.round(islr).toLocaleString() : 'N/A';
+    document.getElementById('fp-registro').textContent = 'Bs ' + Math.round(registro).toLocaleString();
+    document.getElementById('fp-neto').textContent = 'Bs ' + Math.round(neto).toLocaleString();
 }
-
-document.getElementById('inp-cantidad')?.addEventListener('input', calcularFees);
-document.getElementById('inp-precio')?.addEventListener('input', calcularFees);
-
+if (document.getElementById('inp-cantidad')) document.getElementById('inp-cantidad').addEventListener('input', calcularFees);
+if (document.getElementById('inp-precio')) document.getElementById('inp-precio').addEventListener('input', calcularFees);
 async function guardarOperacion() {
     const data = {
         simbolo: document.getElementById('inp-simbolo').value.toUpperCase().trim(),
@@ -235,23 +223,9 @@ async function guardarOperacion() {
         motivo: document.getElementById('inp-motivo').value,
         notas: document.getElementById('inp-notas').value.trim(),
     };
-
-    if (!data.simbolo || !data.cantidad || !data.precio) {
-        alert('Completa símbolo, cantidad y precio'); return;
-    }
-
-    const resp = await fetch('/api/bitacora', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data),
-    });
-
-    if (resp.ok) {
-        window.location.reload();
-    } else {
-        const err = await resp.json();
-        alert(err.detail || 'Error al guardar');
-    }
+    if (!data.simbolo || !data.cantidad || !data.precio) { alert('Completa símbolo, cantidad y precio'); return; }
+    const resp = await fetch('/api/bitacora', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
+    if (resp.ok) { window.location.reload(); } else { const err = await resp.json(); alert(err.detail || 'Error'); }
 }
 </script>
 {% endblock %}
