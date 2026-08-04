@@ -261,19 +261,23 @@ async def calcular_scoring_completo(devaluacion_pct: float | None = None) -> tup
     resultados = []
     errores = []
 
-    for item in pizarra:
-        simbolo = item.get("COD_SIMB", "")
-        nombre = item.get("DESC_SIMB", simbolo)
-        if not simbolo:
-            continue
+    # Traer TODOS los históricos en paralelo (no en secuencia)
+    import asyncio
 
+    simbolos_validos = [(item, item.get("COD_SIMB", "")) for item in pizarra if item.get("COD_SIMB")]
+
+    async def _fetch(simbolo):
         try:
-            historico = await obtener_historico(simbolo)
-            if not historico:
-                errores.append(simbolo)
-                continue
-        except Exception as e:
-            print(f"[Scoring] Error obteniendo {simbolo}: {e}")
+            return await obtener_historico(simbolo)
+        except Exception:
+            return None
+
+    historicos = await asyncio.gather(*[_fetch(simb) for _, simb in simbolos_validos])
+
+    for (item, simbolo), historico in zip(simbolos_validos, historicos):
+        nombre = item.get("DESC_SIMB", simbolo)
+
+        if not historico:
             errores.append(simbolo)
             continue
 
