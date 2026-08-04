@@ -1,231 +1,424 @@
-{% extends "base.html" %}
-{% block title %}Bitácora — Caracas Bull{% endblock %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitácora de Operaciones - BVC</title>
+    <style>
+        :root {
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #22c55e;
+            --danger: #ef4444;
+            --border: #334155;
+            --accent: #3b82f6;
+        }
 
-{% block content %}
-<div class="container" style="max-width:900px; padding:20px 16px;">
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
 
-  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
-    <div>
-      <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Bitácora de Operaciones</h1>
-      <p style="font-size:12px; color:var(--text-secondary); margin:0;">
-        {{ transacciones|length }} operaciones registradas · Fees acumulados: Bs {{ total_fees|int }}
-      </p>
-    </div>
-    <button onclick="document.getElementById('modal-nueva').style.display='flex'"
-            style="padding:8px 16px; border:none; border-radius:8px;
-                   background:var(--accent); color:#fff; font-size:13px; font-weight:500; cursor:pointer;">
-      + Registrar operación
-    </button>
-  </div>
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            padding: 2rem;
+        }
 
-  <!-- Resumen -->
-  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
-    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Compras</div>
-      <div style="font-size:20px; font-weight:600; color:#1baf7a;">{{ compras }}</div>
-    </div>
-    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Ventas</div>
-      <div style="font-size:20px; font-weight:600; color:#d03b3b;">{{ ventas }}</div>
-    </div>
-    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Total fees</div>
-      <div style="font-size:16px; font-weight:600; color:var(--text-secondary);">{{ fee_pct }}%</div>
-    </div>
-    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Tasa BCV hoy</div>
-      <div style="font-size:16px; font-weight:600;">{{ tasa_bcv|int }}</div>
-    </div>
-  </div>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
 
-  <!-- Lista de operaciones -->
-  <div style="background:var(--bg-card); border-radius:12px; overflow:hidden;">
-    {% if transacciones %}
-    {% for t in transacciones %}
-    <div style="padding:12px 16px; border-bottom:0.5px solid var(--border); display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:start;">
-      <div>
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-          {% if t.tipo == 'compra' %}
-          <span style="font-size:10px; padding:2px 8px; border-radius:6px; font-weight:500; background:#1baf7a22; color:#1baf7a;">COMPRA</span>
-          {% else %}
-          <span style="font-size:10px; padding:2px 8px; border-radius:6px; font-weight:500; background:#d03b3b22; color:#d03b3b;">VENTA</span>
-          {% endif %}
-          <span style="font-weight:500; font-size:14px;">{{ t.simbolo }}</span>
-          {% if t.motivo %}
-          <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:var(--bg-body); color:var(--text-secondary);">
-            {% if t.motivo == 'acumulacion_caida' %}Caída
-            {% elif t.motivo == 'toma_ganancias' %}Ganancia
-            {% elif t.motivo == 'rotacion_trimestral' %}Rotación
-            {% elif t.motivo == 'cortar_congelado' %}Congelado
-            {% elif t.motivo == 'dividendo' %}Dividendo
-            {% else %}{{ t.motivo }}{% endif %}
-          </span>
-          {% endif %}
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: var(--text-main);
+        }
+
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background-color: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #2563eb;
+        }
+
+        .table-container {
+            background-color: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .tag {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .tag-compra {
+            background-color: rgba(34, 197, 94, 0.1);
+            color: var(--primary);
+            border: 1px solid var(--primary);
+        }
+
+        .tag-venta {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+
+        /* Estilos del Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background-color: var(--bg-card);
+            padding: 2rem;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.4rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 0.6rem;
+            background-color: var(--bg-main);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-main);
+        }
+
+        .tipo-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .tipo-btn {
+            padding: 0.8rem;
+            text-align: center;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-main);
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .fee-preview {
+            margin: 1rem 0;
+            padding: 0.8rem;
+            background-color: var(--bg-main);
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .fee-preview strong {
+            color: var(--text-main);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Bitácora de Operaciones</h1>
+                <p style="color: var(--text-muted); font-size: 0.9rem;">Registro y control de corretaje, impuestos y rendimientos</p>
+            </div>
+            <button class="btn btn-primary" onclick="abrirModal()">+ Nueva Operación</button>
+        </header>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Símbolo</th>
+                        <th>Tipo</th>
+                        <th>Motivo</th>
+                        <th>Cantidad</th>
+                        <th>Precio</th>
+                        <th>Comisiones/IVA</th>
+                        <th>Neto</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if transacciones %}
+                        {% for t in transacciones %}
+                        <tr>
+                            <td>{{ t.fecha }}</td>
+                            <td><strong>{{ t.simbolo }}</strong></td>
+                            <td>
+                                <span class="tag {% if t.tipo == 'COMPRA' %}tag-compra{% else %}tag-venta{% endif %}">
+                                    {{ t.tipo }}
+                                </span>
+                            </td>
+                            <td>{{ t.motivo or '-' }}</td>
+                            <td>{{ t.cantidad }}</td>
+                            <td>${{ "{:,.2f}".format(t.precio) }}</td>
+                            <td>${{ "{:,.2f}".format(t.fee_total or 0) }}</td>
+                            <td><strong>${{ "{:,.2f}".format(t.neto or 0) }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                                No hay operaciones registradas en la bitácora.
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
         </div>
-        <div style="font-size:12px; color:var(--text-secondary); display:flex; gap:16px; flex-wrap:wrap;">
-          <span>{{ t.cantidad|int }} títulos a Bs {{ t.precio }}</span>
-          {% if t.fee_total %}
-          <span style="color:#c47a20;">Fee: Bs {{ t.fee_total|int }}</span>
-          {% endif %}
-          {% if t.neto %}
-          <span>Neto: Bs {{ t.neto|int }}</span>
-          {% endif %}
+    </div>
+
+    <!-- Modal de Registro -->
+    <div class="modal-overlay" id="modal-operacion">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Registrar Operación</h3>
+                <button class="close-btn" onclick="cerrarModal()">&times;</button>
+            </div>
+            <form id="form-operacion" onsubmit="guardarOperacion(event)">
+                <input type="hidden" name="tipo" id="input-tipo" value="COMPRA">
+
+                <div class="tipo-selector">
+                    <button type="button" class="tipo-btn" id="btn-compra" onclick="setTipo('COMPRA')">COMPRA</button>
+                    <button type="button" class="tipo-btn" id="btn-venta" onclick="setTipo('VENTA')">VENTA</button>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Símbolo</label>
+                        <input type="text" name="simbolo" required placeholder="Ej. BVC">
+                    </div>
+                    <div class="form-group">
+                        <label>Motivo / Estrategia</label>
+                        <input type="text" name="motivo" placeholder="Ej. Breakout / Rebalanceo">
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Cantidad</label>
+                        <input type="number" step="any" name="cantidad" id="input-cantidad" required oninput="calcularPreview()">
+                    </div>
+                    <div class="form-group">
+                        <label>Precio ($)</label>
+                        <input type="number" step="any" name="precio" id="input-precio" required oninput="calcularPreview()">
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Comisión ($)</label>
+                        <input type="number" step="any" name="comision" id="input-comision" value="0" oninput="calcularPreview()">
+                    </div>
+                    <div class="form-group">
+                        <label>Registro ($)</label>
+                        <input type="number" step="any" name="registro" id="input-registro" value="0" oninput="calcularPreview()">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>IVA (%)</label>
+                    <input type="number" step="any" name="iva" id="input-iva" value="16" oninput="calcularPreview()">
+                </div>
+
+                <div class="fee-preview" id="fee-preview">
+                    <span>Bruto: $0.00</span> | 
+                    <span>Comisiones + IVA: $0.00</span> | 
+                    <strong>Total Estimado: $0.00</strong>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn" style="background: transparent; color: var(--text-muted); border: 1px solid var(--border);" onclick="cerrarModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Operación</button>
+                </div>
+            </form>
         </div>
-        {% if t.notas %}
-        <div style="font-size:11px; color:var(--text-muted); margin-top:4px; font-style:italic;">
-          {{ t.notas }}
-        </div>
-        {% endif %}
-        <div style="font-size:11px; color:var(--text-muted); margin-top:2px; display:flex; gap:12px;">
-          {% if t.score %}<span>Score: {{ t.score }}</span>{% endif %}
-          {% if t.tasa_bcv %}<span>BCV: {{ t.tasa_bcv|int }} Bs/$</span>{% endif %}
-        </div>
-      </div>
-      <div style="text-align:right;">
-        <div style="font-size:12px; color:var(--text-secondary);">{{ t.fecha.strftime('%d/%m/%Y') }}</div>
-        <div style="font-size:11px; color:var(--text-muted);">{{ t.fecha.strftime('%H:%M') }}</div>
-      </div>
-    </div>
-    {% endfor %}
-    {% else %}
-    <div style="padding:40px; text-align:center; color:var(--text-secondary);">
-      <p style="font-size:14px; margin:0 0 8px;">Sin operaciones registradas</p>
-      <p style="font-size:12px; color:var(--text-muted); margin:0;">Registra tu primera compra o venta para empezar la bitácora.</p>
-    </div>
-    {% endif %}
-  </div>
-
-  <div style="margin-top:12px; padding:10px 12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.6; border-left:3px solid #eda100;">
-    <strong>Liquidación T+3:</strong> Las operaciones se acreditan en 3 días hábiles.
-  </div>
-</div>
-
-<!-- Modal -->
-<div id="modal-nueva" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:flex-end; justify-content:center;">
-  <div style="background:var(--bg-card); border-radius:16px 16px 0 0; padding:20px; width:100%; max-width:500px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-      <h2 style="font-size:16px; font-weight:600; margin:0;">Registrar operación</h2>
-      <button onclick="document.getElementById('modal-nueva').style.display='none'"
-              style="background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer;">X</button>
     </div>
 
-    <div style="display:flex; gap:8px; margin-bottom:12px;">
-      <button onclick="setTipo('compra')" id="btn-compra"
-              style="flex:1; padding:8px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;
-                     border:1.5px solid #1baf7a; background:#1baf7a22; color:#1baf7a;">
-        Compra
-      </button>
-      <button onclick="setTipo('venta')" id="btn-venta"
-              style="flex:1; padding:8px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;
-                     border:1px solid var(--border); background:transparent; color:var(--text-secondary);">
-        Venta
-      </button>
-    </div>
+    <script>
+        // Funciones de control del Modal
+        function abrirModal() {
+            document.getElementById('modal-operacion').style.display = 'flex';
+            setTipo('COMPRA');
+        }
 
-    <input type="hidden" id="tipo-value" value="compra">
+        function cerrarModal() {
+            document.getElementById('modal-operacion').style.display = 'none';
+        }
 
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
-      <div>
-        <label style="font-size:11px; color:var(--text-secondary);">Símbolo</label>
-        <input type="text" id="inp-simbolo" placeholder="RST" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px; text-transform:uppercase;">
-      </div>
-      <div>
-        <label style="font-size:11px; color:var(--text-secondary);">Cantidad</label>
-        <input type="number" id="inp-cantidad" placeholder="100" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px;">
-      </div>
-    </div>
+        // Selección de Tipo de Operación
+        function setTipo(tipo) {
+            const btnCompra = document.getElementById('btn-compra');
+            const btnVenta = document.getElementById('btn-venta');
+            const inputTipo = document.getElementById('input-tipo');
 
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
-      <div>
-        <label style="font-size:11px; color:var(--text-secondary);">Precio (Bs)</label>
-        <input type="number" step="0.01" id="inp-precio" placeholder="515.00" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px;">
-      </div>
-      <div>
-        <label style="font-size:11px; color:var(--text-secondary);">Motivo</label>
-        <select id="inp-motivo" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
-          <option value="acumulacion_caida">Comprar caída</option>
-          <option value="toma_ganancias">Toma de ganancias</option>
-          <option value="rotacion_trimestral">Rotación trimestral</option>
-          <option value="cortar_congelado">Cortar congelado</option>
-          <option value="dividendo">Dividendo</option>
-        </select>
-      </div>
-    </div>
+            inputTipo.value = tipo;
 
-    <div style="margin-bottom:8px;">
-      <label style="font-size:11px; color:var(--text-secondary);">Notas (opcional)</label>
-      <input type="text" id="inp-notas" placeholder="Cayó 18% sin evento corporativo" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
-    </div>
+            if (tipo === 'COMPRA') {
+                btnCompra.style.border = '1px solid var(--primary)';
+                btnCompra.style.background = 'rgba(34, 197, 94, 0.1)';
+                btnVenta.style.border = '1px solid var(--border)';
+                btnVenta.style.background = 'transparent';
+            } else {
+                btnVenta.style.border = '1px solid var(--danger)';
+                btnVenta.style.background = 'rgba(239, 68, 68, 0.1)';
+                btnCompra.style.border = '1px solid var(--border)';
+                btnCompra.style.background = 'transparent';
+            }
+            calcularPreview();
+        }
 
-    <div id="fee-preview" style="background:var(--bg-body); border-radius:8px; padding:10px; margin-bottom:12px; font-size:12px; color:var(--text-secondary); display:none;">
-      <div style="display:flex; justify-content:space-between;"><span>Monto bruto:</span><span id="fp-bruto"></span></div>
-      <div style="display:flex; justify-content:space-between;"><span>Corretaje (4%):</span><span id="fp-corretaje"></span></div>
-      <div style="display:flex; justify-content:space-between;"><span>IVA (0.64%):</span><span id="fp-iva"></span></div>
-      <div style="display:flex; justify-content:space-between;"><span>ISLR (1%):</span><span id="fp-islr"></span></div>
-      <div style="display:flex; justify-content:space-between;"><span>Registro (0.1%):</span><span id="fp-registro"></span></div>
-      <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border); padding-top:4px; margin-top:4px; font-weight:500; color:var(--text-primary);">
-        <span>Neto:</span><span id="fp-neto"></span>
-      </div>
-    </div>
+        // Cálculo dinámico en tiempo real de comisiones e importe total
+        function calcularPreview() {
+            const cantidad = parseFloat(document.getElementById('input-cantidad').value) || 0;
+            const precio = parseFloat(document.getElementById('input-precio').value) || 0;
+            const comision = parseFloat(document.getElementById('input-comision').value) || 0;
+            const registro = parseFloat(document.getElementById('input-registro').value) || 0;
+            const iva = parseFloat(document.getElementById('input-iva').value) || 16;
 
-    <button onclick="guardarOperacion()"
-            style="width:100%; padding:12px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-size:14px; font-weight:500; cursor:pointer;">
-      Guardar en bitácora
-    </button>
-  </div>
-</div>
-{% endblock %}
+            const bruto = cantidad * precio;
+            const feeTotal = comision + registro + (comision * (iva / 100));
+            const neto = bruto + feeTotal;
 
-{% block extra_scripts %}
-<script>
-let tipoActual = 'compra';
-function setTipo(tipo) {
-    tipoActual = tipo;
-    document.getElementById('tipo-value').value = tipo;
-    const bc = document.getElementById('btn-compra');
-    const bv = document.getElementById('btn-venta');
-    if (tipo === 'compra') {
-        bc.style.cssText = 'flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid #1baf7a;background:#1baf7a22;color:#1baf7a';
-        bv.style.cssText = 'flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-secondary)';
-    } else {
-        bv.style.cssText = 'flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1.5px solid #d03b3b;background:#d03b3b22;color:#d03b3b';
-        bc.style.cssText = 'flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-secondary)';
-    }
-    calcularFees();
-}
-function calcularFees() {
-    const cant = parseFloat(document.getElementById('inp-cantidad').value) || 0;
-    const precio = parseFloat(document.getElementById('inp-precio').value) || 0;
-    const bruto = cant * precio;
-    const preview = document.getElementById('fee-preview');
-    if (bruto <= 0) { preview.style.display = 'none'; return; }
-    preview.style.display = 'block';
-    const corretaje = bruto * 0.04;
-    const iva = corretaje * 0.16;
-    const islr = tipoActual === 'venta' ? bruto * 0.01 : 0;
-    const registro = bruto * 0.001;
-    const neto = tipoActual === 'venta' ? bruto - corretaje - iva - islr - registro : bruto + corretaje + iva + registro;
-    document.getElementById('fp-bruto').textContent = 'Bs ' + Math.round(bruto).toLocaleString();
-    document.getElementById('fp-corretaje').textContent = 'Bs ' + Math.round(corretaje).toLocaleString();
-    document.getElementById('fp-iva').textContent = 'Bs ' + Math.round(iva).toLocaleString();
-    document.getElementById('fp-islr').textContent = tipoActual === 'venta' ? 'Bs ' + Math.round(islr).toLocaleString() : 'N/A';
-    document.getElementById('fp-registro').textContent = 'Bs ' + Math.round(registro).toLocaleString();
-    document.getElementById('fp-neto').textContent = 'Bs ' + Math.round(neto).toLocaleString();
-}
-if (document.getElementById('inp-cantidad')) document.getElementById('inp-cantidad').addEventListener('input', calcularFees);
-if (document.getElementById('inp-precio')) document.getElementById('inp-precio').addEventListener('input', calcularFees);
-async function guardarOperacion() {
-    const data = {
-        simbolo: document.getElementById('inp-simbolo').value.toUpperCase().trim(),
-        tipo: tipoActual,
-        cantidad: parseFloat(document.getElementById('inp-cantidad').value),
-        precio: parseFloat(document.getElementById('inp-precio').value),
-        motivo: document.getElementById('inp-motivo').value,
-        notas: document.getElementById('inp-notas').value.trim(),
-    };
-    if (!data.simbolo || !data.cantidad || !data.precio) { alert('Completa símbolo, cantidad y precio'); return; }
-    const resp = await fetch('/api/bitacora', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
-    if (resp.ok) { window.location.reload(); } else { const err = await resp.json(); alert(err.detail || 'Error'); }
-}
-</script>
-{% endblock %}
+            const previewEl = document.getElementById('fee-preview');
+            if (previewEl) {
+                previewEl.innerHTML = `
+                    <span>Bruto: $${bruto.toFixed(2)}</span> | 
+                    <span>Comisiones + IVA: $${feeTotal.toFixed(2)}</span> | 
+                    <strong>Total Estimado: $${neto.toFixed(2)}</strong>
+                `;
+            }
+        }
+
+        // Envío asíncrono del formulario a la API
+        async function guardarOperacion(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+
+            try {
+                const response = await fetch('/api/bitacora', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    const error = await response.json();
+                    alert('Error al guardar: ' + (error.detail || 'Error desconocido'));
+                }
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error de conexión al intentar guardar la operación.');
+            }
+        }
+    </script>
+</body>
+</html>
