@@ -318,6 +318,40 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
     deval_input = deval if deval > 0 else None
     resultados, deval_usado, metadata = await calcular_scoring_completo(devaluacion_pct=deval_input)
 
+    # Cargar portafolio del usuario para señales de venta
+    activos_db = db.query(ActivoPortafolio).filter(ActivoPortafolio.usuario_id == usuario.id).all()
+    portafolio_map = {a.simbolo: a for a in activos_db}
+
+    señales_venta = []
+    for r in resultados:
+        simb = r.get("simbolo")
+        if simb not in portafolio_map:
+            continue
+        activo = portafolio_map[simb]
+        precio_actual = r.get("precio", 0)
+        precio_compra = activo.precio_promedio or 0
+        if precio_compra <= 0:
+            continue
+        ganancia_pct = round(((precio_actual / precio_compra) - 1) * 100, 1)
+        motivo = None
+        if ganancia_pct >= 50:
+            motivo = "ganancia"
+        elif r.get("din_score", 0) == 0:
+            motivo = "congelado"
+        elif r.get("total", 0) < 30:
+            motivo = "score_minimo"
+        if motivo:
+            señales_venta.append({
+                "simbolo": simb,
+                "ganancia_pct": ganancia_pct,
+                "precio_compra": precio_compra,
+                "precio_actual": precio_actual,
+                "cantidad": activo.cantidad,
+                "total": r.get("total", 0),
+                "din_score": r.get("din_score", 0),
+                "motivo": motivo,
+            })
+
     return render("scoring.html", {
         "request": request,
         "resultados": resultados,
@@ -329,6 +363,7 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
         "bajo_count": sum(1 for r in resultados if r.get("accion_label") == "Score bajo"),
         "minimo_count": sum(1 for r in resultados if r.get("accion_label") == "Score mínimo"),
         "señales_compra": [r for r in resultados if r.get("señal_compra")],
+        "señales_venta": señales_venta,
         "active": "scoring",
         "usuario": usuario,
         "dias": dias_restantes(usuario),
