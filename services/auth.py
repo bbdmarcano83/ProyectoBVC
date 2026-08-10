@@ -106,6 +106,13 @@ def dias_restantes(usuario: Usuario) -> int:
     return max(0, delta.days)
 
 
+def get_plan(usuario: Usuario) -> str:
+    """Devuelve el plan del usuario: 'trial', 'basico', 'intermedio', 'pro', o 'ninguno'."""
+    if not usuario.suscripcion or not suscripcion_activa(usuario):
+        return "ninguno"
+    return usuario.suscripcion.plan or "trial"
+
+
 # ── Dependencias FastAPI ──────────────────────────────────────────────────────
 
 def get_usuario_actual(request: Request, db: Session = Depends(get_db)) -> Optional[Usuario]:
