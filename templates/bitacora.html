@@ -11,14 +11,13 @@
         {{ transacciones|length }} operaciones · Fees acumulados: Bs {{ total_fees|int }} · Liquidación T+3
       </p>
     </div>
-    <button onclick="document.getElementById('modal-op').style.display='flex'"
+    <button onclick="abrirModal()"
             style="padding:8px 16px; border:none; border-radius:8px;
                    background:var(--accent); color:#fff; font-size:13px; font-weight:500; cursor:pointer;">
       + Nueva operación
     </button>
   </div>
 
-  <!-- Resumen -->
   <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
     <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
       <div style="font-size:11px; color:var(--text-secondary);">Compras</div>
@@ -38,56 +37,61 @@
     </div>
   </div>
 
-  <!-- Tabla de operaciones -->
   <div style="background:var(--bg-card); border-radius:12px; overflow:hidden;">
     {% if transacciones %}
-    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+    <table style="width:100%; border-collapse:collapse; font-size:12px;">
       <thead>
         <tr style="border-bottom:1px solid var(--border);">
-          <th style="padding:10px 12px; text-align:left; font-size:11px; color:var(--text-secondary);">Fecha</th>
+          <th style="padding:10px 8px; text-align:left; font-size:11px; color:var(--text-secondary);">Fecha</th>
           <th style="padding:10px 8px; text-align:left; font-size:11px; color:var(--text-secondary);">Título</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Tipo</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Cant.</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Precio</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Fee</th>
-          <th style="padding:10px 8px; text-align:center; font-size:11px; color:var(--text-secondary);">Neto</th>
-          <th style="padding:10px 12px; text-align:center; font-size:11px; color:var(--text-secondary);">Motivo</th>
+          <th style="padding:10px 6px; text-align:center; font-size:11px; color:var(--text-secondary);">Tipo</th>
+          <th style="padding:10px 6px; text-align:center; font-size:11px; color:var(--text-secondary);">Cant.</th>
+          <th style="padding:10px 6px; text-align:center; font-size:11px; color:var(--text-secondary);">Precio</th>
+          <th style="padding:10px 6px; text-align:center; font-size:11px; color:var(--text-secondary);">Fee</th>
+          <th style="padding:10px 6px; text-align:center; font-size:11px; color:var(--text-secondary);">Neto</th>
+          <th style="padding:10px 6px; text-align:center; font-size:11px; color:var(--text-secondary);">Motivo</th>
+          <th style="padding:10px 6px; text-align:center; font-size:11px; color:var(--text-secondary);"></th>
         </tr>
       </thead>
       <tbody>
         {% for t in transacciones %}
         <tr style="border-bottom:0.5px solid var(--border);">
-          <td style="padding:8px 12px; font-size:12px; color:var(--text-secondary);">{{ t.fecha.strftime('%d/%m/%y') }}</td>
-          <td style="padding:8px 8px; font-weight:500;">{{ t.simbolo }}</td>
-          <td style="padding:8px 8px; text-align:center;">
+          <td style="padding:6px 8px; color:var(--text-secondary);">{{ t.fecha.strftime('%d/%m/%y') }}</td>
+          <td style="padding:6px 8px; font-weight:500;">{{ t.simbolo }}</td>
+          <td style="padding:6px 6px; text-align:center;">
             {% if t.tipo == 'compra' %}
-            <span style="font-size:10px; padding:2px 8px; border-radius:6px; background:#1baf7a22; color:#1baf7a;">COMPRA</span>
+            <span style="font-size:9px; padding:2px 6px; border-radius:6px; background:#1baf7a22; color:#1baf7a;">COMPRA</span>
             {% else %}
-            <span style="font-size:10px; padding:2px 8px; border-radius:6px; background:#d03b3b22; color:#d03b3b;">VENTA</span>
+            <span style="font-size:9px; padding:2px 6px; border-radius:6px; background:#d03b3b22; color:#d03b3b;">VENTA</span>
             {% endif %}
           </td>
-          <td style="padding:8px 8px; text-align:center;">{{ t.cantidad|int }}</td>
-          <td style="padding:8px 8px; text-align:center;">Bs {{ t.precio }}</td>
-          <td style="padding:8px 8px; text-align:center; color:#c47a20;">
-            {% if t.fee_total %}Bs {{ t.fee_total|int }}{% else %}-{% endif %}
+          <td style="padding:6px 6px; text-align:center;">{{ t.cantidad|int }}</td>
+          <td style="padding:6px 6px; text-align:center;">{{ t.precio }}</td>
+          <td style="padding:6px 6px; text-align:center; color:#c47a20; font-size:11px;">
+            {% if t.fee_total %}{{ t.fee_total|int }}{% else %}-{% endif %}
           </td>
-          <td style="padding:8px 8px; text-align:center; font-weight:500;">
-            {% if t.neto %}Bs {{ t.neto|int }}{% else %}-{% endif %}
+          <td style="padding:6px 6px; text-align:center; font-weight:500; font-size:11px;">
+            {% if t.neto %}{{ t.neto|int }}{% else %}-{% endif %}
           </td>
-          <td style="padding:8px 12px; text-align:center;">
+          <td style="padding:6px 6px; text-align:center;">
             {% if t.motivo == 'acumulacion_caida' %}
-            <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:#2a78d622; color:#2a78d6;">Caída</span>
+            <span style="font-size:9px; padding:1px 5px; border-radius:4px; background:#2a78d622; color:#2a78d6;">Caída</span>
             {% elif t.motivo == 'toma_ganancias' %}
-            <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:#1baf7a22; color:#1baf7a;">Ganancia</span>
+            <span style="font-size:9px; padding:1px 5px; border-radius:4px; background:#1baf7a22; color:#1baf7a;">Ganancia</span>
             {% elif t.motivo == 'rotacion_trimestral' %}
-            <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:#9085e922; color:#9085e9;">Rotación</span>
+            <span style="font-size:9px; padding:1px 5px; border-radius:4px; background:#9085e922; color:#9085e9;">Rotación</span>
             {% elif t.motivo == 'cortar_congelado' %}
-            <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:#c47a2022; color:#c47a20;">Congelado</span>
+            <span style="font-size:9px; padding:1px 5px; border-radius:4px; background:#c47a2022; color:#c47a20;">Congelado</span>
             {% elif t.motivo == 'dividendo' %}
-            <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:#1baf7a22; color:#1baf7a;">Dividendo</span>
+            <span style="font-size:9px; padding:1px 5px; border-radius:4px; background:#1baf7a22; color:#1baf7a;">Dividendo</span>
             {% else %}
-            <span style="font-size:10px; color:var(--text-muted);">-</span>
+            <span style="font-size:9px; color:var(--text-muted);">-</span>
             {% endif %}
+          </td>
+          <td style="padding:6px 6px; text-align:center;">
+            <button onclick="eliminar({{ t.id }})"
+                    style="background:none; border:none; color:#d03b3b; font-size:14px; cursor:pointer; padding:2px 4px;"
+                    title="Eliminar">x</button>
           </td>
         </tr>
         {% endfor %}
@@ -96,24 +100,22 @@
     {% else %}
     <div style="padding:40px; text-align:center; color:var(--text-secondary);">
       <p style="font-size:14px; margin:0 0 8px;">Sin operaciones registradas</p>
-      <p style="font-size:12px; color:var(--text-muted); margin:0;">Registra tu primera operación para empezar la bitácora.</p>
+      <p style="font-size:12px; color:var(--text-muted); margin:0;">Registra tu primera operación.</p>
     </div>
     {% endif %}
   </div>
 
-  <!-- Nota T+3 -->
   <div style="margin-top:12px; padding:10px 12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.6; border-left:3px solid #eda100;">
-    <strong>Liquidación T+3:</strong> Las operaciones se acreditan en 3 días hábiles. Fee de compra: 4.74%. Fee de venta: 5.74%.
+    <strong>Liquidación T+3:</strong> Fee compra: 4.74%. Fee venta: 5.74%. Acreditación en 3 días hábiles.
   </div>
 </div>
 
-<!-- Modal nueva operación -->
+<!-- Modal -->
 <div id="modal-op" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; justify-content:center; align-items:center;">
   <div style="background:var(--bg-card); border-radius:12px; padding:20px; width:90%; max-width:460px; max-height:90vh; overflow-y:auto;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
       <h2 style="font-size:16px; font-weight:600; margin:0;">Registrar operación</h2>
-      <button onclick="document.getElementById('modal-op').style.display='none'"
-              style="background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer;">X</button>
+      <button onclick="cerrarModal()" style="background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer;">X</button>
     </div>
 
     <div style="display:flex; gap:8px; margin-bottom:12px;">
@@ -132,18 +134,26 @@
                style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px; text-transform:uppercase;">
       </div>
       <div>
-        <label style="font-size:11px; color:var(--text-secondary);">Cantidad</label>
-        <input type="number" id="f-cant" placeholder="100" oninput="calcFees()"
-               style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px;">
+        <label style="font-size:11px; color:var(--text-secondary);">Fecha</label>
+        <input type="date" id="f-fecha"
+               style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
       </div>
     </div>
 
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
       <div>
+        <label style="font-size:11px; color:var(--text-secondary);">Cantidad</label>
+        <input type="number" id="f-cant" placeholder="100" oninput="calcFees()"
+               style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px;">
+      </div>
+      <div>
         <label style="font-size:11px; color:var(--text-secondary);">Precio (Bs)</label>
         <input type="number" step="0.01" id="f-precio" placeholder="515" oninput="calcFees()"
                style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:14px;">
       </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
       <div>
         <label style="font-size:11px; color:var(--text-secondary);">Motivo</label>
         <select id="f-motivo"
@@ -155,15 +165,13 @@
           <option value="dividendo">Dividendo</option>
         </select>
       </div>
+      <div>
+        <label style="font-size:11px; color:var(--text-secondary);">Notas</label>
+        <input type="text" id="f-notas" placeholder="Score 85"
+               style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
+      </div>
     </div>
 
-    <div style="margin-bottom:8px;">
-      <label style="font-size:11px; color:var(--text-secondary);">Notas (opcional)</label>
-      <input type="text" id="f-notas" placeholder="Score 85, caída -18%"
-             style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-body); color:var(--text-primary); font-size:13px;">
-    </div>
-
-    <!-- Preview de fees -->
     <div id="fee-box" style="display:none; background:var(--bg-body); border-radius:8px; padding:10px; margin-bottom:12px; font-size:12px; color:var(--text-secondary);">
       <div style="display:flex; justify-content:space-between;"><span>Bruto:</span><span id="fb-bruto"></span></div>
       <div style="display:flex; justify-content:space-between;"><span>Corretaje (4%):</span><span id="fb-corr"></span></div>
@@ -185,7 +193,14 @@
 
 {% block extra_scripts %}
 <script>
-let tipo = 'compra';
+var tipo = 'compra';
+function abrirModal() {
+  document.getElementById('modal-op').style.display = 'flex';
+  var hoy = new Date().toISOString().split('T')[0];
+  document.getElementById('f-fecha').value = hoy;
+  setTipo('compra');
+}
+function cerrarModal() { document.getElementById('modal-op').style.display = 'none'; }
 function setTipo(t) {
   tipo = t;
   var bc = document.getElementById('btn-c');
@@ -219,8 +234,6 @@ function calcFees() {
   document.getElementById('fb-reg').textContent = 'Bs ' + Math.round(reg).toLocaleString();
   document.getElementById('fb-neto').textContent = 'Bs ' + Math.round(neto).toLocaleString();
 }
-document.getElementById('f-cant').addEventListener('input', calcFees);
-document.getElementById('f-precio').addEventListener('input', calcFees);
 function guardar() {
   var data = {
     simbolo: document.getElementById('f-simb').value.toUpperCase().trim(),
@@ -228,11 +241,17 @@ function guardar() {
     cantidad: parseFloat(document.getElementById('f-cant').value),
     precio: parseFloat(document.getElementById('f-precio').value),
     motivo: document.getElementById('f-motivo').value,
-    notas: document.getElementById('f-notas').value.trim()
+    notas: document.getElementById('f-notas').value.trim(),
+    fecha: document.getElementById('f-fecha').value
   };
   if (!data.simbolo || !data.cantidad || !data.precio) { alert('Completa los campos'); return; }
   fetch('/api/bitacora', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) })
     .then(function(r) { if (r.ok) { window.location.reload(); } else { r.json().then(function(e) { alert(e.detail || 'Error'); }); } });
+}
+function eliminar(id) {
+  if (!confirm('Eliminar esta operación?')) return;
+  fetch('/api/bitacora/' + id, { method: 'DELETE' })
+    .then(function(r) { if (r.ok) { window.location.reload(); } else { alert('Error al eliminar'); } });
 }
 </script>
 {% endblock %}
