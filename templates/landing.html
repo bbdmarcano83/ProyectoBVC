@@ -160,7 +160,7 @@
         La bolsa de Caracas,<br>en tu <span class="accent">bolsillo</span>
     </h1>
     <p class="hero-sub">
-        Sigue tus inversiones, analiza el mercado y recibe alertas instantáneas. La única plataforma profesional enfocada en la BVC.
+        Scoring cuantitativo, detector de oportunidades, alertas inteligentes y bitácora de operaciones. La única plataforma profesional de análisis para la Bolsa de Valores de Caracas.
     </p>
     <div class="hero-btns">
         {% if usuario %}
@@ -200,8 +200,8 @@
         <div class="stat-hero-label">Prueba gratuita</div>
     </div>
     <div class="stat-hero">
-        <div class="stat-hero-num">1,5 USDT</div>
-        <div class="stat-hero-label">Plan básico/mes</div>
+        <div class="stat-hero-num">3 planes</div>
+        <div class="stat-hero-label">Desde 1,5 USDT/mes</div>
     </div>
 </div>
 
@@ -213,32 +213,32 @@
         <div class="feature-card">
             <div class="feature-icon"><i class="ti ti-chart-candle"></i></div>
             <h3 class="feature-name">Pizarra en tiempo real</h3>
-            <p class="feature-desc">Precios, volumen, variaciones y profundidad de mercado de todas las acciones de la BVC, actualizados al instante.</p>
+            <p class="feature-desc">Precios, volumen, variaciones y profundidad de mercado de las 32 acciones de la BVC, actualizados al instante.</p>
         </div>
         <div class="feature-card">
-            <div class="feature-icon"><i class="ti ti-briefcase"></i></div>
-            <h3 class="feature-name">Portafolio personal</h3>
-            <p class="feature-desc">Registra tus posiciones y ve tu ganancia en Bs y USD en tiempo real, con cálculo de comisiones e IVA incluido.</p>
+            <div class="feature-icon"><i class="ti ti-target"></i></div>
+            <h3 class="feature-name">Motor de Scoring</h3>
+            <p class="feature-desc">Evalúa cada acción en 4 dimensiones: rendimiento vs devaluación, liquidez, dinamismo de precio y tendencia. Detecta precios congelados automáticamente. <span style="color:var(--accent); font-size:11px; font-weight:600;">INTERMEDIO</span></p>
         </div>
         <div class="feature-card">
-            <div class="feature-icon"><i class="ti ti-bell"></i></div>
-            <h3 class="feature-name">Alertas por Telegram</h3>
-            <p class="feature-desc">Recibe notificaciones instantáneas cuando una acción sube o baja el porcentaje que tú configures. No te pierdas ningún movimiento.</p>
+            <div class="feature-icon" style="color:#d03b3b;"><i class="ti ti-trending-down"></i></div>
+            <h3 class="feature-name">Fear Detector</h3>
+            <p class="feature-desc">Identifica automáticamente acciones con Score alto que cayeron más de 15% desde su máximo. Te dice exactamente cuándo comprar y cuándo vender. <span style="color:var(--gold); font-size:11px; font-weight:600;">PRO</span></p>
         </div>
         <div class="feature-card">
             <div class="feature-icon"><i class="ti ti-chart-line"></i></div>
             <h3 class="feature-name">Gráficas de velas</h3>
-            <p class="feature-desc">Histórico completo de precios con gráficas de velas japonesas. Filtra por 1M, 3M, 6M, 1 año o todo el histórico disponible.</p>
+            <p class="feature-desc">Histórico completo con gráficas de velas japonesas y volumen. Filtra por 1M, 3M, 6M, 1 año o todo el disponible.</p>
         </div>
         <div class="feature-card">
-            <div class="feature-icon"><i class="ti ti-file-text"></i></div>
-            <h3 class="feature-name">Reportes PDF</h3>
-            <p class="feature-desc">Genera reportes mensuales de tu portafolio en PDF para llevar un registro de tus inversiones y compartir con tu asesor. <span style="color:var(--gold); font-size:11px; font-weight:600;">PRO</span></p>
+            <div class="feature-icon"><i class="ti ti-notebook"></i></div>
+            <h3 class="feature-name">Bitácora de operaciones</h3>
+            <p class="feature-desc">Registra cada compra y venta con cálculo automático de comisiones (corretaje 4%, IVA, ISLR). Controla tu rendimiento real después de fees.</p>
         </div>
         <div class="feature-card">
-            <div class="feature-icon"><i class="ti ti-calculator"></i></div>
-            <h3 class="feature-name">Calculadora ISLR</h3>
-            <p class="feature-desc">Calcula automáticamente tu ganancia gravable del año y genera el resumen fiscal. La función que ninguna otra app ofrece. <span style="color:var(--gold); font-size:11px; font-weight:600;">PRO</span></p>
+            <div class="feature-icon"><i class="ti ti-bell"></i></div>
+            <h3 class="feature-name">Alertas Telegram al cierre</h3>
+            <p class="feature-desc">Recibe un resumen diario del scoring al cierre del mercado con señales de compra y venta directamente en tu Telegram. <span style="color:var(--gold); font-size:11px; font-weight:600;">PRO</span></p>
         </div>
     </div>
 </section>
@@ -248,7 +248,7 @@
     <div class="pricing-inner">
         <h2 class="pricing-title">Precios simples y transparentes</h2>
         <p class="pricing-sub">Sin sorpresas. Paga en USDT, cancela cuando quieras.</p>
-        <div class="planes-grid">
+        <div class="planes-grid" style="grid-template-columns:repeat(3,1fr);">
             <div class="plan-card">
                 <div class="plan-header">
                     <h3 class="plan-nombre">Básico</h3>
@@ -264,8 +264,28 @@
                     <li>✓ Profundidad de mercado</li>
                     <li>✓ Alertas Telegram (3)</li>
                     <li>✓ Watchlist personal</li>
-                    <li class="dim">✗ Reportes PDF</li>
-                    <li class="dim">✗ Calculadora ISLR</li>
+                    <li class="dim">✗ Motor de Scoring</li>
+                    <li class="dim">✗ Fear Detector</li>
+                </ul>
+                <a href="/registro" class="btn btn--ghost" style="width:100%; justify-content:center;">Empezar gratis</a>
+            </div>
+            <div class="plan-card">
+                <div class="plan-header">
+                    <h3 class="plan-nombre">Intermedio</h3>
+                    <div class="plan-precio">
+                        <span class="plan-monto">3,0</span>
+                        <span class="plan-moneda">USDT / mes</span>
+                    </div>
+                </div>
+                <ul class="plan-features">
+                    <li>✓ Todo lo del plan Básico</li>
+                    <li>✓ Motor de Scoring (32 acciones)</li>
+                    <li>✓ Desglose 4 dimensiones</li>
+                    <li>✓ Bitácora de operaciones</li>
+                    <li>✓ Alerta Telegram al cierre</li>
+                    <li>✓ Comparador de acciones</li>
+                    <li class="dim">✗ Fear Detector</li>
+                    <li class="dim">✗ Señales de compra/venta</li>
                 </ul>
                 <a href="/registro" class="btn btn--ghost" style="width:100%; justify-content:center;">Empezar gratis</a>
             </div>
@@ -274,18 +294,18 @@
                 <div class="plan-header">
                     <h3 class="plan-nombre">Pro</h3>
                     <div class="plan-precio">
-                        <span class="plan-monto">4,0</span>
+                        <span class="plan-monto">6,0</span>
                         <span class="plan-moneda">USDT / mes</span>
                     </div>
                 </div>
                 <ul class="plan-features">
-                    <li>✓ Todo lo del plan Básico</li>
-                    <li>✓ Alertas ilimitadas</li>
+                    <li>✓ Todo lo del plan Intermedio</li>
+                    <li>✓ Fear Detector automático</li>
+                    <li>✓ Señales de compra y venta</li>
+                    <li>✓ Alertas completas Telegram</li>
                     <li>✓ Reportes PDF mensuales</li>
                     <li>✓ Calculadora ISLR</li>
-                    <li>✓ Comparador de acciones</li>
-                    <li>✓ Historial de transacciones</li>
-                    <li>✓ Índice vs mercado</li>
+                    <li>✓ Asistente IA</li>
                     <li>✓ Soporte prioritario</li>
                 </ul>
                 <a href="/registro" class="btn btn--primary" style="width:100%; justify-content:center;">Empezar gratis</a>
@@ -325,4 +345,4 @@
 </footer>
 
 </body>
-</html>
+                </html>
