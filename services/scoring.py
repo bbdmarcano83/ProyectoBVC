@@ -320,7 +320,7 @@ async def calcular_scoring_completo(devaluacion_pct: float | None = None) -> tup
         accion = _determinar_accion(total)
 
         # Señal de compra: caída >15% + score >65
-        señal_compra = miedo["es_oportunidad"] and total >= 65
+        señal_compra = miedo["es_oportunidad"] and total >= 65 and liq["score"] >= 15
 
         precio_actual = _to_float(historico[0].get("PRECIO_CIE", 0))
         fecha_ultimo = historico[0].get("FEC", "N/A")
