@@ -46,5 +46,23 @@ jobs:
           services/portfolio_v4.py
           services/engine_router.py
           services/alertas_cierre.py
+      - name: Validate Jinja templates
+        run: |
+          python - <<'PY'
+          from jinja2 import Environment, FileSystemLoader, select_autoescape
+          env = Environment(loader=FileSystemLoader("templates"), autoescape=select_autoescape(["html"]))
+          for name in ("scoring.html", "portafolio.html"):
+              env.get_template(name)
+              print(f"template ok: {name}")
+          PY
+      - name: Initialize ephemeral database schema
+        run: |
+          rm -f /tmp/caracasbull.db
+          python - <<'PY'
+          from database import init_db, DB_PERSISTENCE_MODE
+          init_db()
+          assert DB_PERSISTENCE_MODE == "ephemeral"
+          print("ephemeral DB schema ok")
+          PY
       - name: Run unit and contract tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
