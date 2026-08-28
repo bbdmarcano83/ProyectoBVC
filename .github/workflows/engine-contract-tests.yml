@@ -13,6 +13,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      APP_ENV: development
+      SCORING_ENGINE_V3_ENABLED: "true"
+      PORTFOLIO_ENGINE_V4_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,7 +25,24 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
-      - name: Compile engine modules
-        run: python -m py_compile services/feature_flags.py services/scoring_v3.py services/portfolio_v4.py services/engine_router.py
-      - name: Run engine contract tests
-        run: python -m unittest tests/test_engines_v3_v4.py
+      - name: Compile runtime modules
+        run: >-
+          python -m py_compile
+          services/__init__.py
+          services/auth.py
+          services/security_runtime.py
+          services/secret_guard.py
+          services/feature_flags.py
+          services/scoring_v2.py
+          services/scoring.py
+          services/scoring_v3.py
+          services/scoring_engine_v3.py
+          services/scoring_postprocess.py
+          services/backtest_v3.py
+          services/portafolio_legacy.py
+          services/portafolio.py
+          services/portfolio_v4.py
+          services/engine_router.py
+          services/alertas_cierre.py
+      - name: Run unit and contract tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
