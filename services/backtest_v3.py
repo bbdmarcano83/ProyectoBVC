@@ -5,17 +5,16 @@ El objetivo es validar thresholds y no optimizar sobre todo el histórico.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from services.scoring_engine_v3 import _hist_metrics
 
 
-def _n(v: Any) -> float:
+def _n(v: Any, default: float = 0.0) -> float:
     try:
-        return float(v or 0)
+        return float(v if v is not None else default)
     except (TypeError, ValueError):
-        return 0.0
+        return default
 
 
 def _close(row: dict) -> float:
