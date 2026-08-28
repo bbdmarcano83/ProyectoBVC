@@ -146,7 +146,7 @@ def analizar_portafolio_v4(
         risk = score_row.get("risk_score_v3")
         signal_stage = score_row.get("signal_stage_v3")
 
-        if rendimento >= POLICY.toma_ganancia_pct:
+        if rendimiento >= POLICY.toma_ganancia_pct:
             candidatos_toma.append(
                 {
                     "simbolo": simbolo,
@@ -154,7 +154,7 @@ def analizar_portafolio_v4(
                     "peso_pct": round(peso, 2),
                 }
             )
-        if rendimento <= POLICY.perdida_revisar_pct:
+        if rendimiento <= POLICY.perdida_revisar_pct:
             candidatos_revision.append(
                 {
                     "simbolo": simbolo,
@@ -170,7 +170,7 @@ def analizar_portafolio_v4(
             scoring_weight += peso
             if _f(score) < POLICY.score_debil_max:
                 capital_debil += peso
-            if signal_stage in {"OBSERVAR"} and (_f(score) < POLICY.score_debil_max or _f(risk) >= 70):
+            if signal_stage == "OBSERVAR" and (_f(score) < POLICY.score_debil_max or _f(risk) >= 70):
                 capital_alerta += peso
 
     score_ponderado = round(weighted_score / scoring_weight, 1) if scoring_weight else None
