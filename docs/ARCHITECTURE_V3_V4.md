@@ -3,11 +3,21 @@
 ## Objetivo
 Separar cálculo, política y presentación para evolucionar el scoring y el portafolio sin alterar contratos existentes ni obligar migraciones de datos.
 
+## Restricción de infraestructura actual
+La aplicación NO dispone hoy de una base de datos persistente conectada en producción. El almacenamiento local usado por Render es efímero: puede perderse en reinicios, redeploys o recreaciones de instancia.
+
+Consecuencias:
+- No usar SQLite local como fuente persistente de verdad para historial V3/V4.
+- No guardar snapshots históricos de score en `caracasbull.db` esperando conservarlos entre deploys.
+- No usar `portafolio.json`, `config.json` ni otros archivos locales como almacenamiento persistente nuevo.
+- V3/V4 deben funcionar de forma stateless mientras no exista un storage externo persistente.
+- Cualquier futura persistencia histórica debe quedar detrás de una interfaz desacoplada y activarse sólo cuando exista un backend persistente real.
+
 ## Principios de rollout
 1. `main` permanece estable hasta que cada motor pase pruebas de contrato.
 2. Los motores nuevos son opt-in mediante variables de entorno.
 3. Ningún cambio V3/V4 elimina o renombra campos legacy en su primera etapa.
-4. Las migraciones de datos se hacen después de validar lectura compatible.
+4. No introducir dependencias de persistencia local efímera.
 5. Los cambios se integran por PR pequeño y reversible.
 
 ## Fase 0 — Seguridad y baseline
@@ -17,8 +27,8 @@ Separar cálculo, política y presentación para evolucionar el scoring y el por
 - Eliminar fallbacks de secretos únicamente cuando las variables de producción estén confirmadas.
 
 Riesgos detectados en baseline:
-- `caracasbull.db` está versionada en el repositorio.
-- `portafolio.json` y `config.json` están versionados aunque la app actual ya usa SQLAlchemy para portafolios por usuario.
+- `caracasbull.db` está versionada en el repositorio, pero NO representa una DB persistente conectada en producción.
+- `portafolio.json` y `config.json` están versionados y tampoco deben considerarse almacenamiento persistente.
 - `services/auth.py` contiene un `SECRET_KEY` de desarrollo como fallback.
 - `/api/alertas-cierre` contiene una clave fallback en `main.py`.
 - La migración ad-hoc de `main.py` silencia cualquier excepción y no distingue "columna ya existe" de errores reales.
@@ -26,45 +36,67 @@ Riesgos detectados en baseline:
 ## Fase 1 — V3 Scoring Engine
 Archivo: `services/scoring_v3.py`
 
-Primera entrega compatible:
-- Conserva `(resultados, devaluacion, metadata)`.
-- Conserva todos los campos legacy.
-- Añade `score_v3`, `score_class_v3`, `quality_flags_v3`, `data_quality_ok_v3` y `engine_version`.
-- Añade quality gates para impedir señales cuando faltan precio, fecha, histórico mínimo o liquidez.
-- Mantiene inicialmente los umbrales operativos existentes: score mínimo 65, liquidez 15 y caída -15%.
+Primera entrega compatible/stateless:
+- Conserva todos los campos legacy del V2.
+- Separa `Confidence`, `Strength`, `Opportunity` y `Risk`.
+- Añade percentiles cross-sectional sobre el snapshot actual.
+- Añade quality gates y flags explícitos.
+- Añade estados `OBSERVAR`, `PREPARAR COMPRA` y `OPORTUNIDAD CONFIRMADA`.
+- Añade comparador V2 vs V3 para shadow mode.
+- Consume exactamente el mismo snapshot ya calculado por V2; no hace I/O adicional ni requiere DB.
 
 Activación futura:
-`SCORING_ENGINE_V3_ENABLED=true`
-
-Antes de activar en producción se debe comparar V2 vs V3 con un snapshot real y exigir igualdad en campos legacy.
+- `SCORING_ENGINE_V3_SHADOW=true` para comparación interna.
+- `SCORING_ENGINE_V3_ENABLED=true` para salida visible V3.
 
 ## Fase 2 — V4 Portfolio Engine
 Archivo: `services/portfolio_v4.py`
 
-Primera entrega compatible:
+Primera entrega compatible/stateless:
 - No escribe ni modifica posiciones.
 - Analiza filas ya calculadas por `services.portafolio`.
-- Añade concentración máxima, HHI, ganadores/perdedores, candidatos de toma de ganancia y candidatos de revisión.
-- Mantiene toma de ganancia en +50% como regla inicial compatible.
+- Añade concentración máxima, top-3, HHI y salud de cartera.
+- Añade score/confidence/risk ponderados cuando recibe scoring V3.
+- Añade capital en posiciones débiles y capital en alerta.
+- Añade candidatos de toma de ganancia y revisión.
+- Modela fricción de rotación con corretaje, IVA, registro e ISLR.
+- No requiere persistencia adicional.
 
 Activación futura:
-`PORTFOLIO_ENGINE_V4_ENABLED=true`
+- `PORTFOLIO_ENGINE_V4_SHADOW=true`.
+- `PORTFOLIO_ENGINE_V4_ENABLED=true`.
 
 ## Fase 3 — Integración controlada
-- Introducir adaptador en `main.py` para seleccionar V2/V3 por feature flag.
-- Enriquecer el resumen de `/portafolio` con V4 sin cambiar la plantilla inicialmente.
-- Exponer versión de engine en metadata/API para observabilidad.
-- Añadir pruebas de snapshot/contrato con fixtures reales anonimizadas.
+- Usar `services/engine_router.py` para seleccionar legacy/shadow/enabled fuera de FastAPI.
+- Integrar V3/V4 en `main.py` sólo después de tests de contrato.
+- En shadow mode, mantener V2 visible y calcular V3/V4 sólo para observabilidad.
+- Exponer versión de engine en metadata/API.
+- Añadir fixtures anonimizadas para pruebas reproducibles.
 
-## Fase 4 — Seguridad/arquitectura
+## Fase 4 — Métricas históricas sin DB persistente
+Mientras no exista storage persistente:
+- Calcular momentum multi-horizonte, drawdown y volatilidad directamente desde el histórico de mercado disponible en cada corrida.
+- Mantener estas métricas como cálculo stateless.
+- No prometer persistencia de score histórico entre deploys.
+- El backtest debe reconstruirse desde históricos de mercado disponibles, no desde SQLite efímero.
+
+## Fase 5 — Persistencia opcional futura
+Sólo cuando exista un backend persistente real (PostgreSQL gestionado u otro storage externo):
+- Introducir una interfaz `SnapshotStore` desacoplada del motor.
+- Implementar persistencia de snapshots de score, señales y métricas.
+- Añadir migraciones versionadas.
+- Habilitar score history, alertas por pendiente y análisis longitudinal.
+
+La aplicación debe seguir funcionando si `SnapshotStore` no está configurado.
+
+## Seguridad/arquitectura posterior
 Después de confirmar variables de entorno en producción:
 - Hacer obligatorio `SECRET_KEY` seguro en producción.
 - Hacer obligatorio `ALERTA_SECRET` y comparar con `secrets.compare_digest`.
 - Marcar cookie `Secure` en HTTPS y conservar `HttpOnly`/`SameSite`.
 - Añadir headers de seguridad.
-- Sustituir migraciones ad-hoc por migraciones versionadas.
-- Retirar DB/JSON de runtime del historial activo del repo tras respaldo seguro.
-- Añadir restricciones/índices únicos por usuario y símbolo para portafolio/watchlist.
+- Sustituir migraciones ad-hoc por migraciones versionadas cuando exista una DB persistente real.
+- Retirar DB/JSON runtime del historial activo del repo tras respaldo seguro.
 
 ## Rollback
-Cada fase es reversible desactivando el flag correspondiente. Hasta completar Fase 3, V3/V4 no alteran el flujo activo de `main`.
+Cada fase es reversible desactivando el flag correspondiente. V3/V4 no deben depender de almacenamiento persistente para operar en su modo actual.
