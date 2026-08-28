@@ -1,10 +1,15 @@
+import hashlib
+import hmac
+import os
 import unittest
+from unittest.mock import patch
 
 from services.scoring_v3 import enriquecer_resultados_v3, comparar_v2_v3
 from services.scoring_engine_v3 import _hist_metrics, _market_regime
 from services.scoring_postprocess import apply_sector_and_events
 from services.portfolio_v4 import analizar_portafolio_v4, evaluar_rotacion_v4, FEES
 from services.backtest_v3 import backtest_symbol, summarize, walk_forward_threshold
+from services.pagos import verificar_firma_ipn
 
 
 class ScoringFoundationTests(unittest.TestCase):
@@ -142,6 +147,19 @@ class BacktestTests(unittest.TestCase):
 
     def test_walk_forward_rejects_small_sample(self):
         self.assertEqual(walk_forward_threshold([])["error"], "muestra_insuficiente")
+
+
+class PaymentSecurityTests(unittest.TestCase):
+    def test_ipn_fails_closed_without_secret(self):
+        with patch.dict(os.environ, {"NOWPAYMENTS_IPN_SECRET": ""}, clear=False):
+            self.assertFalse(verificar_firma_ipn(b"{}", "abc"))
+
+    def test_ipn_accepts_valid_signature(self):
+        secret = "x" * 32
+        body = b'{"payment_status":"confirmed"}'
+        signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha512).hexdigest()
+        with patch.dict(os.environ, {"NOWPAYMENTS_IPN_SECRET": secret}, clear=False):
+            self.assertTrue(verificar_firma_ipn(body, signature))
 
 
 if __name__ == "__main__":
