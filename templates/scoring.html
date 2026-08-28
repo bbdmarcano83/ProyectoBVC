@@ -1,276 +1,121 @@
 {% extends "base.html" %}
-{% block title %}Scoring — Caracas Bull{% endblock %}
+{% block title %}Scoring V3 — Caracas Bull{% endblock %}
 
 {% block content %}
-<div class="container" style="max-width:900px; padding:20px 16px;">
-
-  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+{% set market = metadata.get('market', {}) if metadata else {} %}
+<div class="container" style="max-width:1180px; padding:20px 16px;">
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:18px;">
     <div>
-      <h1 style="font-size:20px; font-weight:600; margin:0 0 4px;">Motor de Scoring</h1>
-      <p style="font-size:12px; color:var(--text-secondary); margin:0;">
-        {{ resultados|length }} títulos BVC · {{ ibc_count }} en IBC · Devaluación BCV: {{ deval }}%
-        · Liquidación T+3
-      </p>
+      <h1 style="font-size:22px; margin:0 0 5px;">Scoring Engine V3</h1>
+      <div style="font-size:12px; color:var(--text-secondary);">
+        {{ resultados|length }} títulos · {{ ibc_count }} IBC · BCV YTD {{ deval }}% · {{ metadata.get('engine_version','legacy') if metadata else 'legacy' }}
+      </div>
     </div>
-    <form method="GET" action="/scoring" style="display:flex; align-items:center; gap:8px;">
-      <label style="font-size:12px; color:var(--text-secondary);">Deval. BCV %</label>
-      <input type="number" name="deval" value="{{ deval }}" step="1"
-             style="width:70px; padding:6px 8px; border:1px solid var(--border); border-radius:8px;
-                    background:var(--bg-card); color:var(--text-primary); font-size:14px; text-align:center;">
-      <button type="submit"
-              style="padding:6px 14px; border:none; border-radius:8px;
-                     background:var(--accent); color:#fff; font-size:12px; font-weight:500; cursor:pointer;">
-        Recalcular
-      </button>
+    <form method="GET" action="/scoring" style="display:flex; gap:8px; align-items:center;">
+      <input type="number" name="deval" value="{{ deval }}" step="1" style="width:82px; padding:7px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-primary);">
+      <button type="submit" style="padding:8px 14px; border:0; border-radius:8px; background:var(--accent); color:white; cursor:pointer;">Recalcular</button>
     </form>
   </div>
 
-  <!-- Señales de compra (Fear Detector) -->
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:9px; margin-bottom:18px;">
+    <div class="v3card"><small>Régimen</small><strong>{{ market.get('regime','—') }}</strong></div>
+    <div class="v3card"><small>Breadth</small><strong>{{ market.get('breadth_score','—') }}</strong></div>
+    <div class="v3card"><small>Score alto</small><strong>{{ alto_count }}</strong></div>
+    <div class="v3card"><small>Oportunidades</small><strong>{{ metadata.get('confirmed_opportunities',0) if metadata else 0 }}</strong></div>
+    <div class="v3card"><small>Quality issues</small><strong>{{ metadata.get('data_quality_issues',0) if metadata else 0 }}</strong></div>
+    <div class="v3card"><small>Storage</small><strong>{{ metadata.get('storage','legacy') if metadata else 'legacy' }}</strong></div>
+  </div>
+
   {% if señales_compra %}
-  <div style="background:#1baf7a15; border:1px solid #1baf7a44; border-radius:10px; padding:12px 16px; margin-bottom:16px;">
-    <div style="font-size:13px; font-weight:600; color:#1baf7a; margin-bottom:8px;">📉 Señales de compra detectadas</div>
+  <div style="border:1px solid rgba(27,175,122,.35); background:rgba(27,175,122,.08); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
+    <div style="font-weight:600; font-size:13px; color:#1baf7a; margin-bottom:7px;">Oportunidades confirmadas</div>
     {% for s in señales_compra %}
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:0.5px solid #1baf7a22;">
-      <div>
-        <span style="font-weight:500;">{{ s.simbolo }}</span>
-        <span style="font-size:11px; color:var(--text-secondary);">Score {{ s.total }}</span>
+      <div style="display:flex; justify-content:space-between; gap:12px; padding:5px 0; font-size:12px;">
+        <span><b>{{ s.simbolo }}</b> · Score {{ s.total }} · Conf {{ s.get('confidence_score_v3','—') }}</span>
+        <span>Opportunity {{ s.get('opportunity_score_v3','—') }} · Risk {{ s.get('risk_score_v3','—') }}</span>
       </div>
-      <div style="text-align:right;">
-        <span style="font-size:13px; font-weight:600; color:#d03b3b;">{{ s.caida_pct }}%</span>
-        <span style="font-size:11px; color:var(--text-secondary);"> desde máx Bs {{ s.max_precio }}</span>
-      </div>
-    </div>
     {% endfor %}
   </div>
   {% endif %}
 
-  <!-- Señales de venta (Portafolio) -->
   {% if señales_venta %}
-  <div style="background:#d03b3b15; border:1px solid #d03b3b44; border-radius:10px; padding:12px 16px; margin-bottom:16px;">
-    <div style="font-size:13px; font-weight:600; color:#d03b3b; margin-bottom:8px;">⚠ Señales de venta en tu portafolio</div>
+  <div style="border:1px solid rgba(208,59,59,.35); background:rgba(208,59,59,.07); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
+    <div style="font-weight:600; font-size:13px; color:#d03b3b; margin-bottom:7px;">Revisar posiciones</div>
     {% for s in señales_venta %}
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:0.5px solid #d03b3b22;">
-      <div>
-        <span style="font-weight:500;">{{ s.simbolo }}</span>
-        <span style="font-size:11px; color:var(--text-secondary);">{{ s.cantidad|int }} títulos</span>
-        {% if s.motivo == 'ganancia' %}
-        <span style="font-size:10px; padding:1px 6px; border-radius:4px; background:#1baf7a22; color:#1baf7a; margin-left:4px;">Tomar ganancia</span>
-        {% elif s.motivo == 'congelado' %}
-        <span style="font-size:10px; padding:1px 6px; border-radius:4px; background:#c47a2022; color:#c47a20; margin-left:4px;">Precio congelado</span>
-        {% elif s.motivo == 'score_minimo' %}
-        <span style="font-size:10px; padding:1px 6px; border-radius:4px; background:#d03b3b22; color:#d03b3b; margin-left:4px;">Score mínimo</span>
-        {% endif %}
-      </div>
-      <div style="text-align:right;">
-        {% if s.ganancia_pct > 0 %}
-        <span style="font-size:13px; font-weight:600; color:#1baf7a;">+{{ s.ganancia_pct }}%</span>
-        {% else %}
-        <span style="font-size:13px; font-weight:600; color:#d03b3b;">{{ s.ganancia_pct }}%</span>
-        {% endif %}
-        <span style="font-size:11px; color:var(--text-secondary);"> Bs {{ s.precio_compra }} → {{ s.precio_actual }}</span>
-      </div>
-    </div>
+      <div style="font-size:12px; padding:4px 0;"><b>{{ s.simbolo }}</b> · {{ s.motivo }} · {{ s.ganancia_pct }}%</div>
     {% endfor %}
   </div>
   {% endif %}
 
-  <!-- Resumen rápido -->
-  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px;">
-    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Score alto</div>
-      <div style="font-size:22px; font-weight:600; color:#1baf7a;">{{ alto_count }}</div>
-    </div>
-    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Score medio</div>
-      <div style="font-size:22px; font-weight:600; color:#2a78d6;">{{ medio_count }}</div>
-    </div>
-    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Score bajo</div>
-      <div style="font-size:22px; font-weight:600; color:#eda100;">{{ bajo_count }}</div>
-    </div>
-    <div style="background:var(--bg-card); border-radius:10px; padding:10px; text-align:center;">
-      <div style="font-size:11px; color:var(--text-secondary);">Score mínimo</div>
-      <div style="font-size:22px; font-weight:600; color:#d03b3b;">{{ minimo_count }}</div>
-    </div>
-  </div>
-
-  <!-- Tabla de scoring -->
-  <div style="background:var(--bg-card); border-radius:12px; overflow:hidden;">
-    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+  <div style="overflow:auto; background:var(--bg-card); border-radius:12px; border:1px solid var(--border);">
+    <table style="width:100%; border-collapse:collapse; min-width:1050px; font-size:12px;">
       <thead>
-        <tr style="border-bottom:1px solid var(--border);">
-          <th style="padding:10px 12px; text-align:left; font-weight:500; font-size:11px; color:var(--text-secondary);">#</th>
-          <th style="padding:10px 8px; text-align:left; font-weight:500; font-size:11px; color:var(--text-secondary);">Título</th>
-          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Rend</th>
-          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Liq</th>
-          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Din</th>
-          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Tend</th>
-          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Caída</th>
-          <th style="padding:10px 8px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Total</th>
-          <th style="padding:10px 12px; text-align:center; font-weight:500; font-size:11px; color:var(--text-secondary);">Acción</th>
+        <tr style="border-bottom:1px solid var(--border); color:var(--text-secondary);">
+          <th class="thl">#</th><th class="thl">Título</th><th class="thc">Score</th><th class="thc">Confidence</th>
+          <th class="thc">Strength</th><th class="thc">Opportunity</th><th class="thc">Risk</th>
+          <th class="thc">Mom 20d</th><th class="thc">Mom 60d</th><th class="thc">Liq %ile</th><th class="thc">Estado</th>
         </tr>
       </thead>
       <tbody>
-        {% for r in resultados %}
-        <tr style="border-bottom:0.5px solid var(--border); cursor:pointer;{% if r.señal_compra %} background:rgba(27,175,122,0.05);{% endif %}"
-            onclick="toggleDetail('detail-{{ r.simbolo }}')">
-          <td style="padding:8px 12px; color:var(--text-secondary); font-size:12px;">{{ loop.index }}</td>
-          <td style="padding:8px 8px;">
-            <div style="font-weight:500;">
-              {{ r.simbolo }}
-              {% if r.ibc %}<span style="font-size:8px; padding:1px 4px; border-radius:4px; background:var(--accent, #1baf7a); color:#fff; font-weight:500; vertical-align:middle; margin-left:3px;">IBC</span>{% endif %}
-              {% if r.señal_compra %}<span style="font-size:8px; padding:1px 4px; border-radius:4px; background:#d03b3b; color:#fff; font-weight:500; vertical-align:middle; margin-left:3px;">COMPRA</span>{% endif %}
-            </div>
-            <div style="font-size:11px; color:var(--text-secondary);">{{ r.sector }}</div>
+      {% for r in resultados %}
+        {% set h = r.get('history_v3', {}) %}
+        <tr style="border-bottom:1px solid var(--border); cursor:pointer;" onclick="toggleV3('d-{{ loop.index }}')">
+          <td class="tdl" style="color:var(--text-secondary);">{{ loop.index }}</td>
+          <td class="tdl">
+            <div style="font-weight:600;">{{ r.simbolo }} {% if r.ibc %}<span class="tag">IBC</span>{% endif %}</div>
+            <div style="color:var(--text-secondary); font-size:10px;">{{ r.sector }} · sector #{{ r.get('sector_rank_v3','—') }}</div>
           </td>
-          <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">
-            <span title="{{ r.rend_pct }}%">{{ r.rend_score|round(0)|int }}</span>
-          </td>
-          <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">{{ r.liq_score }}</td>
-          <td style="padding:8px 8px; text-align:center;">
-            {% if r.din_score >= 15 %}
-            <span style="font-size:10px; padding:2px 6px; border-radius:6px; font-weight:500; background:#1baf7a33; color:#1baf7a;">{{ r.din_score }}</span>
-            {% elif r.din_score >= 5 %}
-            <span style="font-size:10px; padding:2px 6px; border-radius:6px; font-weight:500; background:#c47a2033; color:#c47a20;">{{ r.din_score }}</span>
-            {% else %}
-            <span style="font-size:10px; padding:2px 6px; border-radius:6px; font-weight:500; background:#d03b3b33; color:#d03b3b;">{{ r.din_score }}</span>
-            {% endif %}
-          </td>
-          <td style="padding:8px 8px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px;">{{ r.tend_score }}</td>
-          <td style="padding:8px 8px; text-align:center; font-size:11px;">
-            {% if r.caida_pct <= -15 %}
-            <span style="color:#d03b3b; font-weight:600;">{{ r.caida_pct }}%</span>
-            {% elif r.caida_pct <= -8 %}
-            <span style="color:#c47a20;">{{ r.caida_pct }}%</span>
-            {% elif r.caida_pct < 0 %}
-            <span style="color:var(--text-secondary);">{{ r.caida_pct }}%</span>
-            {% else %}
-            <span style="color:var(--text-muted);">0%</span>
-            {% endif %}
-          </td>
-          <td style="padding:8px 8px; text-align:center; font-weight:600; font-size:15px;">{{ r.total }}</td>
-          <td style="padding:8px 12px; text-align:center;">
-            {% if r.total >= 75 %}
-            <span style="font-size:10px; padding:3px 10px; border-radius:8px; font-weight:500; background:rgba(27,175,122,0.12); color:#0F6E56;">Score alto</span>
-            {% elif r.total >= 50 %}
-            <span style="font-size:10px; padding:3px 10px; border-radius:8px; font-weight:500; background:rgba(42,120,214,0.12); color:#185FA5;">Score medio</span>
-            {% elif r.total >= 30 %}
-            <span style="font-size:10px; padding:3px 10px; border-radius:8px; font-weight:500; background:rgba(237,161,0,0.12); color:#854F0B;">Score bajo</span>
-            {% else %}
-            <span style="font-size:10px; padding:3px 10px; border-radius:8px; font-weight:500; background:rgba(208,59,59,0.12); color:#d03b3b;">Score mínimo</span>
-            {% endif %}
+          <td class="tdc"><b style="font-size:15px;">{{ r.total }}</b></td>
+          <td class="tdc">{{ r.get('confidence_score_v3','—') }}</td>
+          <td class="tdc">{{ r.get('strength_score_v3','—') }}</td>
+          <td class="tdc">{{ r.get('opportunity_score_v3','—') }}</td>
+          <td class="tdc"><span class="risk {% if r.get('risk_score_v3',0) >= 70 %}riskhi{% endif %}">{{ r.get('risk_score_v3','—') }}</span></td>
+          <td class="tdc">{% if h.get('momentum_20d_pct') is not none %}{{ h.get('momentum_20d_pct') }}%{% else %}—{% endif %}</td>
+          <td class="tdc">{% if h.get('momentum_60d_pct') is not none %}{{ h.get('momentum_60d_pct') }}%{% else %}—{% endif %}</td>
+          <td class="tdc">{{ r.get('liquidity_percentile_v3','—') }}</td>
+          <td class="tdc">
+            {% set stage = r.get('signal_stage_v3', r.accion_label) %}
+            <span class="stage {% if stage == 'OPORTUNIDAD CONFIRMADA' %}go{% elif stage == 'PREPARAR COMPRA' %}prep{% endif %}">{{ stage }}</span>
           </td>
         </tr>
-        <!-- Detalle expandible -->
-        <tr id="detail-{{ r.simbolo }}" style="display:none;">
-          <td colspan="9" style="padding:0 12px 12px 12px;">
-            <div style="background:var(--bg-body); border-radius:8px; padding:12px; margin-top:4px;">
-              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:12px;">
-                <div>
-                  <div style="color:var(--text-secondary); margin-bottom:2px;">Rendimiento</div>
-                  {% if r.rend_pct > 0 %}
-                  <div style="font-weight:500; color:#1baf7a;">+{{ r.rend_pct }}%</div>
-                  {% else %}
-                  <div style="font-weight:500; color:#d03b3b;">{{ r.rend_pct }}%</div>
-                  {% endif %}
-                  <div style="font-size:11px; color:var(--text-secondary);">
-                    {{ r.rend_score|round(0)|int }}/40 pts · {{ r.dias_datos }} días
-                  </div>
-                  {% if r.precio_inicio %}
-                  <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">
-                    Bs {{ r.precio_inicio }} → Bs {{ r.precio_actual }}
-                  </div>
-                  {% endif %}
-                </div>
-                <div>
-                  <div style="color:var(--text-secondary); margin-bottom:2px;">Liquidez semanal</div>
-                  <div style="font-weight:500;">Bs {{ r.liq_vol|int }}</div>
-                  <div style="font-size:11px; color:var(--text-secondary);">{{ r.liq_score }}/25 pts</div>
-                </div>
-                <div>
-                  <div style="color:var(--text-secondary); margin-bottom:2px;">Caída desde máximo</div>
-                  {% if r.caida_pct <= -15 %}
-                  <div style="font-weight:500; color:#d03b3b;">{{ r.caida_pct }}%</div>
-                  {% elif r.caida_pct < 0 %}
-                  <div style="font-weight:500; color:#c47a20;">{{ r.caida_pct }}%</div>
-                  {% else %}
-                  <div style="font-weight:500; color:var(--text-muted);">En máximos</div>
-                  {% endif %}
-                  <div style="font-size:11px; color:var(--text-secondary);">Máx 30d: Bs {{ r.max_precio }}</div>
-                </div>
-              </div>
-              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; font-size:12px; margin-top:10px; padding-top:10px; border-top:0.5px solid var(--border);">
-                <div>
-                  <div style="color:var(--text-secondary); margin-bottom:2px;">Dinamismo</div>
-                  {% if r.din_score >= 15 %}
-                  <span style="font-size:11px; padding:2px 8px; border-radius:6px; font-weight:500; background:#1baf7a33; color:#1baf7a;">{{ r.din_label }}</span>
-                  {% elif r.din_score >= 5 %}
-                  <span style="font-size:11px; padding:2px 8px; border-radius:6px; font-weight:500; background:#c47a2033; color:#c47a20;">{{ r.din_label }}</span>
-                  {% else %}
-                  <span style="font-size:11px; padding:2px 8px; border-radius:6px; font-weight:500; background:#d03b3b33; color:#d03b3b;">{{ r.din_label }}</span>
-                  {% endif %}
-                  <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">
-                    Cambio: {{ r.din_change_pct }}% · Spread: {{ r.din_spread_pct }}% · {{ r.din_avg_ops|int }} ops/día
-                  </div>
-                </div>
-                <div>
-                  <div style="color:var(--text-secondary); margin-bottom:2px;">Tendencia 30d</div>
-                  <div style="font-weight:500;">{{ r.tend_label }}</div>
-                  <div style="font-size:11px; color:var(--text-secondary);">{{ r.tend_score }}/15 pts</div>
-                </div>
-                <div>
-                  <div style="color:var(--text-secondary); margin-bottom:2px;">Detalle</div>
-                  <a href="/detalle/{{ r.simbolo }}" style="font-size:11px; color:var(--accent);">
-                    Ver gráfico →
-                  </a>
-                </div>
-              </div>
+        <tr id="d-{{ loop.index }}" style="display:none; border-bottom:1px solid var(--border);">
+          <td colspan="11" style="padding:12px 16px; background:var(--bg-body);">
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px;">
+              <div><small>Retorno YTD</small><div><b>{{ r.rend_pct }}%</b> · percentil {{ r.get('return_percentile_v3','—') }}</div></div>
+              <div><small>Volatilidad anualizada</small><div><b>{{ h.get('volatility_annualized_pct','—') }}%</b></div></div>
+              <div><small>Downside vol</small><div><b>{{ h.get('downside_volatility_pct','—') }}%</b></div></div>
+              <div><small>Max drawdown 60d</small><div><b>{{ h.get('max_drawdown_60d_pct','—') }}%</b></div></div>
+              <div><small>Frecuencia negociación 60d</small><div><b>{{ h.get('trading_frequency_60d_pct','—') }}%</b></div></div>
+              <div><small>Concentración mayor rueda</small><div><b>{{ h.get('max_day_volume_share_pct','—') }}%</b></div></div>
+              <div><small>Confirmación precio/volumen</small><div><b>{{ h.get('price_volume_confirmation','—') }}</b></div></div>
+              <div><small>Caída desde máximo</small><div><b>{{ r.get('caida_pct','—') }}%</b></div></div>
             </div>
+            {% if r.get('explain_v3') %}
+            <div style="margin-top:10px; font-size:11px;"><b>Explicación:</b> {{ r.get('explain_v3')|join(' · ') }}</div>
+            {% endif %}
+            {% if r.get('quality_flags_v3') %}
+            <div style="margin-top:7px; font-size:11px; color:#c47a20;"><b>Quality flags:</b> {{ r.get('quality_flags_v3')|join(', ') }}</div>
+            {% endif %}
+            {% if r.get('corporate_events_v3') %}
+            <div style="margin-top:7px; font-size:11px; color:#d03b3b;"><b>Eventos:</b> {{ r.get('corporate_events_v3') }}</div>
+            {% endif %}
+            <div style="margin-top:9px;"><a href="/detalle/{{ r.simbolo }}" style="font-size:11px; color:var(--accent);">Abrir detalle →</a></div>
           </td>
         </tr>
-        {% endfor %}
+      {% endfor %}
       </tbody>
     </table>
   </div>
 
-  <!-- Leyenda -->
-  <div style="margin-top:16px; padding:12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.7;">
-    <strong>Ponderación:</strong> Rendimiento (40pts) — retorno acumulado vs devaluación BCV.
-    Liquidez (25pts) — volumen semanal negociado.
-    Dinamismo (20pts) — detecta precios congelados vs activos.
-    Tendencia (15pts) — dirección en los últimos 30 días.
-    <br>
-    <strong>Clasificación:</strong>
-    <span style="color:#1baf7a;">Score alto ≥75</span> ·
-    <span style="color:#2a78d6;">Score medio ≥50</span> ·
-    <span style="color:#eda100;">Score bajo ≥30</span> ·
-    <span style="color:#d03b3b;">Score mínimo &lt;30</span>
-    <br>
-    <strong>Señal de compra:</strong> Acción con Score ≥65 que cayó ≥15% desde su máximo de 30 días sin evento corporativo.
+  <div style="font-size:10px; color:var(--text-secondary); margin-top:12px; line-height:1.5;">
+    V3 separa fortaleza del activo, confianza de datos, oportunidad de entrada y riesgo. Las señales son analíticas y no constituyen recomendación de inversión.
   </div>
-
-  <!-- Nota T+3 -->
-  <div style="margin-top:8px; padding:10px 12px; background:var(--bg-card); border-radius:10px; font-size:11px; color:var(--text-secondary); line-height:1.6; border-left:3px solid #eda100;">
-    <strong>⚠ Liquidación T+3:</strong> Las operaciones en la BVC tardan 3 días hábiles en acreditarse.
-    Al comprar hoy, los títulos se reflejan el 4to día hábil.
-    Al vender hoy, el efectivo se libera el 4to día hábil.
-    Planifica tus rotaciones considerando este plazo.
-  </div>
-
-  <!-- Disclaimer legal -->
-  <div style="margin-top:8px; padding:10px 12px; background:transparent; border-radius:10px; font-size:10px; color:var(--text-muted); line-height:1.6; text-align:center;">
-    El scoring es una herramienta de análisis cuantitativo basada en datos públicos de la BVC.
-    No constituye asesoría de inversión. Las decisiones de inversión son responsabilidad exclusiva del usuario.
-  </div>
-
 </div>
-{% endblock %}
 
-{% block extra_scripts %}
+<style>
+.v3card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}.v3card small,td small{color:var(--text-secondary);font-size:10px}.v3card strong{font-size:16px}.thl,.thc{padding:10px 8px;font-size:10px;font-weight:500}.thl{text-align:left}.thc{text-align:center}.tdl,.tdc{padding:9px 8px}.tdl{text-align:left}.tdc{text-align:center;font-family:'IBM Plex Mono',monospace}.tag{font-size:8px;padding:1px 4px;border-radius:4px;background:var(--accent);color:#fff}.stage{font-family:inherit;font-size:9px;padding:3px 7px;border-radius:7px;background:rgba(120,120,120,.12);white-space:nowrap}.stage.prep{background:rgba(237,161,0,.14);color:#b07100}.stage.go{background:rgba(27,175,122,.15);color:#0F6E56}.risk{padding:2px 6px;border-radius:5px}.riskhi{background:rgba(208,59,59,.13);color:#d03b3b}
+</style>
 <script>
-function toggleDetail(id) {
-    const el = document.getElementById(id);
-    if (el) el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
-}
+function toggleV3(id){const el=document.getElementById(id); if(el){el.style.display=el.style.display==='none'?'table-row':'none';}}
 </script>
 {% endblock %}
