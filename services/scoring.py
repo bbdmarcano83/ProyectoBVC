@@ -1,7 +1,7 @@
 """Runtime facade for ProyectoBVC scoring.
 
-Default on this upgrade branch is V3 full/stateless because production is
-paused for the migration. Rollback is immediate with SCORING_ENGINE_V3_ENABLED=false.
+V3 full/stateless is enabled by default on the upgrade branch because the app
+is paused for migration. Rollback: SCORING_ENGINE_V3_ENABLED=false.
 """
 from __future__ import annotations
 
@@ -19,5 +19,10 @@ def _enabled() -> bool:
 async def calcular_scoring_completo(devaluacion_pct: float | None = None):
     if not _enabled():
         return await calcular_scoring_completo_v2(devaluacion_pct)
+
     from services.scoring_engine_v3 import calcular_scoring_completo as calcular_v3
-    return await calcular_v3(devaluacion_pct)
+    from services.scoring_postprocess import apply_sector_and_events
+
+    rows, deval, metadata = await calcular_v3(devaluacion_pct)
+    rows, metadata = apply_sector_and_events(rows, metadata)
+    return rows, deval, metadata
