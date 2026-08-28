@@ -16,6 +16,27 @@ def flag_enabled(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in _TRUE_VALUES
 
 
-SCORING_ENGINE_V3_ENABLED = lambda: flag_enabled("SCORING_ENGINE_V3_ENABLED")
-PORTFOLIO_ENGINE_V4_ENABLED = lambda: flag_enabled("PORTFOLIO_ENGINE_V4_ENABLED")
-SECURITY_HARDENING_V1_ENABLED = lambda: flag_enabled("SECURITY_HARDENING_V1_ENABLED")
+def scoring_v3_enabled() -> bool:
+    return flag_enabled("SCORING_ENGINE_V3_ENABLED")
+
+
+def scoring_v3_shadow_enabled() -> bool:
+    return flag_enabled("SCORING_ENGINE_V3_SHADOW_ENABLED")
+
+
+def portfolio_v4_enabled() -> bool:
+    return flag_enabled("PORTFOLIO_ENGINE_V4_ENABLED")
+
+
+def portfolio_v4_shadow_enabled() -> bool:
+    return flag_enabled("PORTFOLIO_ENGINE_V4_SHADOW_ENABLED")
+
+
+def security_hardening_v1_enabled() -> bool:
+    return flag_enabled("SECURITY_HARDENING_V1_ENABLED")
+
+
+# Aliases temporales para compatibilidad con la primera rama V3/V4.
+SCORING_ENGINE_V3_ENABLED = scoring_v3_enabled
+PORTFOLIO_ENGINE_V4_ENABLED = portfolio_v4_enabled
+SECURITY_HARDENING_V1_ENABLED = security_hardening_v1_enabled
