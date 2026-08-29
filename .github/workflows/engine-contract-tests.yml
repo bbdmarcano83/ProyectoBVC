@@ -55,6 +55,18 @@ jobs:
               env.get_template(name)
               print(f"template ok: {name}")
           PY
+      - name: Validate Neon PostgreSQL URL normalization
+        env:
+          DATABASE_URL: postgresql://demo:demo@ep-demo-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require
+        run: |
+          python - <<'PY'
+          import database
+          assert database.DB_PERSISTENCE_MODE == "external"
+          assert database.IS_POSTGRES is True
+          assert database.DATABASE_URL.startswith("postgresql+psycopg://")
+          assert database.engine.url.drivername == "postgresql+psycopg"
+          print("Neon PostgreSQL driver normalization ok")
+          PY
       - name: Initialize ephemeral database schema
         run: |
           rm -f /tmp/caracasbull.db
