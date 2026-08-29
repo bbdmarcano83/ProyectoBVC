@@ -9,14 +9,28 @@ from sqlalchemy.sql import func
 
 # Sin DATABASE_URL externa, la app usa deliberadamente una SQLite EFÍMERA.
 # No debe considerarse storage persistente ni respaldo.
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip() or "sqlite:////tmp/caracasbull.db"
-DB_PERSISTENCE_MODE = "external" if os.environ.get("DATABASE_URL", "").strip() else "ephemeral"
+RAW_DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+
+def _normalizar_database_url(url: str) -> str:
+    """Normaliza URLs PostgreSQL para usar Psycopg 3 de forma explícita."""
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
+DATABASE_URL = _normalizar_database_url(RAW_DATABASE_URL) if RAW_DATABASE_URL else "sqlite:////tmp/caracasbull.db"
+DB_PERSISTENCE_MODE = "external" if RAW_DATABASE_URL else "ephemeral"
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
+IS_POSTGRES = DATABASE_URL.startswith("postgresql+") or DATABASE_URL.startswith("postgresql://")
 
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if IS_SQLITE else {},
     pool_pre_ping=True,
+    pool_recycle=300 if IS_POSTGRES else -1,
 )
 
 if IS_SQLITE:
@@ -168,7 +182,8 @@ class AlertaPrecio(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
-    print(f"[DB] modo={DB_PERSISTENCE_MODE} url={'sqlite-ephemeral' if IS_SQLITE else 'external'}")
+    backend = "sqlite-ephemeral" if IS_SQLITE else ("postgresql-external" if IS_POSTGRES else "external")
+    print(f"[DB] modo={DB_PERSISTENCE_MODE} backend={backend}")
 
 
 def get_db():
