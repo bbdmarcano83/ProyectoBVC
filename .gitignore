@@ -1,2 +1,24 @@
+# Secrets / local environments
+.env
+.env.*
 *.env
+venv/
+.venv/
 venv_deribit/
+
+# Python runtime
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local runtime data (do not commit new copies)
+*.db
+*.sqlite
+*.sqlite3
+portafolio.json
+config.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

@@ -1,152 +1,141 @@
 import os
 import hmac
 import hashlib
-import json
 from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
 from sqlalchemy.orm import Session
 
-from database import Suscripcion, PagoHistorial, Usuario
+from database import Suscripcion, PagoHistorial
 
-NOWPAYMENTS_API_KEY = os.environ.get("NOWPAYMENTS_API_KEY", "")
-NOWPAYMENTS_IPN_SECRET = os.environ.get("NOWPAYMENTS_IPN_SECRET", "")
 NOWPAYMENTS_URL = "https://api.nowpayments.io/v1"
+PRECIOS = {"basico": 1.5, "pro": 2.99}
+DURACION_DIAS = {"basico": 30, "pro": 30}
+VALID_FINAL_STATUSES = {"finished", "confirmed"}
 
-# Precios por plan
-PRECIOS = {
-    "basico": 1.5,
-    "pro": 2.99,  # Precio especial de lanzamiento
-}
 
-DURACION_DIAS = {
-    "basico": 30,
-    "pro": 30,
-}
+def _api_key() -> str:
+    return os.environ.get("NOWPAYMENTS_API_KEY", "").strip()
+
+
+def _ipn_secret() -> str:
+    return os.environ.get("NOWPAYMENTS_IPN_SECRET", "").strip()
 
 
 async def crear_pago(usuario_id: int, plan: str, email: str) -> Optional[dict]:
-    """Crea una orden de pago en NOWPayments y devuelve los datos."""
-    key = os.environ.get("NOWPAYMENTS_API_KEY", "")
-    print(f"[NOWPayments] API Key presente: {bool(key)}, longitud: {len(key)}")
-    if not key:
-        print("[NOWPayments] ERROR: API Key no configurada")
+    key = _api_key()
+    app_url = os.environ.get("APP_URL", "").strip().rstrip("/")
+    if not key or not app_url or plan not in PRECIOS:
+        print("[NOWPayments] Configuración incompleta o plan inválido")
         return None
 
-    monto = PRECIOS.get(plan, 1.5)
-
     payload = {
-        "price_amount": monto,
+        "price_amount": PRECIOS[plan],
         "price_currency": "usd",
         "pay_currency": "usdtbsc",
         "order_id": f"cb_{usuario_id}_{plan}_{int(datetime.utcnow().timestamp())}",
         "order_description": f"Caracas Bull — Plan {plan.capitalize()} (30 días)",
-        "ipn_callback_url": os.environ.get("APP_URL", "") + "/webhook/nowpayments",
-        "success_url": os.environ.get("APP_URL", "") + "/suscripcion/exitosa",
-        "cancel_url": os.environ.get("APP_URL", "") + "/suscripcion",
+        "ipn_callback_url": app_url + "/webhook/nowpayments",
+        "success_url": app_url + "/suscripcion/exitosa",
+        "cancel_url": app_url + "/suscripcion",
     }
 
-    async with httpx.AsyncClient() as client:
-        try:
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
             r = await client.post(
                 f"{NOWPAYMENTS_URL}/payment",
                 json=payload,
-                headers={
-                    "x-api-key": key,
-                    "Content-Type": "application/json",
-                },
-                timeout=10.0,
+                headers={"x-api-key": key, "Content-Type": "application/json"},
             )
-            print(f"[NOWPayments] Status: {r.status_code}, Response: {r.text[:300]}")
-            if r.status_code == 201:
-                return r.json()
-            else:
-                print(f"[NOWPayments] Error {r.status_code}: {r.text}")
-        except Exception as e:
-            print(f"[NOWPayments] Error creando pago: {e}")
+        if r.status_code == 201:
+            return r.json()
+        print(f"[NOWPayments] Error creando pago status={r.status_code}")
+    except Exception as exc:
+        print(f"[NOWPayments] Error creando pago: {type(exc).__name__}")
     return None
 
 
 def verificar_firma_ipn(body_bytes: bytes, firma_recibida: str) -> bool:
-    """Verifica que el webhook viene realmente de NOWPayments."""
-    if not NOWPAYMENTS_IPN_SECRET:
-        return True  # en desarrollo sin secret, aceptar todo
-    firma_esperada = hmac.new(
-        NOWPAYMENTS_IPN_SECRET.encode(),
-        body_bytes,
-        hashlib.sha512,
-    ).hexdigest()
-    return hmac.compare_digest(firma_esperada, firma_recibida)
+    """Fail-closed: sin secreto configurado ninguna IPN es válida."""
+    secret = _ipn_secret()
+    if len(secret) < 24 or not firma_recibida:
+        return False
+    firma_esperada = hmac.new(secret.encode("utf-8"), body_bytes, hashlib.sha512).hexdigest()
+    return hmac.compare_digest(firma_esperada, firma_recibida.strip())
+
+
+def _parse_order_id(order_id: str) -> tuple[int, str] | None:
+    try:
+        partes = order_id.split("_")
+        if len(partes) != 4 or partes[0] != "cb":
+            return None
+        usuario_id = int(partes[1])
+        plan = partes[2]
+        if usuario_id <= 0 or plan not in PRECIOS:
+            return None
+        return usuario_id, plan
+    except (TypeError, ValueError):
+        return None
 
 
 def procesar_webhook(db: Session, datos: dict) -> bool:
-    """Procesa la notificación de NOWPayments y activa la suscripción si el pago es válido."""
-    payment_status = datos.get("payment_status")
-    payment_id     = str(datos.get("payment_id", ""))
-    order_id       = datos.get("order_id", "")
-
-    # Extraer usuario_id y plan del order_id: "cb_{usuario_id}_{plan}_{timestamp}"
-    try:
-        partes     = order_id.split("_")
-        usuario_id = int(partes[1])
-        plan       = partes[2]
-    except (IndexError, ValueError):
-        print(f"[NOWPayments] order_id inválido: {order_id}")
+    payment_status = str(datos.get("payment_status", "")).lower().strip()
+    payment_id = str(datos.get("payment_id", "")).strip()
+    order_id = str(datos.get("order_id", "")).strip()
+    parsed = _parse_order_id(order_id)
+    if not payment_id or not parsed:
         return False
+    usuario_id, plan = parsed
 
-    # Guardar en historial
+    # Idempotencia: NOWPayments puede reintentar la misma notificación.
+    existente = db.query(PagoHistorial).filter(
+        PagoHistorial.nowpayments_id == payment_id,
+        PagoHistorial.status == payment_status,
+    ).first()
+    if existente:
+        return payment_status in VALID_FINAL_STATUSES
+
     historial = PagoHistorial(
         usuario_id=usuario_id,
         nowpayments_id=payment_id,
         plan=plan,
-        monto=PRECIOS.get(plan, 1.5),
+        monto=PRECIOS[plan],
         status=payment_status,
     )
     db.add(historial)
 
-    # Solo activar si el pago está confirmado
-    if payment_status in ("finished", "confirmed"):
-        suscripcion = db.query(Suscripcion).filter(
-            Suscripcion.usuario_id == usuario_id
-        ).first()
-
-        if suscripcion:
-            ahora = datetime.utcnow()
-            # Si ya tiene días restantes, extender desde esa fecha
-            if suscripcion.fecha_vence and suscripcion.fecha_vence > ahora:
-                nueva_fecha = suscripcion.fecha_vence + timedelta(days=DURACION_DIAS[plan])
-            else:
-                nueva_fecha = ahora + timedelta(days=DURACION_DIAS[plan])
-
-            suscripcion.plan         = plan
-            suscripcion.activa       = True
-            suscripcion.fecha_vence  = nueva_fecha
-            suscripcion.pago_id      = payment_id
-            suscripcion.pago_status  = payment_status
-            suscripcion.monto_usd    = PRECIOS.get(plan, 1.5)
-
+    if payment_status not in VALID_FINAL_STATUSES:
         db.commit()
-        print(f"[NOWPayments] Suscripción activada — usuario {usuario_id}, plan {plan}")
-        return True
+        return False
 
+    suscripcion = db.query(Suscripcion).filter(Suscripcion.usuario_id == usuario_id).first()
+    if not suscripcion:
+        db.rollback()
+        return False
+
+    ahora = datetime.utcnow()
+    base = suscripcion.fecha_vence if suscripcion.fecha_vence and suscripcion.fecha_vence > ahora else ahora
+    suscripcion.plan = plan
+    suscripcion.activa = True
+    suscripcion.fecha_vence = base + timedelta(days=DURACION_DIAS[plan])
+    suscripcion.pago_id = payment_id
+    suscripcion.pago_status = payment_status
+    suscripcion.monto_usd = PRECIOS[plan]
     db.commit()
-    return False
+    print(f"[NOWPayments] Pago confirmado payment_id={payment_id} usuario={usuario_id} plan={plan}")
+    return True
 
 
 async def verificar_estado_pago(payment_id: str) -> Optional[dict]:
-    """Consulta el estado actual de un pago en NOWPayments."""
-    if not NOWPAYMENTS_API_KEY:
+    key = _api_key()
+    if not key or not payment_id:
         return None
-    async with httpx.AsyncClient() as client:
-        try:
-            r = await client.get(
-                f"{NOWPAYMENTS_URL}/payment/{payment_id}",
-                headers={"x-api-key": NOWPAYMENTS_API_KEY},
-                timeout=10.0,
-            )
-            if r.status_code == 200:
-                return r.json()
-        except Exception as e:
-            print(f"[NOWPayments] Error verificando pago: {e}")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{NOWPAYMENTS_URL}/payment/{payment_id}", headers={"x-api-key": key})
+        if r.status_code == 200:
+            return r.json()
+    except Exception as exc:
+        print(f"[NOWPayments] Error verificando pago: {type(exc).__name__}")
     return None

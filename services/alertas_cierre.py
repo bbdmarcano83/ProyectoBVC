@@ -1,141 +1,131 @@
-"""
-Servicio de alertas Telegram al cierre del mercado BVC.
-Se ejecuta a las 1:15 PM VET (17:15 UTC) vía cron o endpoint.
+"""Alertas Telegram al cierre — V3/V4.
 
-Según el plan del usuario:
-  - Básico: resumen general (IBC, acciones top/bottom)
-  - Intermedio: + scoring completo
-  - Pro: + fear detector + señales de venta + dividendos
+Consume el scoring runtime activo. No persiste snapshots; todas las alertas se
+construyen con la corrida actual y las posiciones disponibles en la instancia.
 """
-
-from database import SessionLocal, Usuario, Suscripcion, ActivoPortafolio
+from database import SessionLocal, Usuario, ActivoPortafolio
 from services.telegram import enviar_mensaje
 from services.scoring import calcular_scoring_completo
 from services.auth import suscripcion_activa, get_plan
 
 
-async def generar_alerta_basico(resultados: list, deval: float) -> str:
-    """Resumen general para plan Básico."""
+def _score(r: dict) -> float:
+    try:
+        return float(r.get("score_v3", r.get("total", 0)) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def generar_alerta_basico(resultados: list, deval: float, metadata: dict | None = None) -> str:
     top3 = resultados[:3]
     bottom3 = resultados[-3:]
-    
+    market = (metadata or {}).get("market", {})
     msg = "<b>📊 Cierre BVC — Caracas Bull</b>\n\n"
     msg += f"Devaluación BCV: {deval}%\n"
+    if market:
+        msg += f"Régimen: <b>{market.get('regime', 'N/A')}</b> | Breadth: {market.get('breadth_score', 0)}\n"
     msg += f"Títulos analizados: {len(resultados)}\n\n"
-    msg += "<b>Top 3 Score:</b>\n"
+    msg += "<b>Top 3:</b>\n"
     for r in top3:
-        msg += f"  {r['simbolo']} — {r['total']} pts\n"
+        msg += f"  {r.get('simbolo')} — {_score(r):.1f} pts\n"
     msg += "\n<b>Bottom 3:</b>\n"
     for r in bottom3:
-        msg += f"  {r['simbolo']} — {r['total']} pts\n"
+        msg += f"  {r.get('simbolo')} — {_score(r):.1f} pts\n"
     return msg
 
 
-async def generar_alerta_intermedio(resultados: list, deval: float) -> str:
-    """Scoring completo para plan Intermedio."""
-    msg = await generar_alerta_basico(resultados, deval)
-    
-    alto = [r for r in resultados if r['total'] >= 75]
-    medio = [r for r in resultados if 50 <= r['total'] < 75]
-    bajo = [r for r in resultados if 30 <= r['total'] < 50]
-    
+async def generar_alerta_intermedio(resultados: list, deval: float, metadata: dict | None = None) -> str:
+    msg = await generar_alerta_basico(resultados, deval, metadata)
+    alto = [r for r in resultados if _score(r) >= 75]
     msg += f"\n<b>📈 Score alto ({len(alto)}):</b>\n"
-    for r in alto:
-        msg += f"  {r['simbolo']} — {r['total']} pts (Rend:{r['rend_score']|int} Liq:{r['liq_score']} Din:{r['din_score']} Tend:{r['tend_score']})\n"
-    
-    msg += f"\n<b>📊 Score medio ({len(medio)}):</b>\n"
-    for r in medio[:5]:
-        msg += f"  {r['simbolo']} — {r['total']} pts\n"
-    if len(medio) > 5:
-        msg += f"  ... y {len(medio)-5} más\n"
-    
+    for r in alto[:10]:
+        msg += (
+            f"  {r.get('simbolo')} — {_score(r):.1f} | "
+            f"Conf {r.get('confidence_score_v3', '—')} | "
+            f"Risk {r.get('risk_score_v3', '—')}\n"
+        )
+    preparar = [r for r in resultados if r.get("signal_stage_v3") == "PREPARAR COMPRA"]
+    if preparar:
+        msg += "\n<b>🟡 Preparar compra:</b>\n"
+        for r in preparar[:5]:
+            msg += f"  {r.get('simbolo')} — Opportunity {r.get('opportunity_score_v3')}\n"
     return msg
 
 
-async def generar_alerta_pro(resultados: list, deval: float, usuario=None, db=None) -> str:
-    """Alertas completas para plan Pro."""
-    msg = await generar_alerta_intermedio(resultados, deval)
-    
-    # Señales de compra (Fear Detector)
-    compras = [r for r in resultados if r.get('señal_compra')]
+async def generar_alerta_pro(resultados: list, deval: float, metadata: dict | None = None, usuario=None, db=None) -> str:
+    msg = await generar_alerta_intermedio(resultados, deval, metadata)
+    compras = [r for r in resultados if r.get("señal_compra_v3") or r.get("señal_compra")]
     if compras:
-        msg += "\n<b>🔴 SEÑALES DE COMPRA:</b>\n"
+        msg += "\n<b>🟢 OPORTUNIDADES CONFIRMADAS:</b>\n"
         for r in compras:
-            msg += f"  {r['simbolo']} — caída {r['caida_pct']}% (Score {r['total']})\n"
-    
-    # Señales de venta del portafolio
+            msg += (
+                f"  {r.get('simbolo')} — caída {r.get('caida_pct')}% | "
+                f"Score {_score(r):.1f} | Conf {r.get('confidence_score_v3', '—')}\n"
+            )
+
     if usuario and db:
         activos = db.query(ActivoPortafolio).filter(ActivoPortafolio.usuario_id == usuario.id).all()
         portafolio_map = {a.simbolo: a for a in activos}
-        
         ventas = []
         for r in resultados:
-            simb = r.get('simbolo')
+            simb = r.get("simbolo")
             if simb not in portafolio_map:
                 continue
             activo = portafolio_map[simb]
-            precio_actual = r.get('precio', 0)
-            precio_compra = activo.precio_promedio or 0
+            precio_actual = float(r.get("precio", 0) or 0)
+            precio_compra = float(activo.precio_promedio or 0)
             if precio_compra <= 0:
                 continue
             ganancia = round(((precio_actual / precio_compra) - 1) * 100, 1)
+            risk = float(r.get("risk_score_v3", 0) or 0)
+            conf = float(r.get("confidence_score_v3", 0) or 0)
+            motivos = []
             if ganancia >= 50:
-                ventas.append(f"  {simb} — +{ganancia}% (tomar ganancia)")
-            elif r.get('din_score', 0) == 0:
-                ventas.append(f"  {simb} — congelado (vender)")
-            elif r.get('total', 0) < 30:
-                ventas.append(f"  {simb} — Score {r['total']} (vender)")
-        
+                motivos.append(f"+{ganancia}% toma de ganancia")
+            if r.get("din_label") in {"CONGELADO", "MUERTO"}:
+                motivos.append("liquidez deteriorada")
+            if _score(r) < 30:
+                motivos.append(f"score {_score(r):.1f}")
+            if risk >= 75:
+                motivos.append(f"risk {risk:.0f}")
+            if conf < 40:
+                motivos.append(f"confidence {conf:.0f}")
+            if motivos:
+                ventas.append(f"  {simb} — " + "; ".join(motivos))
         if ventas:
-            msg += "\n<b>⚠️ SEÑALES DE VENTA:</b>\n"
-            msg += "\n".join(ventas) + "\n"
-    
+            msg += "\n<b>⚠️ REVISAR CARTERA:</b>\n" + "\n".join(ventas) + "\n"
     return msg
 
 
 async def enviar_alertas_cierre():
-    """
-    Envía alertas a todos los usuarios con Telegram vinculado.
-    Llamar desde un cron job a las 1:15 PM VET.
-    """
     db = SessionLocal()
     try:
         resultados, deval, metadata = await calcular_scoring_completo()
-        
         usuarios = db.query(Usuario).filter(
             Usuario.telegram_chat_id.isnot(None),
             Usuario.telegram_chat_id != "",
+            Usuario.activo.is_(True),
         ).all()
-        
         enviados = 0
         errores = 0
-        
         for usuario in usuarios:
             if not suscripcion_activa(usuario):
                 continue
-            
             plan = get_plan(usuario)
-            chat_id = usuario.telegram_chat_id
-            
             try:
                 if plan == "pro":
-                    msg = await generar_alerta_pro(resultados, deval, usuario, db)
+                    msg = await generar_alerta_pro(resultados, deval, metadata, usuario, db)
                 elif plan == "intermedio":
-                    msg = await generar_alerta_intermedio(resultados, deval)
+                    msg = await generar_alerta_intermedio(resultados, deval, metadata)
                 else:
-                    msg = await generar_alerta_basico(resultados, deval)
-                
-                ok = await enviar_mensaje(chat_id, msg)
-                if ok:
+                    msg = await generar_alerta_basico(resultados, deval, metadata)
+                if await enviar_mensaje(usuario.telegram_chat_id, msg):
                     enviados += 1
                 else:
                     errores += 1
-            except Exception as e:
-                print(f"[Alertas] Error enviando a {usuario.email}: {e}")
+            except Exception as exc:
+                print(f"[Alertas] Error: {type(exc).__name__}")
                 errores += 1
-        
-        print(f"[Alertas] Cierre BVC: {enviados} enviados, {errores} errores")
-        return {"enviados": enviados, "errores": errores}
-    
+        return {"enviados": enviados, "errores": errores, "engine": metadata.get("engine_version")}
     finally:
         db.close()

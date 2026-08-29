@@ -1,0 +1,81 @@
+name: Engine contract tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [audit/v3-v4-engine]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_ENV: development
+      SCORING_ENGINE_V3_ENABLED: "true"
+      PORTFOLIO_ENGINE_V4_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile runtime modules
+        run: >-
+          python -m py_compile
+          database.py
+          services/__init__.py
+          services/auth.py
+          services/admin_bootstrap.py
+          services/security_runtime.py
+          services/secret_guard.py
+          services/pagos.py
+          services/feature_flags.py
+          services/scoring_v2.py
+          services/scoring.py
+          services/scoring_v3.py
+          services/scoring_engine_v3.py
+          services/scoring_postprocess.py
+          services/backtest_v3.py
+          services/portafolio_legacy.py
+          services/portafolio.py
+          services/portfolio_v4.py
+          services/engine_router.py
+          services/alertas_cierre.py
+      - name: Validate Jinja templates
+        run: |
+          python - <<'PY'
+          from jinja2 import Environment, FileSystemLoader, select_autoescape
+          env = Environment(loader=FileSystemLoader("templates"), autoescape=select_autoescape(["html"]))
+          for name in ("scoring.html", "portafolio.html"):
+              env.get_template(name)
+              print(f"template ok: {name}")
+          PY
+      - name: Validate Neon PostgreSQL URL normalization
+        env:
+          DATABASE_URL: postgresql://demo:demo@ep-demo-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require
+        run: |
+          python - <<'PY'
+          import database
+          assert database.DB_PERSISTENCE_MODE == "external"
+          assert database.IS_POSTGRES is True
+          assert database.DATABASE_URL.startswith("postgresql+psycopg://")
+          assert database.engine.url.drivername == "postgresql+psycopg"
+          print("Neon PostgreSQL driver normalization ok")
+          PY
+      - name: Initialize ephemeral database schema
+        run: |
+          rm -f /tmp/caracasbull.db
+          python - <<'PY'
+          from database import init_db, DB_PERSISTENCE_MODE
+          init_db()
+          assert DB_PERSISTENCE_MODE == "ephemeral"
+          print("ephemeral DB schema ok")
+          PY
+      - name: Run unit and contract tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v

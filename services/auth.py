@@ -1,66 +1,76 @@
 import os
-from datetime import datetime, timedelta
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status, Request
-from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from database import get_db, Usuario, Suscripcion
 
-# ── Configuración ─────────────────────────────────────────────────────────────
-SECRET_KEY   = os.environ.get("SECRET_KEY", "caracasbull-dev-secret-cambiar-en-produccion")
-ALGORITHM    = "HS256"
-TOKEN_EXPIRE = 60 * 24 * 7  # 7 días en minutos
+ALGORITHM = "HS256"
+TOKEN_EXPIRE = int(os.environ.get("TOKEN_EXPIRE_MINUTES", str(60 * 24 * 7)))
+TRIAL_DIAS = 14
+APP_ENV = os.environ.get("APP_ENV", "development").strip().lower()
 
-TRIAL_DIAS   = 14  # días de prueba gratuita
+_secret = os.environ.get("SECRET_KEY", "").strip()
+if APP_ENV in {"production", "prod"} and len(_secret) < 32:
+    raise RuntimeError("SECRET_KEY es obligatoria en producción y debe tener al menos 32 caracteres")
+# En desarrollo/instancia efímera se genera una clave por proceso; nunca se usa
+# una clave pública/hardcodeada compartida.
+SECRET_KEY = _secret if len(_secret) >= 32 else secrets.token_urlsafe(48)
 
-pwd_context  = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
-# ── Contraseñas ───────────────────────────────────────────────────────────────
 
 def hash_password(password: str) -> str:
+    if len(password) < 8:
+        raise ValueError("La contraseña debe tener al menos 8 caracteres")
     return pwd_context.hash(password)
 
 
 def verificar_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return pwd_context.verify(plain, hashed)
+    except Exception:
+        return False
 
-
-# ── JWT ───────────────────────────────────────────────────────────────────────
 
 def crear_token(data: dict) -> str:
+    now = datetime.now(timezone.utc)
     payload = data.copy()
-    payload["exp"] = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE)
+    payload.update({
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=TOKEN_EXPIRE)).timestamp()),
+        "iss": "caracasbull",
+    })
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def decodificar_token(token: str) -> Optional[dict]:
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], issuer="caracasbull")
     except JWTError:
         return None
 
 
-# ── Usuarios ──────────────────────────────────────────────────────────────────
-
 def crear_usuario(db: Session, nombre: str, email: str, password: str) -> Usuario:
-    """Crea un usuario nuevo con período de prueba de 14 días."""
-    if db.query(Usuario).filter(Usuario.email == email).first():
+    email_norm = email.lower().strip()
+    if not email_norm or "@" not in email_norm:
+        raise ValueError("Email inválido")
+    if db.query(Usuario).filter(Usuario.email == email_norm).first():
         raise ValueError("El email ya está registrado")
 
     usuario = Usuario(
-        nombre=nombre,
-        email=email.lower().strip(),
+        nombre=nombre.strip()[:100],
+        email=email_norm,
         password_hash=hash_password(password),
+        activo=True,
     )
     db.add(usuario)
-    db.flush()  # obtener el ID sin hacer commit todavía
-
-    # Crear suscripción trial automáticamente
+    db.flush()
     suscripcion = Suscripcion(
         usuario_id=usuario.id,
         plan="trial",
@@ -75,21 +85,21 @@ def crear_usuario(db: Session, nombre: str, email: str, password: str) -> Usuari
 
 
 def autenticar_usuario(db: Session, email: str, password: str) -> Optional[Usuario]:
-    usuario = db.query(Usuario).filter(Usuario.email == email.lower().strip()).first()
-    if not usuario or not verificar_password(password, usuario.password_hash):
+    email_norm = email.lower().strip()
+    usuario = db.query(Usuario).filter(Usuario.email == email_norm).first()
+    if not usuario or not usuario.activo:
+        return None
+    if not verificar_password(password, usuario.password_hash):
         return None
     return usuario
 
 
 def obtener_usuario_por_id(db: Session, usuario_id: int) -> Optional[Usuario]:
-    return db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    return db.query(Usuario).filter(Usuario.id == usuario_id, Usuario.activo.is_(True)).first()
 
-
-# ── Suscripción ───────────────────────────────────────────────────────────────
 
 def suscripcion_activa(usuario: Usuario) -> bool:
-    """Devuelve True si el usuario tiene suscripción vigente."""
-    if not usuario.suscripcion:
+    if not usuario or not usuario.activo or not usuario.suscripcion:
         return False
     if not usuario.suscripcion.activa:
         return False
@@ -99,24 +109,18 @@ def suscripcion_activa(usuario: Usuario) -> bool:
 
 
 def dias_restantes(usuario: Usuario) -> int:
-    """Días que quedan en la suscripción actual."""
     if not usuario.suscripcion or not usuario.suscripcion.fecha_vence:
         return 0
-    delta = usuario.suscripcion.fecha_vence - datetime.utcnow()
-    return max(0, delta.days)
+    return max(0, (usuario.suscripcion.fecha_vence - datetime.utcnow()).days)
 
 
 def get_plan(usuario: Usuario) -> str:
-    """Devuelve el plan del usuario: 'trial', 'basico', 'intermedio', 'pro', o 'ninguno'."""
     if not usuario.suscripcion or not suscripcion_activa(usuario):
         return "ninguno"
     return usuario.suscripcion.plan or "trial"
 
 
-# ── Dependencias FastAPI ──────────────────────────────────────────────────────
-
 def get_usuario_actual(request: Request, db: Session = Depends(get_db)) -> Optional[Usuario]:
-    """Lee el token de la cookie y devuelve el usuario actual o None."""
     token = request.cookies.get("access_token")
     if not token:
         return None
@@ -124,28 +128,22 @@ def get_usuario_actual(request: Request, db: Session = Depends(get_db)) -> Optio
     if not payload:
         return None
     usuario_id = payload.get("sub")
-    if not usuario_id:
+    try:
+        uid = int(usuario_id)
+    except (TypeError, ValueError):
         return None
-    return obtener_usuario_por_id(db, int(usuario_id))
+    return obtener_usuario_por_id(db, uid)
 
 
 def require_usuario(request: Request, db: Session = Depends(get_db)) -> Usuario:
-    """Dependencia que exige usuario autenticado — redirige al login si no."""
     usuario = get_usuario_actual(request, db)
     if not usuario:
-        raise HTTPException(
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": "/login"},
-        )
+        raise HTTPException(status_code=status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": "/login"})
     return usuario
 
 
 def require_suscripcion(request: Request, db: Session = Depends(get_db)) -> Usuario:
-    """Dependencia que exige usuario autenticado Y suscripción activa."""
     usuario = require_usuario(request, db)
     if not suscripcion_activa(usuario):
-        raise HTTPException(
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": "/suscripcion"},
-        )
+        raise HTTPException(status_code=status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": "/suscripcion"})
     return usuario
