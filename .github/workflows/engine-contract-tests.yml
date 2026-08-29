@@ -31,6 +31,7 @@ jobs:
           database.py
           services/__init__.py
           services/auth.py
+          services/admin_bootstrap.py
           services/security_runtime.py
           services/secret_guard.py
           services/pagos.py
