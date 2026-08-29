@@ -182,6 +182,21 @@ class AlertaPrecio(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+
+    # En una DB persistente nueva (Neon) se garantiza la cuenta Admin de forma
+    # idempotente. El Admin conserva todas sus funciones de usuario normal.
+    try:
+        from services.admin_bootstrap import ensure_admin_account
+        with SessionLocal() as db:
+            admin_state = ensure_admin_account(db)
+            if admin_state.get("configured"):
+                action = "created" if admin_state.get("created") else ("updated" if admin_state.get("updated") else "ok")
+                print(f"[DB] admin={action} user_id={admin_state.get('user_id')}")
+    except Exception as exc:
+        # No exponer credenciales en logs. En producción, si ADMIN_* está
+        # configurado incorrectamente, el error queda visible sin imprimir secretos.
+        print(f"[DB] admin-bootstrap-error={type(exc).__name__}: {exc}")
+
     backend = "sqlite-ephemeral" if IS_SQLITE else ("postgresql-external" if IS_POSTGRES else "external")
     print(f"[DB] modo={DB_PERSISTENCE_MODE} backend={backend}")
 
