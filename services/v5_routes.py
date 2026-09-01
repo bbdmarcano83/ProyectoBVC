@@ -1,6 +1,7 @@
 """Rutas V5 aisladas del monolito main.py.
 
-Se incluyen mediante bootstrap FastAPI y mantienen autenticación/DB existentes.
+El handler se expone a nivel de módulo para que el bootstrap pueda registrarlo
+directamente con ``add_api_route``. ``get_v5_router`` se conserva para compatibilidad.
 """
 from __future__ import annotations
 
@@ -20,15 +21,13 @@ from services.portfolio_benchmark_v5 import compare_open_portfolio_to_ibc, norma
 from services.portfolio_snapshot_v5 import save_daily_snapshot, load_snapshots
 from services.portfolio_performance_v5 import analyze_snapshot_performance
 
+V5_BENCHMARK_PATH = "/api/v5/portfolio-benchmark"
 _ROUTER: APIRouter | None = None
 
 
 def _tx_dict(tx: TransaccionHistorial) -> dict:
     raw_date = getattr(tx, "fecha", None)
     day = raw_date.date().isoformat() if hasattr(raw_date, "date") else str(raw_date or "")[:10]
-    # La bitácora legacy podía guardar BCV actual aunque el usuario eligiera una
-    # fecha histórica. Preferimos la tasa histórica persistida; si no existe,
-    # dejamos FX nulo para no fabricar un benchmark USD.
     historical_fx = get_close_rate(day, refresh_if_missing=False) if day else None
     return {
         "simbolo": tx.simbolo,
@@ -69,73 +68,71 @@ def _audited_ibc_points() -> tuple[list[dict], dict]:
     return audited, out_meta
 
 
+async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)):
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    if not suscripcion_activa(usuario):
+        return JSONResponse({"error": "Suscripción requerida"}, status_code=403)
+
+    datos_bolsa, current_fx = await asyncio.gather(obtener_datos_bvc(), obtener_tasa_bcv())
+    prices = {
+        str(item.get("COD_SIMB") or "").upper(): _to_float(item.get("PRECIO") or 0)
+        for item in datos_bolsa
+    }
+    assets = db.query(ActivoPortafolio).filter(ActivoPortafolio.usuario_id == usuario.id).all()
+    tx_rows = db.query(TransaccionHistorial).filter(
+        TransaccionHistorial.usuario_id == usuario.id
+    ).order_by(TransaccionHistorial.fecha.asc()).all()
+    transactions = [_tx_dict(tx) for tx in tx_rows]
+    positions = [_position_dict(a, prices.get(str(a.simbolo).upper(), 0.0)) for a in assets]
+
+    ibc_raw, ibc_meta = _audited_ibc_points()
+    normalized_ibc = normalize_ibc_points(ibc_raw)
+    current_ibc = ibc_asof(normalized_ibc, date.today()) if normalized_ibc else None
+
+    open_benchmark = compare_open_portfolio_to_ibc(
+        positions,
+        transactions,
+        ibc_raw,
+        current_ibc=current_ibc,
+        current_fx=current_fx if current_fx > 0 else None,
+    )
+
+    try:
+        snapshot_state = save_daily_snapshot(
+            usuario.id,
+            prices=prices,
+            fx_bcv=current_fx if current_fx > 0 else None,
+            ibc_level=current_ibc,
+            source="portfolio_view",
+        )
+    except Exception as exc:
+        snapshot_state = {"saved": False, "error": type(exc).__name__}
+
+    snapshots = load_snapshots(usuario.id)
+    temporal = analyze_snapshot_performance(snapshots, transactions, ibc_points=ibc_raw)
+
+    return JSONResponse({
+        "engine_version": "v5-portfolio-benchmark",
+        "as_of": date.today().isoformat(),
+        "benchmark": open_benchmark,
+        "performance": temporal,
+        "ibc": ibc_meta,
+        "snapshot": snapshot_state,
+        "fx_current": current_fx if current_fx > 0 else None,
+        "notes": [
+            "Benchmark abierto: lotes FIFO y fechas equivalentes contra IBC.",
+            "USD usa BCV histórico por fecha; si falta, no se aproxima.",
+            "Ventanas 1M/3M/6M/YTD/1Y: Modified Dietz y benchmark IBC con los mismos flujos.",
+        ],
+    })
+
+
 def get_v5_router() -> APIRouter:
     global _ROUTER
-    if _ROUTER is not None:
-        return _ROUTER
-
-    router = APIRouter()
-
-    @router.get("/api/v5/portfolio-benchmark", response_class=JSONResponse)
-    async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)):
-        usuario = get_usuario_actual(request, db)
-        if not usuario:
-            return JSONResponse({"error": "No autorizado"}, status_code=401)
-        if not suscripcion_activa(usuario):
-            return JSONResponse({"error": "Suscripción requerida"}, status_code=403)
-
-        datos_bolsa, current_fx = await asyncio.gather(obtener_datos_bvc(), obtener_tasa_bcv())
-        prices = {
-            str(item.get("COD_SIMB") or "").upper(): _to_float(item.get("PRECIO") or 0)
-            for item in datos_bolsa
-        }
-        assets = db.query(ActivoPortafolio).filter(ActivoPortafolio.usuario_id == usuario.id).all()
-        tx_rows = db.query(TransaccionHistorial).filter(
-            TransaccionHistorial.usuario_id == usuario.id
-        ).order_by(TransaccionHistorial.fecha.asc()).all()
-        transactions = [_tx_dict(tx) for tx in tx_rows]
-        positions = [_position_dict(a, prices.get(str(a.simbolo).upper(), 0.0)) for a in assets]
-
-        ibc_raw, ibc_meta = _audited_ibc_points()
-        normalized_ibc = normalize_ibc_points(ibc_raw)
-        current_ibc = ibc_asof(normalized_ibc, date.today()) if normalized_ibc else None
-
-        open_benchmark = compare_open_portfolio_to_ibc(
-            positions,
-            transactions,
-            ibc_raw,
-            current_ibc=current_ibc,
-            current_fx=current_fx if current_fx > 0 else None,
-        )
-
-        try:
-            snapshot_state = save_daily_snapshot(
-                usuario.id,
-                prices=prices,
-                fx_bcv=current_fx if current_fx > 0 else None,
-                ibc_level=current_ibc,
-                source="portfolio_view",
-            )
-        except Exception as exc:
-            snapshot_state = {"saved": False, "error": type(exc).__name__}
-
-        snapshots = load_snapshots(usuario.id)
-        temporal = analyze_snapshot_performance(snapshots, transactions, ibc_points=ibc_raw)
-
-        return JSONResponse({
-            "engine_version": "v5-portfolio-benchmark",
-            "as_of": date.today().isoformat(),
-            "benchmark": open_benchmark,
-            "performance": temporal,
-            "ibc": ibc_meta,
-            "snapshot": snapshot_state,
-            "fx_current": current_fx if current_fx > 0 else None,
-            "notes": [
-                "Benchmark abierto: lotes FIFO y fechas equivalentes contra IBC.",
-                "USD usa BCV histórico por fecha; si falta, no se aproxima.",
-                "Ventanas 1M/3M/6M/YTD/1Y: Modified Dietz y benchmark IBC con los mismos flujos.",
-            ],
-        })
-
-    _ROUTER = router
-    return router
+    if _ROUTER is None:
+        router = APIRouter()
+        router.add_api_route(V5_BENCHMARK_PATH, portfolio_benchmark_v5, methods=["GET"], response_class=JSONResponse)
+        _ROUTER = router
+    return _ROUTER
