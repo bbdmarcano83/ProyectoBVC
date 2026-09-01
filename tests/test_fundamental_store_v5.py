@@ -97,6 +97,35 @@ class FundamentalStoreV5Tests(unittest.TestCase):
         self.assertEqual(payload["BNC"]["as_of"], "2099-12-31")
         self.assertTrue(payload["BNC"]["audited"])
 
+    def test_duplicate_can_enrich_missing_source_sha_but_never_overwrite_conflict(self):
+        url = "https://www.bncenlinea.com/bnc/informes-anuales"
+        sha_a = "a" * 64
+        sha_b = "b" * 64
+        base = save_snapshot(
+            "BNC", self._payload(31), source_url=url, as_of="2096-12-31",
+            document_type="annual_report", fiscal_period="FY2096", audited=True,
+            published_at="2097-02-01",
+        )
+        self.assertIn(base.get("saved"), {True, False})
+
+        enriched = save_snapshot(
+            "BNC", self._payload(31), source_url=url, as_of="2096-12-31",
+            document_type="annual_report", fiscal_period="FY2096", audited=True,
+            published_at="2097-02-01", metadata={"source_document_sha256": sha_a},
+        )
+        self.assertTrue(enriched["duplicate"])
+        self.assertEqual(enriched["source_document_sha256"], sha_a)
+
+        conflict = save_snapshot(
+            "BNC", self._payload(31), source_url=url, as_of="2096-12-31",
+            document_type="annual_report", fiscal_period="FY2096", audited=True,
+            published_at="2097-02-01", metadata={"source_document_sha256": sha_b},
+        )
+        self.assertFalse(conflict["duplicate"])
+        self.assertTrue(conflict["source_document_hash_conflict"])
+        self.assertEqual(conflict["existing_source_document_sha256"], sha_a)
+        self.assertEqual(conflict["incoming_source_document_sha256"], sha_b)
+
     def test_backtest_loader_blocks_future_publication_and_future_history(self):
         url = "https://www.bncenlinea.com/bnc/informes-anuales"
         save_snapshot(
