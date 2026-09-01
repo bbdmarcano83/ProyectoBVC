@@ -1,7 +1,7 @@
-"""CLI para backfill IBC V5.
+"""CLI persistente para backfill IBC V5.
 
-Por defecto es dry-run. ``--persist`` escribe sólo puntos que pasan la política
-de fuente y nunca degrada cierres BVC oficiales ya almacenados.
+No existe modo dry-run. Requiere DATABASE_URL externa y persiste únicamente
+puntos que pasan la política de fuentes; nunca degrada cierres BVC oficiales.
 """
 from __future__ import annotations
 
@@ -12,12 +12,11 @@ from services.ibc_backfill_v5 import backfill_range
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Caracas Bull V5 IBC backfill")
+    parser = argparse.ArgumentParser(description="Caracas Bull V5 IBC persistent backfill")
     parser.add_argument("--from-year", type=int, required=True)
     parser.add_argument("--from-month", type=int, required=True)
     parser.add_argument("--to-year", type=int, required=True)
     parser.add_argument("--to-month", type=int, required=True)
-    parser.add_argument("--persist", action="store_true")
     args = parser.parse_args()
 
     result = backfill_range(
@@ -25,7 +24,6 @@ def main() -> int:
         args.from_month,
         args.to_year,
         args.to_month,
-        persist=args.persist,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     return 0 if result.get("ok") else 2
