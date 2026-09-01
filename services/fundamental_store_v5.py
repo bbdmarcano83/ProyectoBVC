@@ -187,7 +187,7 @@ def save_snapshot(
 
 
 def load_latest_validated() -> tuple[dict[str, dict], dict]:
-    """Carga el snapshot validado más reciente de cada símbolo."""
+    """Carga el snapshot validado más reciente y adjunta historia anual USD comparable."""
     with SessionLocal() as db:
         rows = db.query(FundamentalSnapshot).filter(FundamentalSnapshot.validated.is_(True)).all()
 
@@ -208,9 +208,24 @@ def load_latest_validated() -> tuple[dict[str, dict], dict]:
         if isinstance(data, dict):
             payload[symbol] = data
 
+    history_meta = {"history_attached_count": 0, "history_2plus_count": 0}
+    if payload:
+        try:
+            from services.fundamental_history_v5 import attach_histories_to_latest
+            payload, history_meta = attach_histories_to_latest(payload)
+        except Exception as exc:
+            # El último snapshot sigue siendo utilizable; sólo se omite la capa
+            # histórica y se informa el error. Nunca se inventan series.
+            history_meta = {
+                "history_attached_count": 0,
+                "history_2plus_count": 0,
+                "error": type(exc).__name__,
+            }
+
     return payload, {
         "source": "database:fundamental_snapshots",
         "available": bool(payload),
         "count": len(payload),
         "invalid_json": invalid_json,
+        "history": history_meta,
     }
