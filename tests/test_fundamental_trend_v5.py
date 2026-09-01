@@ -30,6 +30,24 @@ class FundamentalTrendV5Tests(unittest.TestCase):
         out = compute_fundamental_trend(history)
         self.assertEqual(out["label"], "DETERIORANDO")
 
+    def test_loss_narrowing_is_improvement_not_negative_growth(self):
+        history = [
+            {"as_of": "2024-12-31", "currency": "VES", "equity_usd": 100, "net_income_usd": -10, "total_assets_usd": 150},
+            {"as_of": "2025-12-31", "currency": "VES", "equity_usd": 110, "net_income_usd": -5, "total_assets_usd": 160},
+        ]
+        out = compute_fundamental_trend(history, "financial")
+        self.assertEqual(out["changes"]["net_income"], 50.0)
+        self.assertEqual(out["label"], "MEJORANDO")
+
+    def test_profit_to_loss_is_strong_deterioration(self):
+        history = [
+            {"as_of": "2024-12-31", "currency": "VES", "equity_usd": 100, "net_income_usd": 10, "total_assets_usd": 150},
+            {"as_of": "2025-12-31", "currency": "VES", "equity_usd": 90, "net_income_usd": -5, "total_assets_usd": 130},
+        ]
+        out = compute_fundamental_trend(history, "financial")
+        self.assertEqual(out["changes"]["net_income"], -100.0)
+        self.assertEqual(out["label"], "DETERIORANDO")
+
     def test_one_period_is_insufficient(self):
         out = compute_fundamental_trend([{"as_of": "2025-12-31", "equity_usd": 100}])
         self.assertEqual(out["label"], "SIN HISTORIA SUFICIENTE")
