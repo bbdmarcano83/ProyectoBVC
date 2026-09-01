@@ -47,6 +47,7 @@ jobs:
           services/scoring_engine_v5.py
           services/fundamentals_v5.py
           services/fundamental_sources_v5.py
+          services/fundamental_identity_v5.py
           services/fundamental_store_v5.py
           services/fundamental_collector_v5.py
           services/fundamental_discovery_v5.py
@@ -71,6 +72,7 @@ jobs:
           services/portfolio_v4.py
           services/portfolio_v5.py
           services/portfolio_benchmark_v5.py
+          services/portfolio_benchmark_context_v5.py
           services/portfolio_snapshot_v5.py
           services/portfolio_performance_v5.py
           services/engine_router.py
