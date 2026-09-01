@@ -59,6 +59,8 @@ class PhilosophySignalV5Tests(unittest.TestCase):
             "simbolo": "AAA",
             "fundamental_score_v5": 80,
             "fundamental_coverage_v5": 90,
+            "fx_valid_v5": True,
+            "fx_flags_v5": [],
             "strength_score_v3": 82,
             "opportunity_score_v3": 75,
             "confidence_score_v3": 85,
