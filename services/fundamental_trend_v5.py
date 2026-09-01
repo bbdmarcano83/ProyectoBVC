@@ -16,6 +16,7 @@ TREND_FIELDS_BY_TYPE = {
     "investment_vehicle": ("equity", "net_income", "nav", "total_assets"),
 }
 DEFAULT_TREND_FIELDS = ("equity", "revenue", "net_income", "free_cash_flow", "nav", "total_assets")
+PROFITABILITY_FIELDS = {"net_income", "free_cash_flow"}
 SERIES_KEY = {
     "equity": "equity_history_usd",
     "revenue": "revenue_history_usd",
@@ -50,6 +51,27 @@ def _pct_change(previous: float | None, current: float | None) -> float | None:
     if previous is None or current is None or abs(previous) < 1e-12:
         return None
     return (current / previous - 1.0) * 100.0
+
+
+def _economic_change(previous: float | None, current: float | None, field: str) -> float | None:
+    """Signed improvement measure; profitability fields handle negative values economically."""
+    if previous is None or current is None:
+        return None
+    if field not in PROFITABILITY_FIELDS:
+        return _pct_change(previous, current)
+
+    if abs(previous) < 1e-12:
+        if abs(current) < 1e-12:
+            return 0.0
+        return 100.0 if current > 0 else -100.0
+    if previous < 0 < current:
+        return 100.0
+    if previous > 0 > current:
+        return -100.0
+    if previous < 0 and current < 0:
+        # -10 -> -5 = +50% improvement; -10 -> -15 = -50% deterioration.
+        return (abs(previous) - abs(current)) / abs(previous) * 100.0
+    return _pct_change(previous, current)
 
 
 def _classify(changes: dict[str, float], *, periods: int, coverage_pct: float,
@@ -115,7 +137,7 @@ def compute_fundamental_trend(history: list[dict], industry_type: str | None = N
         observations = [value for value in observations if value is not None]
         if len(observations) < 2:
             continue
-        change = _pct_change(observations[0], observations[-1])
+        change = _economic_change(observations[0], observations[-1], field)
         if change is not None:
             changes[field] = round(change, 2)
 
@@ -143,7 +165,7 @@ def compute_fundamental_trend_from_series(series: dict, industry_type: str | Non
         dates = [str(value)[:10] for value in ((series or {}).get(f"{key}_dates") or []) if value]
         if len(values) < 2:
             continue
-        change = _pct_change(values[0], values[-1])
+        change = _economic_change(values[0], values[-1], field)
         if change is None:
             continue
         changes[field] = round(change, 2)
