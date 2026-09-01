@@ -1,10 +1,8 @@
 """Fuente de historia IBC para benchmark V5.
 
-Carga una serie JSON explícita desde `IBC_HISTORY_V5_JSON` o
-`IBC_HISTORY_V5_PATH`. Cuando los puntos incluyen `source_url`, deduplica por
-fecha conservando la fuente de mayor prioridad (BVC oficial primero). Puntos
-legacy sin source_url siguen siendo legibles para compatibilidad, pero quedan
-marcados como no auditados en metadata.
+Producción prioriza puntos auditados persistidos en Neon. JSON/path permanecen
+como mecanismos de importación/fallback. Cuando los puntos incluyen
+`source_url`, deduplica por fecha conservando la fuente de mayor prioridad.
 """
 from __future__ import annotations
 
@@ -24,7 +22,6 @@ def _date_key(point: dict) -> str | None:
     try:
         return datetime.strptime(s, "%Y-%m-%d").date().isoformat()
     except ValueError:
-        # Soporta dd/mm/YYYY en backfills manuales provenientes de boletines.
         try:
             return datetime.strptime(str(raw).strip()[:10], "%d/%m/%Y").date().isoformat()
         except ValueError:
@@ -85,7 +82,6 @@ def normalize_auditable_points(points: list[dict]) -> tuple[list[dict], dict]:
             by_date[day] = prefer_point(existing, item)
         elif source_url and not existing.get("source_url"):
             by_date[day] = item
-        # Si ambos carecen de source_url se conserva el primero para estabilidad.
 
     normalized = [by_date[k] for k in sorted(by_date)]
     audited = sum(1 for p in normalized if int(p.get("source_confidence") or 0) >= 75)
@@ -99,7 +95,7 @@ def normalize_auditable_points(points: list[dict]) -> tuple[list[dict], dict]:
     }
 
 
-def load_ibc_history() -> tuple[list[dict], dict]:
+def _load_json_fallback() -> tuple[list[dict], dict]:
     raw = os.getenv("IBC_HISTORY_V5_JSON", "").strip()
     source = "none"
     if raw:
@@ -122,9 +118,27 @@ def load_ibc_history() -> tuple[list[dict], dict]:
     if not isinstance(payload, list):
         return [], {"available": False, "source": source, "reason": "invalid_shape"}
     points, audit = normalize_auditable_points(payload)
-    return points, {
-        "available": bool(points),
-        "source": source,
-        "count": len(points),
-        **audit,
-    }
+    return points, {"available": bool(points), "source": source, "count": len(points), **audit}
+
+
+def load_ibc_history() -> tuple[list[dict], dict]:
+    """Carga primero Neon; usa JSON/path sólo cuando la DB aún está vacía."""
+    try:
+        from services.ibc_store_v5 import load_persisted_ibc, persist_ibc_points
+        db_points, db_meta = load_persisted_ibc()
+        if db_points:
+            return db_points, db_meta
+    except Exception as exc:
+        db_meta = {"available": False, "source": "database:ibc_history_v5", "error": type(exc).__name__}
+    else:
+        db_meta = {"available": False, "source": "database:ibc_history_v5", "count": 0}
+
+    points, fallback_meta = _load_json_fallback()
+    if not points:
+        return [], {**db_meta, "fallback": fallback_meta}
+
+    try:
+        persist_state = persist_ibc_points(points)
+    except Exception as exc:
+        persist_state = {"error": type(exc).__name__}
+    return points, {**fallback_meta, "persistent_store_empty": True, "persist": persist_state}
