@@ -1,11 +1,16 @@
 import unittest
 from datetime import date
+from unittest.mock import patch
 
 from services.fx_history_v5 import (
     parse_official_history,
     close_rate_from_records,
     calendar_average_from_records,
     infer_period_start,
+    coverage_bounds,
+    records_cover_target,
+    get_close_rate,
+    get_period_average,
 )
 
 
@@ -38,6 +43,24 @@ class FxHistoryV5Tests(unittest.TestCase):
 
     def test_no_prior_rate_means_no_average(self):
         self.assertIsNone(calendar_average_from_records(self.records, "2026-01-01", "2026-01-01"))
+
+    def test_coverage_bounds_are_explicit(self):
+        self.assertEqual(coverage_bounds(self.records), (date(2026, 1, 2), date(2026, 1, 6)))
+        self.assertEqual(coverage_bounds([]), (None, None))
+
+    def test_short_non_publishing_gap_is_allowed_but_stale_cache_is_not(self):
+        self.assertTrue(records_cover_target(self.records, "2026-01-10"))
+        self.assertFalse(records_cover_target(self.records, "2026-01-20"))
+
+    def test_get_close_rate_fails_closed_when_refresh_cannot_cover_target(self):
+        with patch("services.fx_history_v5._load_records", return_value=self.records), \
+             patch("services.fx_history_v5.refresh_history", return_value={"ok": False}):
+            self.assertIsNone(get_close_rate("2026-02-01", refresh_if_missing=True))
+
+    def test_period_average_never_forward_fills_weeks_beyond_cache(self):
+        with patch("services.fx_history_v5._load_records", return_value=self.records), \
+             patch("services.fx_history_v5.refresh_history", return_value={"ok": False}):
+            self.assertIsNone(get_period_average("2026-01-02", "2026-02-01", refresh_if_missing=True))
 
     def test_period_start_inference(self):
         self.assertEqual(infer_period_start("2026-Q2", "2026-06-30"), "2026-04-01")
