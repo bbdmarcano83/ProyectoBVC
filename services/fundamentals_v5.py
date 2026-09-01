@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -42,15 +43,49 @@ def _positive_ratio(values: list[Any]) -> float | None:
     return sum(1 for v in clean if v > 0) / len(clean) * 100.0
 
 
-def _growth(values: list[Any]) -> float | None:
-    clean = [_f(v) for v in values]
-    clean = [v for v in clean if v is not None]
-    if len(clean) < 2 or clean[0] == 0:
+def _elapsed_years(first: Any, last: Any) -> float | None:
+    """Return actual elapsed years between ISO dates; fail closed on bad dates."""
+    try:
+        start = date.fromisoformat(str(first)[:10])
+        end = date.fromisoformat(str(last)[:10])
+    except (TypeError, ValueError):
         return None
-    years = len(clean) - 1
-    if clean[0] > 0 and clean[-1] > 0:
-        return ((clean[-1] / clean[0]) ** (1.0 / years) - 1.0) * 100.0
-    return (clean[-1] / clean[0] - 1.0) * 100.0
+    days = (end - start).days
+    if days <= 0:
+        return None
+    return days / 365.2425
+
+
+def _growth(values: list[Any], dates: list[Any] | None = None) -> float | None:
+    """CAGR using real elapsed time when comparable-series dates are available.
+
+    Historical attached series provide one date per value. If dates are absent,
+    the legacy consecutive-observation assumption is retained for compatibility.
+    Non-positive endpoints do not admit a conventional CAGR, so the engine keeps
+    the existing simple total-change fallback rather than fabricating a rate.
+    """
+    paired: list[tuple[float, Any | None]] = []
+    raw_dates = dates if isinstance(dates, list) else []
+    for idx, raw in enumerate(values or []):
+        value = _f(raw)
+        if value is None:
+            continue
+        day = raw_dates[idx] if idx < len(raw_dates) else None
+        paired.append((value, day))
+    if len(paired) < 2 or paired[0][0] == 0:
+        return None
+
+    first_value, first_date = paired[0]
+    last_value, last_date = paired[-1]
+    years = _elapsed_years(first_date, last_date) if first_date and last_date else None
+    if years is None:
+        years = float(len(paired) - 1)
+    if years <= 0:
+        return None
+
+    if first_value > 0 and last_value > 0:
+        return ((last_value / first_value) ** (1.0 / years) - 1.0) * 100.0
+    return (last_value / first_value - 1.0) * 100.0
 
 
 def _normalize_payload(payload: Any) -> dict[str, dict] | None:
@@ -120,6 +155,15 @@ def _series(data: dict, base: str) -> list[Any]:
     return values if isinstance(values, list) else []
 
 
+def _series_dates(data: dict, base: str) -> list[Any]:
+    usd_key = f"{base}_usd_dates"
+    if isinstance(data.get(usd_key), list):
+        return data[usd_key]
+    legacy_key = f"{base}_dates"
+    values = data.get(legacy_key)
+    return values if isinstance(values, list) else []
+
+
 def compute_metrics(data: dict, sector: str = "") -> dict:
     """Compute metrics from USD-normalized monetary fields when available."""
     fx_data, fx_meta = normalize_to_usd(data)
@@ -157,10 +201,12 @@ def compute_metrics(data: dict, sector: str = "") -> dict:
     earnings_history = _series(fx_data, "earnings_history")
     revenue_history = _series(fx_data, "revenue_history")
     fcf_history = _series(fx_data, "fcf_history")
+    earnings_dates = _series_dates(fx_data, "earnings_history")
+    revenue_dates = _series_dates(fx_data, "revenue_history")
     out["positive_earnings_years_pct_v5"] = _positive_ratio(earnings_history)
     out["positive_fcf_years_pct_v5"] = _positive_ratio(fcf_history)
-    out["earnings_cagr_pct_v5"] = _growth(earnings_history)
-    out["revenue_cagr_pct_v5"] = _growth(revenue_history)
+    out["earnings_cagr_pct_v5"] = _growth(earnings_history, earnings_dates)
+    out["revenue_cagr_pct_v5"] = _growth(revenue_history, revenue_dates)
 
     if financial:
         out["pb_v5"] = _safe_div(market_cap, equity)
