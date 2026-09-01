@@ -48,11 +48,13 @@ jobs:
           services/fundamental_collector_v5.py
           services/fundamental_discovery_v5.py
           services/fundamental_pilots_v5.py
+          services/fundamental_backfill_manifest_v5.py
           services/fundamental_history_v5.py
           services/fundamental_trend_v5.py
           services/fx_normalization_v5.py
           services/fx_history_v5.py
           services/ibc_history_v5.py
+          services/ibc_sources_v5.py
           services/investment_vehicle_v5.py
           services/scoring_postprocess.py
           services/backtest_v3.py
@@ -62,6 +64,7 @@ jobs:
           services/portfolio_v5.py
           services/portfolio_benchmark_v5.py
           services/portfolio_snapshot_v5.py
+          services/portfolio_performance_v5.py
           services/engine_router.py
           services/alertas_cierre.py
       - name: Validate Jinja templates
