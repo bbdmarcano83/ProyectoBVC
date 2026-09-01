@@ -44,6 +44,7 @@ jobs:
           services/scoring_engine_v5.py
           services/fundamentals_v5.py
           services/fundamental_sources_v5.py
+          services/investment_vehicle_v5.py
           services/scoring_postprocess.py
           services/backtest_v3.py
           services/portafolio_legacy.py
