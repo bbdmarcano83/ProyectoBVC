@@ -1,7 +1,8 @@
 """Tres snapshots piloto auditables para validar la tubería V5 end-to-end.
 
 NO se cargan automáticamente en producción. Son fixtures controlados con cifras
-extraídas de documentos oficiales y sirven para probar validación/persistencia.
+extraídas de documentos oficiales. Las tasas BCV históricas no se inventan: los
+pilotos quedan etiquetados con su base monetaria y esperan metadata FX validada.
 """
 
 PILOTS = {
@@ -18,6 +19,7 @@ PILOTS = {
             "equity": 243825000000.0,
             "net_income": 106804000000.0,
             "currency": "VES",
+            "monetary_basis": "nominal_ves",
             "as_of": "2026-06-30",
         },
     },
@@ -36,6 +38,7 @@ PILOTS = {
             "net_income": -758060382.0,
             "shares_outstanding": 52524376.0,
             "currency": "VES",
+            "monetary_basis": "constant_ves_end_period",
             "as_of": "2025-09-30",
         },
     },
@@ -53,6 +56,7 @@ PILOTS = {
             "equity": 150862769.0,
             "net_income": -92353830.0,
             "currency": "VES",
+            "monetary_basis": "constant_ves_end_period",
             "as_of": "2025-12-31",
         },
     },
