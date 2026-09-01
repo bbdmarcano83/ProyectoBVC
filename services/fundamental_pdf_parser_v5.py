@@ -31,7 +31,12 @@ FIELD_ALIASES = {
     "nav": ("valor neto de los activos", "valor de unidad de inversión", "valor patrimonial"),
 }
 
-NUMBER_RE = re.compile(r"(?<!\w)(?:Bs\.?\s*)?\(?-?\d{1,3}(?:[\.\s]\d{3})*(?:,\d+)?|-?\d+(?:[\.,]\d+)?\)?")
+# La alternativa entre paréntesis va primero para evitar que el motor empiece
+# el match dentro de `(1.250,75)` y pierda el signo contable de pérdida.
+_NUMBER_BODY = r"(?:\d{1,3}(?:[\.\s]\d{3})*(?:,\d+)?|\d+(?:[\.,]\d+)?)"
+NUMBER_RE = re.compile(
+    rf"(?<!\w)(?:Bs\.?\s*)?(?:\(-?{_NUMBER_BODY}\)|-?{_NUMBER_BODY})"
+)
 
 
 def _normalize_number(raw: str) -> float | None:
@@ -65,13 +70,10 @@ def _official_host_allowed(symbol: str, url: str) -> bool:
         value = src.get(key)
         if value:
             registered.append((urlparse(str(value)).hostname or "").lower())
-    # Algunos registros guardan el portal en `urls`.
     for value in src.get("urls", []) if isinstance(src.get("urls"), list) else []:
         registered.append((urlparse(str(value)).hostname or "").lower())
     registered = [h for h in registered if h]
     if not registered:
-        # El registro ya fue auditado; el caller puede aportar URL exacta del
-        # mismo emisor aunque el catálogo no exponga aún el hostname.
         return True
     return any(target == h or target.endswith("." + h) or h.endswith("." + target) for h in registered)
 
