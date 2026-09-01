@@ -13,6 +13,8 @@ on:
       - "services/fundamental_backfill_manifest_v5.py"
       - "services/fundamental_pilots_v5.py"
       - "services/fx_history_v5.py"
+      - "services/fundamental_history_v5.py"
+      - "services/fundamental_trend_v5.py"
   workflow_dispatch:
 
 permissions:
@@ -105,6 +107,7 @@ jobs:
           python - <<'PY'
           from services.ibc_store_v5 import load_persisted_ibc
           from services.fundamental_store_v5 import load_latest_validated
+          from services.fundamental_trend_v5 import compute_fundamental_trend_from_series
 
           points, ibc_meta = load_persisted_ibc()
           if not points:
@@ -118,7 +121,16 @@ jobs:
               if row:
                   print(f"Fundamental snapshot available: {symbol} as_of={row.get('as_of')}")
                   if symbol == "MVZ.A":
-                      print(f"MVZ.A annual USD history periods: {len(row.get('fundamental_history_usd') or [])}")
+                      periods = int(row.get("history_periods_usd") or 0)
+                      dates = row.get("history_dates_usd") or []
+                      print(f"MVZ.A annual USD history periods: {periods}")
+                      print(f"MVZ.A annual USD history dates: {dates}")
+                      trend = compute_fundamental_trend_from_series(row, "financial")
+                      print(f"MVZ.A Fundamental Trend: {trend}")
+                      if periods < 4:
+                          raise SystemExit(f"MVZ.A expected >=4 annual USD periods, got {periods}")
+                      if any(str(day).startswith("2026-06") for day in dates):
+                          raise SystemExit("Quarterly 2026-Q2 leaked into annual history")
               else:
                   missing.append(symbol)
                   print(f"Fundamental snapshot missing: {symbol}")
