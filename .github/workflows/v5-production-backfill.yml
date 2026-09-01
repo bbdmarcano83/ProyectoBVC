@@ -7,9 +7,11 @@ on:
       - ".github/workflows/v5-production-backfill.yml"
       - "scripts/ibc_backfill_v5.py"
       - "scripts/fundamental_backfill_v5.py"
+      - "scripts/persist_verified_pilots_v5.py"
       - "services/ibc_backfill_v5.py"
       - "services/fundamental_autoreview_v5.py"
       - "services/fundamental_backfill_manifest_v5.py"
+      - "services/fundamental_pilots_v5.py"
   workflow_dispatch:
 
 permissions:
@@ -72,7 +74,11 @@ jobs:
             --to-year 2026 \
             --to-month 9
 
-      - name: Backfill pilot fundamentals into Neon
+      - name: Persist verified fundamental pilots into Neon
+        run: python scripts/persist_verified_pilots_v5.py
+
+      - name: Extend pilot fundamental history from official PDFs
+        continue-on-error: true
         run: python scripts/fundamental_backfill_v5.py --all
 
       - name: Verify persisted datasets
@@ -86,16 +92,16 @@ jobs:
               raise SystemExit("IBC backfill produced no persisted points")
           print(f"IBC persisted points: {len(points)}")
 
-          found = 0
+          missing = []
           for symbol in ("MVZ.A", "SVS", "ICP.B"):
               row = load_latest_validated(symbol)
               if row:
-                  found += 1
                   print(f"Fundamental snapshot available: {symbol}")
               else:
-                  print(f"Fundamental snapshot pending/rejected by validation: {symbol}")
-          if found == 0:
-              raise SystemExit("No pilot fundamental snapshot passed validation")
+                  missing.append(symbol)
+                  print(f"Fundamental snapshot missing: {symbol}")
+          if missing:
+              raise SystemExit("Missing verified pilot fundamentals: " + ", ".join(missing))
           PY
 
-# trigger: DATABASE_URL configured; run real backfill with repository root on PYTHONPATH
+# trigger: persist verified pilots first; historical PDF extension remains fail-closed
