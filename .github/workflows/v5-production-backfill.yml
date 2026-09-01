@@ -29,6 +29,7 @@ jobs:
       SCORING_ENGINE_V5_ENABLED: "false"
       PORTFOLIO_ENGINE_V4_ENABLED: "true"
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: "."
     steps:
       - uses: actions/checkout@v4
 
@@ -97,4 +98,4 @@ jobs:
               raise SystemExit("No pilot fundamental snapshot passed validation")
           PY
 
-# trigger: DATABASE_URL configured; run real backfill
+# trigger: DATABASE_URL configured; run real backfill with repository root on PYTHONPATH
