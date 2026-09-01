@@ -1,7 +1,8 @@
 """Caracas Bull V5 hybrid philosophy overlay.
 
 V5 preserves V3 market/risk measurements, adds a fundamental gate and requires
-market confirmation. A price drop alone never improves a V5 signal.
+market confirmation. A price drop alone never improves a V5 signal. Venezuelan
+fundamentals also require validated historical FX before a confirmed V5 signal.
 """
 from __future__ import annotations
 from typing import Any
@@ -14,10 +15,8 @@ _LAST_V5_MAP: dict[str, dict] = {}
 
 
 def _n(v: Any, default: float = 0.0) -> float:
-    try:
-        return float(v if v is not None else default)
-    except (TypeError, ValueError):
-        return default
+    try: return float(v if v is not None else default)
+    except (TypeError, ValueError): return default
 
 
 def _clamp(v: float) -> float:
@@ -40,6 +39,13 @@ def _v5_signal(row: dict) -> tuple[str, list[str]]:
     fundamental = row.get("fundamental_score_v5"); coverage = _n(row.get("fundamental_coverage_v5"))
     if fundamental is None:
         return "TÉCNICO V3 · SIN FUNDAMENTALES", ["faltan fundamentales auditables; no se emite confirmación V5"]
+
+    # En Venezuela no confirmamos V5 con estados en Bs sin FX histórico validado.
+    if row.get("fx_valid_v5") is False:
+        flags = row.get("fx_flags_v5") or []
+        detail = ", ".join(str(x) for x in flags[:3]) if flags else "tasa BCV histórica incompleta"
+        return "FUNDAMENTALES · FX PENDIENTE", [f"normalización USD pendiente: {detail}"]
+
     fscore = _n(fundamental); strength = _n(row.get("strength_score_v3")); opportunity = _n(row.get("opportunity_score_v3")); confidence = _n(row.get("confidence_score_v3")); risk = _n(row.get("risk_score_v3"), 100); quality_ok = bool(row.get("data_quality_ok_v3")); pullback, leader, route_reasons = _routes(row)
     if coverage < 50: return "FUNDAMENTALES INCOMPLETOS", [f"cobertura fundamental insuficiente ({coverage:.0f}%)"]
     if fscore < 45: return "DESCARTAR FUNDAMENTAL", ["calidad/valor/margen de seguridad insuficientes"]
@@ -47,9 +53,10 @@ def _v5_signal(row: dict) -> tuple[str, list[str]]:
     if strength >= 70: reasons.append("fortaleza de mercado suficiente")
     if confidence >= 60: reasons.append("confianza de datos suficiente")
     if risk < 60: reasons.append("riesgo dentro del límite")
+    if row.get("fx_valid_v5"): reasons.append("fundamentales normalizados a USD con FX histórico validado")
     if row.get("industry_type_v5") == "investment_vehicle": reasons.append("vehículo evaluado por NAV/patrimonio, rendimiento y distribuciones")
     reasons.extend(route_reasons)
-    gates = fscore >= 60 and coverage >= 60 and confidence >= 60 and risk < 60 and quality_ok
+    gates = fscore >= 60 and coverage >= 60 and confidence >= 60 and risk < 60 and quality_ok and bool(row.get("fx_valid_v5"))
     if gates and strength >= 70 and opportunity >= 60 and (pullback or leader): return "OPORTUNIDAD HÍBRIDA CONFIRMADA", reasons
     if fscore >= 60 and strength >= 55 and confidence >= 55 and risk < 70: return "PREPARAR ENTRADA", reasons or ["fundamentales favorables; falta confirmación completa"]
     if fscore >= 60: return "CANDIDATA FUNDAMENTAL", reasons or ["fundamentales favorables; mercado todavía no confirma"]
@@ -62,14 +69,13 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
     source_audit = source_audit_summary(symbols)
     rows, fmeta = enrich_fundamental_scores(rows)
     rows, vehicle_meta = enrich_investment_vehicles(rows)
-    confirmed = 0; with_fundamentals = 0
+    confirmed = 0; with_fundamentals = 0; fx_pending = 0
     for row in rows:
         src = get_source(str(row.get("simbolo") or ""))
         row["fundamental_source_registered_v5"] = bool(src)
         row["fundamental_source_confidence_v5"] = src.get("confidence", 0) if src else 0
         row["fundamental_source_status_v5"] = src.get("status", "unmapped") if src else "unmapped"
-        if src and not row.get("industry_type_v5"):
-            row["industry_type_v5"] = src.get("industry_type")
+        if src and not row.get("industry_type_v5"): row["industry_type_v5"] = src.get("industry_type")
         fundamental = row.get("fundamental_score_v5")
         if fundamental is None:
             row["philosophy_score_v5"] = None
@@ -77,12 +83,26 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
             with_fundamentals += 1
             row["philosophy_score_v5"] = _clamp(_n(fundamental)*0.40 + _n(row.get("strength_score_v3"))*0.25 + _n(row.get("opportunity_score_v3"))*0.15 + _n(row.get("confidence_score_v3"))*0.10 + (100.0-_n(row.get("risk_score_v3"),100.0))*0.10)
         stage, explain = _v5_signal(row)
-        row["signal_stage_v5"] = stage; row["explain_v5"] = explain; row["philosophy_v5"] = "Caracas Bull: valor/calidad por tipo de emisor + Momentum/Confirmación"
+        row["signal_stage_v5"] = stage; row["explain_v5"] = explain; row["philosophy_v5"] = "Caracas Bull: valor/calidad por tipo de emisor + USD/BCV + Momentum/Confirmación"
         if stage == "OPORTUNIDAD HÍBRIDA CONFIRMADA": confirmed += 1
+        if stage == "FUNDAMENTALES · FX PENDIENTE": fx_pending += 1
     global _LAST_V5_MAP
     _LAST_V5_MAP = {str(r.get("simbolo")): dict(r) for r in rows if r.get("simbolo")}
     metadata["engine_version"] = "V5-HYBRID"
-    metadata["v5"] = {"fundamentals":fmeta,"investment_vehicles":vehicle_meta,"source_audit":source_audit,"rows_with_fundamentals":with_fundamentals,"confirmed_opportunities":confirmed,"principles":["Greenblatt: negocio bueno + valoración atractiva para operativas no financieras","Graham: margen de seguridad y solidez financiera","Buffett: calidad, rentabilidad y generación de caja sostenibles","Vehículos: NAV/patrimonio + rentabilidad + distribuciones + consistencia","Momentum: el mercado debe confirmar; no se compra una caída por caer"],"routes":["quality_pullback","market_leader"]}
+    metadata["v5"] = {
+        "fundamentals": fmeta, "investment_vehicles": vehicle_meta, "source_audit": source_audit,
+        "rows_with_fundamentals": with_fundamentals, "fx_pending": fx_pending,
+        "confirmed_opportunities": confirmed,
+        "principles": [
+            "Greenblatt: negocio bueno + valoración atractiva para operativas no financieras",
+            "Graham: margen de seguridad y solidez financiera",
+            "Buffett: calidad, rentabilidad y generación de caja sostenibles",
+            "Vehículos: NAV/patrimonio + rentabilidad + distribuciones + consistencia",
+            "FX: estados venezolanos se normalizan a USD con BCV histórico; nunca con la tasa de hoy",
+            "Momentum: el mercado debe confirmar; no se compra una caída por caer",
+        ],
+        "routes": ["quality_pullback", "market_leader"],
+    }
     return rows, metadata
 
 
