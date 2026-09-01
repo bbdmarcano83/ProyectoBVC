@@ -1,13 +1,9 @@
 """Fundamental engine V5 for Caracas Bull.
 
-Combines complementary lenses without inventing missing data:
-- Greenblatt: quality + value (ROC / earnings yield) for non-financials.
-- Graham: balance-sheet safety, earnings consistency and conservative valuation.
-- Buffett: durable profitability, ROE/ROA, cash generation and consistency.
-- Financials: dedicated ROE/ROA/P-B/P-E path instead of EBIT/EV mechanics.
-
-Primary runtime source is the validated persistent snapshot store. JSON/file
-inputs remain available as an explicit fallback for tests and controlled imports.
+Greenblatt + Graham + Buffett with dedicated financial/investment-vehicle paths.
+Historical Venezuelan statements are analyzed through an auditable USD view
+when BCV FX metadata is available. Original reported values remain untouched in
+storage; missing FX is never guessed.
 """
 from __future__ import annotations
 
@@ -15,6 +11,8 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+
+from services.fx_normalization_v5 import normalize_to_usd, prefer_usd
 
 
 def _f(value: Any) -> float | None:
@@ -34,11 +32,6 @@ def _safe_div(a: float | None, b: float | None) -> float | None:
 
 def _pct(v: float | None) -> float | None:
     return None if v is None else v * 100.0
-
-
-def _mean(values: list[float | None]) -> float | None:
-    clean = [v for v in values if v is not None]
-    return sum(clean) / len(clean) if clean else None
 
 
 def _positive_ratio(values: list[Any]) -> float | None:
@@ -71,16 +64,11 @@ def _normalize_payload(payload: Any) -> dict[str, dict] | None:
         payload = mapped
     if not isinstance(payload, dict):
         return None
-    return {
-        str(symbol).upper(): data
-        for symbol, data in payload.items()
-        if isinstance(data, dict)
-    }
+    return {str(symbol).upper(): data for symbol, data in payload.items() if isinstance(data, dict)}
 
 
 def load_fundamentals() -> tuple[dict[str, dict], dict]:
-    """Load only auditable fundamental snapshots; never infer missing values."""
-    # 1) Persistent validated store (Neon in production).
+    """Load only auditable snapshots; never infer missing values or FX."""
     try:
         from services.fundamental_store_v5 import load_latest_validated
         db_payload, db_meta = load_latest_validated()
@@ -88,11 +76,10 @@ def load_fundamentals() -> tuple[dict[str, dict], dict]:
             return db_payload, db_meta
     except Exception as exc:
         db_meta = {"source": "database:fundamental_snapshots", "available": False, "count": 0,
-                   "error": f"{type(exc).__name__}"}
+                   "error": type(exc).__name__}
     else:
         db_meta = {"source": "database:fundamental_snapshots", "available": False, "count": 0}
 
-    # 2) Explicit controlled fallback for tests/manual staging imports.
     raw = os.getenv("FUNDAMENTALS_V5_JSON", "").strip()
     source = "none"
     if raw:
@@ -104,15 +91,12 @@ def load_fundamentals() -> tuple[dict[str, dict], dict]:
             if p.exists() and p.is_file():
                 raw = p.read_text(encoding="utf-8")
                 source = f"file:{p.name}"
-
     if not raw:
         return {}, {**db_meta, "fallback_source": source}
-
     try:
         payload = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         return {}, {"source": source, "available": False, "count": 0, "error": "invalid_json"}
-
     normalized = _normalize_payload(payload)
     if normalized is None:
         return {}, {"source": source, "available": False, "count": 0, "error": "invalid_shape"}
@@ -128,23 +112,40 @@ def _is_financial(data: dict, sector: str = "") -> bool:
     return any(k in text for k in ("banco", "bank", "financ", "seguro", "insurance"))
 
 
-def compute_metrics(data: dict, sector: str = "") -> dict:
-    """Compute only metrics directly supported by supplied fields."""
-    market_cap = _f(data.get("market_cap"))
-    debt = _f(data.get("total_debt"))
-    cash = _f(data.get("cash"))
-    ebit = _f(data.get("ebit"))
-    net_income = _f(data.get("net_income"))
-    equity = _f(data.get("equity"))
-    assets = _f(data.get("total_assets"))
-    revenue = _f(data.get("revenue"))
-    fcf = _f(data.get("free_cash_flow"))
-    current_assets = _f(data.get("current_assets"))
-    current_liabilities = _f(data.get("current_liabilities"))
-    net_ppe = _f(data.get("net_ppe"))
+def _series(data: dict, base: str) -> list[Any]:
+    usd_key = f"{base}_usd"
+    if isinstance(data.get(usd_key), list):
+        return data[usd_key]
+    values = data.get(base)
+    return values if isinstance(values, list) else []
 
-    financial = _is_financial(data, sector)
+
+def compute_metrics(data: dict, sector: str = "") -> dict:
+    """Compute metrics from USD-normalized monetary fields when available."""
+    fx_data, fx_meta = normalize_to_usd(data)
+
+    market_cap = prefer_usd(fx_data, "market_cap")
+    debt = prefer_usd(fx_data, "total_debt")
+    cash = prefer_usd(fx_data, "cash")
+    ebit = prefer_usd(fx_data, "ebit")
+    net_income = prefer_usd(fx_data, "net_income")
+    equity = prefer_usd(fx_data, "equity")
+    assets = prefer_usd(fx_data, "total_assets")
+    revenue = prefer_usd(fx_data, "revenue")
+    fcf = prefer_usd(fx_data, "free_cash_flow")
+    current_assets = prefer_usd(fx_data, "current_assets")
+    current_liabilities = prefer_usd(fx_data, "current_liabilities")
+    net_ppe = prefer_usd(fx_data, "net_ppe")
+
+    financial = _is_financial(fx_data, sector)
     out: dict[str, Any] = {"industry_type_v5": "financial" if financial else "non_financial"}
+    for key in (
+        "fx_rate_bcv_close_v5", "fx_rate_bcv_avg_v5", "fx_source_v5", "fx_as_of_v5",
+        "monetary_basis_v5", "fx_coverage_pct_v5", "fx_normalization_method_v5",
+    ):
+        out[key] = fx_data.get(key)
+    out["fx_valid_v5"] = bool(fx_meta.get("valid"))
+    out["fx_flags_v5"] = list(fx_meta.get("flags") or [])
 
     out["roe_pct_v5"] = _pct(_safe_div(net_income, equity))
     out["roa_pct_v5"] = _pct(_safe_div(net_income, assets))
@@ -153,9 +154,9 @@ def compute_metrics(data: dict, sector: str = "") -> dict:
     out["current_ratio_v5"] = _safe_div(current_assets, current_liabilities)
     out["debt_to_equity_v5"] = _safe_div(debt, equity)
 
-    earnings_history = data.get("earnings_history") if isinstance(data.get("earnings_history"), list) else []
-    revenue_history = data.get("revenue_history") if isinstance(data.get("revenue_history"), list) else []
-    fcf_history = data.get("fcf_history") if isinstance(data.get("fcf_history"), list) else []
+    earnings_history = _series(fx_data, "earnings_history")
+    revenue_history = _series(fx_data, "revenue_history")
+    fcf_history = _series(fx_data, "fcf_history")
     out["positive_earnings_years_pct_v5"] = _positive_ratio(earnings_history)
     out["positive_fcf_years_pct_v5"] = _positive_ratio(fcf_history)
     out["earnings_cagr_pct_v5"] = _growth(earnings_history)
@@ -168,15 +169,9 @@ def compute_metrics(data: dict, sector: str = "") -> dict:
         out["return_on_capital_pct_v5"] = None
         out["enterprise_value_v5"] = None
     else:
-        ev = None
-        if market_cap is not None and debt is not None and cash is not None:
-            ev = market_cap + debt - cash
-        nwc = None
-        if current_assets is not None and current_liabilities is not None:
-            nwc = current_assets - current_liabilities
-        capital = None
-        if nwc is not None and net_ppe is not None:
-            capital = nwc + net_ppe
+        ev = market_cap + debt - cash if market_cap is not None and debt is not None and cash is not None else None
+        nwc = current_assets - current_liabilities if current_assets is not None and current_liabilities is not None else None
+        capital = nwc + net_ppe if nwc is not None and net_ppe is not None else None
         out["enterprise_value_v5"] = ev
         out["earnings_yield_pct_v5"] = _pct(_safe_div(ebit, ev))
         out["return_on_capital_pct_v5"] = _pct(_safe_div(ebit, capital))
@@ -217,11 +212,9 @@ def _avg_available(parts: list[tuple[float | None, float]]) -> tuple[float | Non
 
 
 def enrich_fundamental_scores(market_rows: list[dict]) -> tuple[list[dict], dict]:
-    """Attach Greenblatt/Graham/Buffett scores to existing market rows."""
     fundamentals, meta = load_fundamentals()
     enriched: list[dict] = []
     calc_rows: list[dict] = []
-
     from services.fundamental_sources_v5 import get_source
 
     for row in market_rows:
@@ -234,14 +227,12 @@ def enrich_fundamental_scores(market_rows: list[dict]) -> tuple[list[dict], dict
             item["fundamentals_available_v5"] = False
             enriched.append(item)
             continue
-        # Investment vehicles are scored by their dedicated engine, not here.
         if src and src.get("industry_type") == "investment_vehicle":
             item["fundamentals_available_v5"] = True
             item["industry_type_v5"] = "investment_vehicle"
             enriched.append(item)
             continue
-        metrics = compute_metrics(data, str(item.get("sector") or ""))
-        item.update(metrics)
+        item.update(compute_metrics(data, str(item.get("sector") or "")))
         item["fundamentals_available_v5"] = True
         calc_rows.append(item)
         enriched.append(item)
@@ -250,71 +241,42 @@ def enrich_fundamental_scores(market_rows: list[dict]) -> tuple[list[dict], dict
         meta.update({"coverage_pct": 0.0, "scored_count": 0})
         return enriched, meta
 
-    rank_specs = {
-        "earnings_yield_pct_v5": True,
-        "return_on_capital_pct_v5": True,
-        "roe_pct_v5": True,
-        "roa_pct_v5": True,
-        "fcf_margin_pct_v5": True,
-        "net_margin_pct_v5": True,
-        "positive_earnings_years_pct_v5": True,
-        "positive_fcf_years_pct_v5": True,
-        "earnings_cagr_pct_v5": True,
-        "revenue_cagr_pct_v5": True,
-        "current_ratio_v5": True,
-        "debt_to_equity_v5": False,
-        "pb_v5": False,
-        "pe_v5": False,
+    specs = {
+        "earnings_yield_pct_v5": True, "return_on_capital_pct_v5": True,
+        "roe_pct_v5": True, "roa_pct_v5": True, "fcf_margin_pct_v5": True,
+        "net_margin_pct_v5": True, "positive_earnings_years_pct_v5": True,
+        "positive_fcf_years_pct_v5": True, "earnings_cagr_pct_v5": True,
+        "revenue_cagr_pct_v5": True, "current_ratio_v5": True,
+        "debt_to_equity_v5": False, "pb_v5": False, "pe_v5": False,
     }
-    ranks = {key: percentile_map(calc_rows, key, high) for key, high in rank_specs.items()}
+    ranks = {key: percentile_map(calc_rows, key, high) for key, high in specs.items()}
 
     for item in enriched:
         if not item.get("fundamentals_available_v5") or item.get("industry_type_v5") == "investment_vehicle":
             continue
         sym = str(item.get("simbolo"))
-        def r(key: str) -> float | None:
-            return ranks.get(key, {}).get(sym)
-
+        r = lambda key: ranks.get(key, {}).get(sym)
         financial = item.get("industry_type_v5") == "financial"
         if financial:
-            greenblatt, green_cov = _avg_available([
-                (r("roe_pct_v5"), 0.35), (r("roa_pct_v5"), 0.20),
-                (r("pb_v5"), 0.25), (r("pe_v5"), 0.20),
-            ])
+            greenblatt, green_cov = _avg_available([(r("roe_pct_v5"), .35), (r("roa_pct_v5"), .20), (r("pb_v5"), .25), (r("pe_v5"), .20)])
         else:
-            greenblatt, green_cov = _avg_available([
-                (r("return_on_capital_pct_v5"), 0.55),
-                (r("earnings_yield_pct_v5"), 0.45),
-            ])
-
-        graham, graham_cov = _avg_available([
-            (r("current_ratio_v5"), 0.20), (r("debt_to_equity_v5"), 0.20),
-            (r("positive_earnings_years_pct_v5"), 0.25),
-            (r("pb_v5"), 0.15), (r("pe_v5"), 0.20),
-        ])
-        buffett, buffett_cov = _avg_available([
-            (r("roe_pct_v5"), 0.25), (r("roa_pct_v5"), 0.10),
-            (r("fcf_margin_pct_v5"), 0.20), (r("net_margin_pct_v5"), 0.10),
-            (r("positive_fcf_years_pct_v5"), 0.15),
-            (r("earnings_cagr_pct_v5"), 0.10), (r("revenue_cagr_pct_v5"), 0.10),
-        ])
-
-        philosophy, philosophy_cov = _avg_available([
-            (greenblatt, 0.35), (graham, 0.25), (buffett, 0.40),
-        ])
-        item["greenblatt_score_v5"] = greenblatt
-        item["graham_score_v5"] = graham
-        item["buffett_score_v5"] = buffett
-        item["fundamental_score_v5"] = philosophy
-        item["greenblatt_coverage_v5"] = green_cov
-        item["graham_coverage_v5"] = graham_cov
-        item["buffett_coverage_v5"] = buffett_cov
-        item["fundamental_coverage_v5"] = philosophy_cov
+            greenblatt, green_cov = _avg_available([(r("return_on_capital_pct_v5"), .55), (r("earnings_yield_pct_v5"), .45)])
+        graham, graham_cov = _avg_available([(r("current_ratio_v5"), .20), (r("debt_to_equity_v5"), .20), (r("positive_earnings_years_pct_v5"), .25), (r("pb_v5"), .15), (r("pe_v5"), .20)])
+        buffett, buffett_cov = _avg_available([(r("roe_pct_v5"), .25), (r("roa_pct_v5"), .10), (r("fcf_margin_pct_v5"), .20), (r("net_margin_pct_v5"), .10), (r("positive_fcf_years_pct_v5"), .15), (r("earnings_cagr_pct_v5"), .10), (r("revenue_cagr_pct_v5"), .10)])
+        philosophy, philosophy_cov = _avg_available([(greenblatt, .35), (graham, .25), (buffett, .40)])
+        item.update({
+            "greenblatt_score_v5": greenblatt, "graham_score_v5": graham,
+            "buffett_score_v5": buffett, "fundamental_score_v5": philosophy,
+            "greenblatt_coverage_v5": green_cov, "graham_coverage_v5": graham_cov,
+            "buffett_coverage_v5": buffett_cov, "fundamental_coverage_v5": philosophy_cov,
+        })
 
     scored = sum(1 for r in enriched if r.get("fundamental_score_v5") is not None)
+    fx_ready = sum(1 for r in enriched if r.get("fx_valid_v5"))
     meta.update({
         "coverage_pct": round(scored / max(1, len(market_rows)) * 100.0, 1),
         "scored_count": scored,
-        "method": "Greenblatt + Graham + Buffett, with dedicated financials/investment-vehicle paths",
+        "fx_ready_count": fx_ready,
+        "method": "Greenblatt + Graham + Buffett on auditable USD/BCV view, with dedicated financials/investment-vehicle paths",
     })
     return enriched, meta
