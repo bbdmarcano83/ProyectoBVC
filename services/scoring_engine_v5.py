@@ -8,6 +8,7 @@ from typing import Any
 
 from services.fundamentals_v5 import enrich_fundamental_scores
 from services.fundamental_sources_v5 import get_source, source_audit_summary
+from services.investment_vehicle_v5 import enrich_investment_vehicles
 
 _LAST_V5_MAP: dict[str, dict] = {}
 
@@ -46,6 +47,7 @@ def _v5_signal(row: dict) -> tuple[str, list[str]]:
     if strength >= 70: reasons.append("fortaleza de mercado suficiente")
     if confidence >= 60: reasons.append("confianza de datos suficiente")
     if risk < 60: reasons.append("riesgo dentro del límite")
+    if row.get("industry_type_v5") == "investment_vehicle": reasons.append("vehículo evaluado por NAV/patrimonio, rendimiento y distribuciones")
     reasons.extend(route_reasons)
     gates = fscore >= 60 and coverage >= 60 and confidence >= 60 and risk < 60 and quality_ok
     if gates and strength >= 70 and opportunity >= 60 and (pullback or leader): return "OPORTUNIDAD HÍBRIDA CONFIRMADA", reasons
@@ -59,12 +61,15 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
     symbols = [str(r.get("simbolo") or "").upper() for r in rows if r.get("simbolo")]
     source_audit = source_audit_summary(symbols)
     rows, fmeta = enrich_fundamental_scores(rows)
+    rows, vehicle_meta = enrich_investment_vehicles(rows)
     confirmed = 0; with_fundamentals = 0
     for row in rows:
         src = get_source(str(row.get("simbolo") or ""))
         row["fundamental_source_registered_v5"] = bool(src)
         row["fundamental_source_confidence_v5"] = src.get("confidence", 0) if src else 0
         row["fundamental_source_status_v5"] = src.get("status", "unmapped") if src else "unmapped"
+        if src and not row.get("industry_type_v5"):
+            row["industry_type_v5"] = src.get("industry_type")
         fundamental = row.get("fundamental_score_v5")
         if fundamental is None:
             row["philosophy_score_v5"] = None
@@ -72,12 +77,12 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
             with_fundamentals += 1
             row["philosophy_score_v5"] = _clamp(_n(fundamental)*0.40 + _n(row.get("strength_score_v3"))*0.25 + _n(row.get("opportunity_score_v3"))*0.15 + _n(row.get("confidence_score_v3"))*0.10 + (100.0-_n(row.get("risk_score_v3"),100.0))*0.10)
         stage, explain = _v5_signal(row)
-        row["signal_stage_v5"] = stage; row["explain_v5"] = explain; row["philosophy_v5"] = "Caracas Bull: Greenblatt + Graham + Buffett + Momentum/Confirmación"
+        row["signal_stage_v5"] = stage; row["explain_v5"] = explain; row["philosophy_v5"] = "Caracas Bull: valor/calidad por tipo de emisor + Momentum/Confirmación"
         if stage == "OPORTUNIDAD HÍBRIDA CONFIRMADA": confirmed += 1
     global _LAST_V5_MAP
     _LAST_V5_MAP = {str(r.get("simbolo")): dict(r) for r in rows if r.get("simbolo")}
     metadata["engine_version"] = "V5-HYBRID"
-    metadata["v5"] = {"fundamentals":fmeta,"source_audit":source_audit,"rows_with_fundamentals":with_fundamentals,"confirmed_opportunities":confirmed,"principles":["Greenblatt: negocio bueno + valoración atractiva","Graham: margen de seguridad y solidez financiera","Buffett: calidad, rentabilidad y generación de caja sostenibles","Momentum: el mercado debe confirmar; no se compra una caída por caer"],"routes":["quality_pullback","market_leader"]}
+    metadata["v5"] = {"fundamentals":fmeta,"investment_vehicles":vehicle_meta,"source_audit":source_audit,"rows_with_fundamentals":with_fundamentals,"confirmed_opportunities":confirmed,"principles":["Greenblatt: negocio bueno + valoración atractiva para operativas no financieras","Graham: margen de seguridad y solidez financiera","Buffett: calidad, rentabilidad y generación de caja sostenibles","Vehículos: NAV/patrimonio + rentabilidad + distribuciones + consistencia","Momentum: el mercado debe confirmar; no se compra una caída por caer"],"routes":["quality_pullback","market_leader"]}
     return rows, metadata
 
 
