@@ -33,6 +33,7 @@ jobs:
           services/__init__.py
           services/auth.py
           services/admin_bootstrap.py
+          services/schema_compat.py
           services/security_runtime.py
           services/secret_guard.py
           services/pagos.py
@@ -50,6 +51,7 @@ jobs:
           services/fundamental_pilots_v5.py
           services/fundamental_backfill_manifest_v5.py
           services/fundamental_pdf_parser_v5.py
+          services/fundamental_review_v5.py
           services/fundamental_history_v5.py
           services/fundamental_trend_v5.py
           services/fx_normalization_v5.py
