@@ -22,9 +22,19 @@ class FundamentalSourceRegistryTests(unittest.TestCase):
             self.assertIsNotNone(src)
             self.assertEqual(src["industry_type"], "investment_vehicle")
 
-    def test_current_board_operating_names_are_registered(self):
-        for symbol in ("EFE", "FNV", "FNC", "CCR", "GMC.B", "PGR", "PTN"):
-            self.assertIsNotNone(get_source(symbol), symbol)
+    def test_observed_bvc_board_has_source_route(self):
+        observed = (
+            "BPV", "TPG", "BVCC", "TDV.D", "RST.B", "BNC", "PGR", "PIV.B",
+            "MPA", "PCP.B", "EFE", "RST", "FNV", "ENV", "IVC.B", "CCP.B",
+            "GZL", "ICP.B", "SVS", "BVL", "MVZ.B", "PTN", "CRM.A", "FNC",
+            "DOM", "CGQ", "MTC.B", "ABC.A", "IVC.A", "MVZ.A", "CCR", "GMC.B",
+            "ARC.B",
+        )
+        audit = source_audit_summary(list(observed))
+        self.assertEqual(audit["symbols"], len(observed))
+        self.assertEqual(audit["covered"], len(observed))
+        self.assertEqual(audit["coverage_pct"], 100.0)
+        self.assertFalse([row for row in audit["rows"] if not row["covered"]])
 
     def test_unknown_symbol_fails_closed(self):
         self.assertIsNone(get_source("NOEXISTE"))
