@@ -1,7 +1,8 @@
-"""Backfill auditable del IBC V5 desde fuente secundaria registrada.
+"""Backfill auditable y persistente del IBC V5.
 
-Sólo llena huecos históricos. Cada punto conserva su URL de origen y pasa por
-``persist_ibc_points``, cuya política impide degradar un dato BVC oficial.
+Cada punto conserva su URL de origen y pasa por ``persist_ibc_points``. La
+política de persistencia impide degradar un dato BVC oficial con una fuente de
+menor prioridad. Este módulo no ofrece dry-run: si se ejecuta, persiste.
 """
 from __future__ import annotations
 
@@ -11,17 +12,19 @@ from html import unescape
 
 import httpx
 
+from database import DB_PERSISTENCE_MODE
 from services.ibc_store_v5 import persist_ibc_points
 
 DATOSMACRO_BASE = "https://datosmacro.expansion.com/bolsa/venezuela"
-_ROW_RE = re.compile(
-    r"(?P<day>\d{2}/\d{2}/\d{4})\s*</?[^>]*>.*?(?P<level>\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)",
-    re.IGNORECASE | re.DOTALL,
-)
 _TEXT_ROW_RE = re.compile(
     r"(?P<day>\d{2}/\d{2}/\d{4})\s+(?P<level>\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)"
 )
 _TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _require_external_db() -> None:
+    if DB_PERSISTENCE_MODE != "external":
+        raise RuntimeError("external_database_required_for_persistent_backfill")
 
 
 def month_url(year: int, month: int) -> str:
@@ -42,7 +45,6 @@ def parse_datosmacro_history(html: str, *, source_url: str) -> list[dict]:
     if "datosmacro.expansion.com" not in str(source_url).lower():
         return []
     raw = unescape(str(html or ""))
-    # Reducimos HTML a texto para tolerar cambios menores de markup.
     text = " ".join(_TAG_RE.sub(" ", raw).split())
     by_date: dict[str, dict] = {}
     for match in _TEXT_ROW_RE.finditer(text):
@@ -71,7 +73,9 @@ def fetch_month(year: int, month: int, *, timeout: float = 20.0) -> tuple[list[d
     return points, {"ok": bool(points), "url": url, "points": len(points)}
 
 
-def backfill_range(start_year: int, start_month: int, end_year: int, end_month: int, *, persist: bool = False) -> dict:
+def backfill_range(start_year: int, start_month: int, end_year: int, end_month: int) -> dict:
+    """Descarga y persiste el rango solicitado en una DB externa."""
+    _require_external_db()
     start = date(start_year, start_month, 1)
     end = date(end_year, end_month, 1)
     if start > end:
@@ -89,10 +93,9 @@ def backfill_range(start_year: int, start_month: int, end_year: int, end_month: 
         else:
             m += 1
 
-    # Deduplica por fecha antes de persistir.
     by_date = {p["date"]: p for p in all_points}
     ordered = [by_date[k] for k in sorted(by_date)]
-    state = persist_ibc_points(ordered) if persist and ordered else None
+    state = persist_ibc_points(ordered) if ordered else {"inserted": 0, "updated": 0, "rejected": 0, "unchanged": 0}
     return {
         "ok": bool(ordered),
         "from": start.isoformat(),
@@ -100,5 +103,5 @@ def backfill_range(start_year: int, start_month: int, end_year: int, end_month: 
         "months": months,
         "points": len(ordered),
         "persisted": state,
-        "dry_run": not persist,
+        "database_mode": DB_PERSISTENCE_MODE,
     }
