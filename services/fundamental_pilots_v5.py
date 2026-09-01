@@ -1,8 +1,7 @@
-"""Tres snapshots piloto auditables para validar la tubería V5 end-to-end.
+"""Snapshots piloto auditables para validar la tubería V5 end-to-end.
 
-NO se cargan automáticamente en producción. Son fixtures controlados con cifras
-extraídas de documentos oficiales. Las tasas BCV históricas no se inventan: los
-pilotos quedan etiquetados con su base monetaria y esperan metadata FX validada.
+Las cifras provienen de fuentes oficiales identificadas. Las tasas BCV históricas
+no se inventan: la ingesta las resuelve y persiste con metadata de procedencia.
 """
 
 PILOTS = {
@@ -60,6 +59,67 @@ PILOTS = {
             "as_of": "2025-12-31",
         },
     },
+}
+
+# Serie oficial de Mercantil Servicios Financieros publicada en su página de
+# cifras históricas. La fuente declara las magnitudes en miles de Bs.; aquí se
+# convierten a VES multiplicando por 1.000. No se deriva Pasivo por diferencia.
+# Se marca audited=False porque la fuente de estas tres filas es la tabla oficial
+# de cifras del emisor, aunque los años también disponen de estados auditados.
+HISTORICAL_PILOTS = {
+    "MVZ.A": [
+        {
+            "document_type": "official_historical_figures",
+            "fiscal_period": "FY2024",
+            "as_of": "2024-12-31",
+            "audited": False,
+            "source_url": "https://www.msf.com/content/inversionistas/informacion_financiera/cifras_mercantil.html",
+            "evidence": "MSF Cifras Mercantil: Diciembre 2024, tabla histórica en miles de Bs.",
+            "data": {
+                "industry_type": "financial",
+                "total_assets": 50269001000.0,
+                "equity": 10489897000.0,
+                "net_income": 2999594000.0,
+                "currency": "VES",
+                "monetary_basis": "nominal_ves",
+                "as_of": "2024-12-31",
+            },
+        },
+        {
+            "document_type": "official_historical_figures",
+            "fiscal_period": "FY2023",
+            "as_of": "2023-12-31",
+            "audited": False,
+            "source_url": "https://www.msf.com/content/inversionistas/informacion_financiera/cifras_mercantil.html",
+            "evidence": "MSF Cifras Mercantil: 2023, tabla histórica en miles de Bs.",
+            "data": {
+                "industry_type": "financial",
+                "total_assets": 29613943000.0,
+                "equity": 5958514000.0,
+                "net_income": 1161962000.0,
+                "currency": "VES",
+                "monetary_basis": "nominal_ves",
+                "as_of": "2023-12-31",
+            },
+        },
+        {
+            "document_type": "official_historical_figures",
+            "fiscal_period": "FY2022",
+            "as_of": "2022-12-31",
+            "audited": False,
+            "source_url": "https://www.msf.com/content/inversionistas/informacion_financiera/cifras_mercantil.html",
+            "evidence": "MSF Cifras Mercantil: 2022, tabla histórica en miles de Bs.",
+            "data": {
+                "industry_type": "financial",
+                "total_assets": 11619045000.0,
+                "equity": 2670873000.0,
+                "net_income": 884935000.0,
+                "currency": "VES",
+                "monetary_basis": "nominal_ves",
+                "as_of": "2022-12-31",
+            },
+        },
+    ]
 }
 
 
