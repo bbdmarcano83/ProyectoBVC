@@ -40,8 +40,6 @@ def _document(symbol: str, period: str) -> dict:
 
 
 def _preferred_column(doc: dict) -> int:
-    # En estados comparativos el período principal está en la primera columna.
-    # Sólo cuando reutilizamos el auditado 2024 para FY2023 buscamos la segunda.
     kind = str(doc.get("document_type") or "")
     if kind == "comparative_in_2024_audit":
         return 1
@@ -49,12 +47,6 @@ def _preferred_column(doc: dict) -> int:
 
 
 def _monetary_basis(symbol: str) -> str:
-    """Base monetaria verificada por emisor para los estados primarios del piloto.
-
-    Mercantil presenta sus estados históricos en VES nominales. Sivensa y
-    CrecePymes presentan los estados primarios usados por este backfill en
-    bolívares constantes al cierre. Los anexos nominales de CrecePymes no se usan.
-    """
     symbol = str(symbol or "").upper().strip()
     if symbol in {"SVS", "ICP.B"}:
         return "constant_ves_end_period"
@@ -64,7 +56,13 @@ def _monetary_basis(symbol: str) -> str:
 def build_review(symbol: str, period: str) -> dict:
     doc = _document(symbol, period)
     candidates, parse_meta = fetch_and_parse_official_pdf(symbol, doc["url"])
-    review = build_review_package(symbol, candidates, source_url=doc["url"], as_of=doc["as_of"])
+    review = build_review_package(
+        symbol,
+        candidates,
+        source_url=doc["url"],
+        as_of=doc["as_of"],
+        source_document_sha256=parse_meta.get("source_document_sha256"),
+    )
     review["preferred_column"] = _preferred_column(doc)
     return {"document": doc, "parse": parse_meta, "review": review}
 
@@ -87,7 +85,7 @@ def _persist_review(package: dict, payload: dict) -> dict:
         currency=str(payload.get("currency") or "VES"),
         monetary_basis=str(payload.get("monetary_basis") or _monetary_basis(review.get("symbol"))),
         period_start=payload.get("period_start"),
-        published_at=payload.get("published_at"),
+        published_at=payload.get("published_at") or doc.get("published_at"),
         extra_fields=extra_fields,
         hydrate_fx=True,
         require_fx=True,
