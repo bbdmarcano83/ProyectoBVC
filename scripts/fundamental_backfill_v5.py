@@ -3,6 +3,8 @@
 No existe modo dry-run. Requiere DATABASE_URL externa. Puede ejecutar un período
 con selecciones explícitas o todos los pilotos con auto-revisión fail-closed.
 Sólo se persisten snapshots que pasan fuente, cobertura, ecuación contable y FX.
+Las re-ejecuciones pueden enriquecer documentos duplicados con SHA-256 del PDF
+sin modificar el snapshot económico ya validado.
 """
 from __future__ import annotations
 
