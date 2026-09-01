@@ -10,6 +10,7 @@ from typing import Any
 from services.fundamentals_v5 import enrich_fundamental_scores
 from services.fundamental_sources_v5 import get_source, source_audit_summary
 from services.investment_vehicle_v5 import enrich_investment_vehicles
+from services.fundamental_trend_v5 import attach_fundamental_trends
 
 _LAST_V5_MAP: dict[str, dict] = {}
 
@@ -40,7 +41,6 @@ def _v5_signal(row: dict) -> tuple[str, list[str]]:
     if fundamental is None:
         return "TÉCNICO V3 · SIN FUNDAMENTALES", ["faltan fundamentales auditables; no se emite confirmación V5"]
 
-    # En Venezuela no confirmamos V5 con estados en Bs sin FX histórico validado.
     if row.get("fx_valid_v5") is False:
         flags = row.get("fx_flags_v5") or []
         detail = ", ".join(str(x) for x in flags[:3]) if flags else "tasa BCV histórica incompleta"
@@ -54,6 +54,9 @@ def _v5_signal(row: dict) -> tuple[str, list[str]]:
     if confidence >= 60: reasons.append("confianza de datos suficiente")
     if risk < 60: reasons.append("riesgo dentro del límite")
     if row.get("fx_valid_v5"): reasons.append("fundamentales normalizados a USD con FX histórico validado")
+    trend = str(row.get("fundamental_trend_v5") or "")
+    if trend == "MEJORANDO": reasons.append("tendencia fundamental USD mejorando")
+    elif trend == "DETERIORANDO": reasons.append("tendencia fundamental USD deteriorándose")
     if row.get("industry_type_v5") == "investment_vehicle": reasons.append("vehículo evaluado por NAV/patrimonio, rendimiento y distribuciones")
     reasons.extend(route_reasons)
     gates = fscore >= 60 and coverage >= 60 and confidence >= 60 and risk < 60 and quality_ok and bool(row.get("fx_valid_v5"))
@@ -69,6 +72,7 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
     source_audit = source_audit_summary(symbols)
     rows, fmeta = enrich_fundamental_scores(rows)
     rows, vehicle_meta = enrich_investment_vehicles(rows)
+    rows, trend_meta = attach_fundamental_trends(rows)
     confirmed = 0; with_fundamentals = 0; fx_pending = 0
     for row in rows:
         src = get_source(str(row.get("simbolo") or ""))
@@ -90,15 +94,16 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
     _LAST_V5_MAP = {str(r.get("simbolo")): dict(r) for r in rows if r.get("simbolo")}
     metadata["engine_version"] = "V5-HYBRID"
     metadata["v5"] = {
-        "fundamentals": fmeta, "investment_vehicles": vehicle_meta, "source_audit": source_audit,
-        "rows_with_fundamentals": with_fundamentals, "fx_pending": fx_pending,
-        "confirmed_opportunities": confirmed,
+        "fundamentals": fmeta, "investment_vehicles": vehicle_meta, "fundamental_trend": trend_meta,
+        "source_audit": source_audit, "rows_with_fundamentals": with_fundamentals,
+        "fx_pending": fx_pending, "confirmed_opportunities": confirmed,
         "principles": [
             "Greenblatt: negocio bueno + valoración atractiva para operativas no financieras",
             "Graham: margen de seguridad y solidez financiera",
             "Buffett: calidad, rentabilidad y generación de caja sostenibles",
             "Vehículos: NAV/patrimonio + rentabilidad + distribuciones + consistencia",
             "FX: estados venezolanos se normalizan a USD con BCV histórico; nunca con la tasa de hoy",
+            "Fundamental Trend: evolución multi-período sólo con cifras comparables en USD; informativa hasta backtest",
             "Momentum: el mercado debe confirmar; no se compra una caída por caer",
         ],
         "routes": ["quality_pullback", "market_leader"],
