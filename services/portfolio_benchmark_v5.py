@@ -77,7 +77,8 @@ def _transaction_net_cost(tx: dict) -> float:
     neto = _f(tx.get("neto"))
     if neto > 0:
         return neto
-    qty = _f(tx.get("cantidad")); price = _f(tx.get("precio"))
+    qty = _f(tx.get("cantidad"))
+    price = _f(tx.get("precio"))
     gross = qty * price
     fee = _f(tx.get("fee_total"))
     if fee > 0:
@@ -147,8 +148,9 @@ def compare_open_portfolio_to_ibc(
 ) -> dict:
     """Compara cartera abierta con un benchmark IBC de flujos/fechas equivalentes.
 
-    Retornos Bs usan el costo histórico de los lotes remanentes. Retornos USD
-    sólo se calculan cuando cada lote tiene FX histórico y existe FX actual.
+    La comparación Bs y USD usa únicamente capital cubierto por datos válidos.
+    `coverage_pct` y `usd_coverage_pct` se calculan contra todo el costo abierto
+    elegible, de modo que una posición no reconciliada nunca contamine alpha.
     """
     pos = [dict(p) for p in positions or []]
     tx = [dict(t) for t in transactions or []]
@@ -161,15 +163,17 @@ def compare_open_portfolio_to_ibc(
     terminal_ibc = _f(current_ibc)
     if terminal_ibc <= 0:
         terminal_ibc = points[-1][1]
+    fx_now = _f(current_fx)
 
-    total_cost_bs = 0.0
-    total_current_bs = 0.0
+    eligible_total_cost_bs = 0.0
+    covered_cost_bs = 0.0
+    covered_current_bs = 0.0
     ibc_terminal_bs = 0.0
+
+    usd_covered_cost_bs = 0.0
     total_initial_usd = 0.0
     total_current_usd = 0.0
     ibc_terminal_usd = 0.0
-    usd_cost_covered_bs = 0.0
-    benchmark_cost_covered_bs = 0.0
     details: list[dict] = []
 
     for p in pos:
@@ -177,8 +181,12 @@ def compare_open_portfolio_to_ibc(
         qty_now = max(0.0, _f(p.get("cantidad")))
         current_value = max(0.0, _f(p.get("val_mkt") or p.get("valor_actual")))
         position_cost = max(0.0, _f(p.get("costo_total")))
-        if not symbol or qty_now <= 0 or current_value < 0:
+        if not symbol or qty_now <= 0:
             continue
+
+        # Denominador de cobertura: todo capital abierto que la cartera declara.
+        if position_cost > 0:
+            eligible_total_cost_bs += position_cost
 
         lots = reconstruct_open_lots(tx, symbol)
         lot_qty = sum(l.qty for l in lots)
@@ -190,57 +198,78 @@ def compare_open_portfolio_to_ibc(
             source = "position_created_fallback" if fallback else "unreconciled"
 
         if not lots:
-            details.append({"symbol": symbol, "available": False, "reason": "sin_fecha_entrada_reconciliable"})
-            total_current_bs += current_value
-            total_cost_bs += position_cost
+            details.append({
+                "symbol": symbol,
+                "available": False,
+                "reason": "sin_fecha_entrada_reconciliable",
+                "cost_bs": round(position_cost, 2),
+            })
             continue
 
         lot_total_cost = sum(max(0.0, l.cost_bs) for l in lots)
-        if lot_total_cost <= 0:
+        lot_total_qty = sum(max(0.0, l.qty) for l in lots)
+        if lot_total_cost <= 0 or lot_total_qty <= 0:
             details.append({"symbol": symbol, "available": False, "reason": "costo_lotes_invalido"})
             continue
 
-        # Si bitácora y costo actual difieren sólo por redondeo/edición, el benchmark
-        # conserva el costo de los lotes; el P/L mostrado por cartera sigue intacto.
+        # Si la posición no traía costo utilizable, los lotes pasan a ser el
+        # denominador elegible para cobertura.
+        if position_cost <= 0:
+            eligible_total_cost_bs += lot_total_cost
+
+        pos_covered_cost = 0.0
+        pos_current_covered = 0.0
         pos_ibc_terminal = 0.0
+        pos_usd_covered_cost = 0.0
         pos_initial_usd = 0.0
+        pos_current_usd = 0.0
         pos_ibc_terminal_usd = 0.0
-        all_usd = bool(current_fx and _f(current_fx) > 0)
         weighted_start_num = 0.0
         weighted_start_den = 0.0
+        covered_lots = 0
+        usd_lots = 0
 
         for lot in lots:
+            if lot.qty <= 0 or lot.cost_bs <= 0:
+                continue
             start_ibc = ibc_asof(points, lot.acquired_on)
             if not start_ibc or start_ibc <= 0:
                 continue
-            benchmark_cost_covered_bs += lot.cost_bs
+
+            current_share_bs = current_value * (lot.qty / lot_total_qty)
             terminal = lot.cost_bs * terminal_ibc / start_ibc
+
+            covered_lots += 1
+            pos_covered_cost += lot.cost_bs
+            pos_current_covered += current_share_bs
             pos_ibc_terminal += terminal
             weighted_start_num += start_ibc * lot.cost_bs
             weighted_start_den += lot.cost_bs
 
-            if lot.fx_start and lot.fx_start > 0 and current_fx and _f(current_fx) > 0:
-                initial_usd = lot.cost_bs / lot.fx_start
-                terminal_usd = terminal / _f(current_fx)
-                pos_initial_usd += initial_usd
-                pos_ibc_terminal_usd += terminal_usd
-                usd_cost_covered_bs += lot.cost_bs
-            else:
-                all_usd = False
+            if lot.fx_start and lot.fx_start > 0 and fx_now > 0:
+                usd_lots += 1
+                pos_usd_covered_cost += lot.cost_bs
+                pos_initial_usd += lot.cost_bs / lot.fx_start
+                pos_current_usd += current_share_bs / fx_now
+                pos_ibc_terminal_usd += terminal / fx_now
 
-        if pos_ibc_terminal <= 0:
-            details.append({"symbol": symbol, "available": False, "reason": "sin_ibc_para_fecha_entrada"})
+        if pos_covered_cost <= 0 or pos_ibc_terminal <= 0:
+            details.append({
+                "symbol": symbol,
+                "available": False,
+                "reason": "sin_ibc_para_fecha_entrada",
+                "cost_bs": round(position_cost or lot_total_cost, 2),
+            })
             continue
 
-        total_cost_bs += lot_total_cost
-        total_current_bs += current_value
+        covered_cost_bs += pos_covered_cost
+        covered_current_bs += pos_current_covered
         ibc_terminal_bs += pos_ibc_terminal
 
-        current_usd = current_value / _f(current_fx) if all_usd and _f(current_fx) > 0 else None
-        if all_usd and pos_initial_usd > 0 and current_usd is not None:
-            total_initial_usd += pos_initial_usd
-            total_current_usd += current_usd
-            ibc_terminal_usd += pos_ibc_terminal_usd
+        usd_covered_cost_bs += pos_usd_covered_cost
+        total_initial_usd += pos_initial_usd
+        total_current_usd += pos_current_usd
+        ibc_terminal_usd += pos_ibc_terminal_usd
 
         weighted_start = weighted_start_num / weighted_start_den if weighted_start_den else None
         details.append({
@@ -248,23 +277,36 @@ def compare_open_portfolio_to_ibc(
             "available": True,
             "source": source,
             "cost_bs": round(lot_total_cost, 2),
+            "covered_cost_bs": round(pos_covered_cost, 2),
             "current_value_bs": round(current_value, 2),
+            "covered_current_value_bs": round(pos_current_covered, 2),
             "ibc_terminal_equivalent_bs": round(pos_ibc_terminal, 2),
             "weighted_ibc_start": round(weighted_start, 4) if weighted_start else None,
             "ibc_current": round(terminal_ibc, 4),
-            "usd_comparable": bool(all_usd and pos_initial_usd > 0),
+            "lot_count": len(lots),
+            "ibc_covered_lots": covered_lots,
+            "usd_covered_lots": usd_lots,
+            "usd_comparable": bool(pos_usd_covered_cost > 0 and fx_now > 0),
+            "coverage_pct": round(pos_covered_cost / max(1.0, lot_total_cost) * 100.0, 1),
+            "usd_coverage_pct": round(pos_usd_covered_cost / max(1.0, lot_total_cost) * 100.0, 1),
         })
 
-    if total_cost_bs <= 0 or ibc_terminal_bs <= 0:
+    coverage_pct = round(covered_cost_bs / max(1.0, eligible_total_cost_bs) * 100.0, 1)
+    usd_coverage_pct = round(usd_covered_cost_bs / max(1.0, eligible_total_cost_bs) * 100.0, 1)
+
+    if covered_cost_bs <= 0 or ibc_terminal_bs <= 0:
         return {
             "available": False,
             "reason": "cobertura_insuficiente",
-            "coverage_pct": round(benchmark_cost_covered_bs / max(1.0, total_cost_bs) * 100.0, 1),
+            "coverage_pct": coverage_pct,
+            "usd_coverage_pct": usd_coverage_pct,
+            "eligible_cost_bs": round(eligible_total_cost_bs, 2),
+            "covered_cost_bs": round(covered_cost_bs, 2),
             "positions": details,
         }
 
-    portfolio_return_bs = (total_current_bs / total_cost_bs - 1.0) * 100.0
-    ibc_return_bs = (ibc_terminal_bs / total_cost_bs - 1.0) * 100.0
+    portfolio_return_bs = (covered_current_bs / covered_cost_bs - 1.0) * 100.0
+    ibc_return_bs = (ibc_terminal_bs / covered_cost_bs - 1.0) * 100.0
     out = {
         "available": True,
         "benchmark": "IBC",
@@ -273,12 +315,14 @@ def compare_open_portfolio_to_ibc(
         "ibc_return_bs_pct": round(ibc_return_bs, 2),
         "alpha_bs_pp": round(portfolio_return_bs - ibc_return_bs, 2),
         "beats_ibc_bs": portfolio_return_bs > ibc_return_bs,
-        "coverage_pct": round(benchmark_cost_covered_bs / max(1.0, total_cost_bs) * 100.0, 1),
+        "coverage_pct": coverage_pct,
+        "eligible_cost_bs": round(eligible_total_cost_bs, 2),
+        "covered_cost_bs": round(covered_cost_bs, 2),
         "ibc_current": round(terminal_ibc, 4),
         "positions": details,
     }
 
-    if total_initial_usd > 0 and total_current_usd > 0 and ibc_terminal_usd > 0:
+    if total_initial_usd > 0 and total_current_usd >= 0 and ibc_terminal_usd > 0:
         portfolio_return_usd = (total_current_usd / total_initial_usd - 1.0) * 100.0
         ibc_return_usd = (ibc_terminal_usd / total_initial_usd - 1.0) * 100.0
         out.update({
@@ -286,7 +330,8 @@ def compare_open_portfolio_to_ibc(
             "ibc_return_usd_pct": round(ibc_return_usd, 2),
             "alpha_usd_pp": round(portfolio_return_usd - ibc_return_usd, 2),
             "beats_ibc_usd": portfolio_return_usd > ibc_return_usd,
-            "usd_coverage_pct": round(usd_cost_covered_bs / max(1.0, total_cost_bs) * 100.0, 1),
+            "usd_coverage_pct": usd_coverage_pct,
+            "usd_covered_cost_bs": round(usd_covered_cost_bs, 2),
         })
     else:
         out.update({
@@ -294,6 +339,7 @@ def compare_open_portfolio_to_ibc(
             "ibc_return_usd_pct": None,
             "alpha_usd_pp": None,
             "beats_ibc_usd": None,
-            "usd_coverage_pct": 0.0,
+            "usd_coverage_pct": usd_coverage_pct,
+            "usd_covered_cost_bs": round(usd_covered_cost_bs, 2),
         })
     return out
