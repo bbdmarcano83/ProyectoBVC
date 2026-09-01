@@ -8,14 +8,22 @@ from __future__ import annotations
 
 import json
 
-from database import DB_PERSISTENCE_MODE
+from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapshot, engine
 from services.fundamental_collector_v5 import ingest_normalized_report
 from services.fundamental_pilots_v5 import PILOTS
+
+
+def _ensure_v5_fundamental_schema() -> None:
+    """Crea únicamente las tablas fundamentales V5 faltantes, de forma idempotente."""
+    FundamentalDocument.__table__.create(bind=engine, checkfirst=True)
+    FundamentalSnapshot.__table__.create(bind=engine, checkfirst=True)
 
 
 def persist_verified_pilots() -> dict:
     if DB_PERSISTENCE_MODE != "external":
         raise RuntimeError("external_database_required_for_verified_pilots")
+
+    _ensure_v5_fundamental_schema()
 
     rows = []
     for symbol, pilot in PILOTS.items():
