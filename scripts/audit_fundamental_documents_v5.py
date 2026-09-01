@@ -1,8 +1,9 @@
 """Auditoría read-only de documentos fundamentales V5 persistidos.
 
-Reporta cobertura de fingerprint SHA-256 del PDF, published_at y duplicados por
-símbolo/período. No modifica Neon. `published_at` desconocido es una brecha
-informativa, no un error: el loader de backtest ya falla cerrado ante esa brecha.
+Reporta cobertura de fingerprint SHA-256 del PDF, published_at, versiones por
+período e identidades económicas repetidas. No modifica Neon. `published_at`
+desconocido es una brecha informativa, no un error: el loader de backtest ya
+falla cerrado ante esa brecha.
 """
 from __future__ import annotations
 
@@ -11,8 +12,9 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from database import DB_PERSISTENCE_MODE, FundamentalDocument, SessionLocal
+from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapshot, SessionLocal
 from services.fundamental_backfill_manifest_v5 import PILOT_BACKFILL_V5
+from services.fundamental_identity_v5 import economic_signature
 
 
 def _metadata(raw: Any) -> tuple[dict, bool]:
@@ -23,6 +25,16 @@ def _metadata(raw: Any) -> tuple[dict, bool]:
     except (TypeError, json.JSONDecodeError):
         return {}, False
     return (parsed, True) if isinstance(parsed, dict) else ({}, False)
+
+
+def _payload(raw: Any) -> dict:
+    if isinstance(raw, dict):
+        return dict(raw)
+    try:
+        parsed = json.loads(str(raw or "{}"))
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _sha256(value: Any) -> str | None:
@@ -45,8 +57,14 @@ def audit_documents() -> dict:
             FundamentalDocument.fiscal_period.asc(),
             FundamentalDocument.id.asc(),
         ).all()
+        doc_ids = [int(row.id) for row in rows]
+        snaps = db.query(FundamentalSnapshot).filter(
+            FundamentalSnapshot.document_id.in_(doc_ids)
+        ).all() if doc_ids else []
+        snap_by_doc = {int(s.document_id): s for s in snaps}
 
     grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    economic_groups: dict[tuple[str, str, str, str], list[int]] = defaultdict(list)
     invalid_metadata = 0
     malformed_sha = 0
     docs_with_sha = 0
@@ -64,20 +82,32 @@ def audit_documents() -> dict:
             docs_with_sha += 1
         if str(row.published_at or "").strip():
             docs_with_published_at += 1
+
+        snap = snap_by_doc.get(int(row.id))
+        sig = economic_signature(row.source_url, row.as_of, _payload(snap.data_json) if snap else {})
+        economic_groups[(str(row.simbolo).upper(), str(row.source_url), str(row.as_of), sig)].append(int(row.id))
+
         grouped[(str(row.simbolo).upper(), str(row.fiscal_period or ""))].append({
             "id": int(row.id),
             "as_of": row.as_of,
             "source_url": row.source_url,
             "document_hash": row.document_hash,
+            "economic_signature_v5": sig,
             "source_document_sha256": sha,
             "published_at": row.published_at,
             "audited": bool(row.audited),
             "metadata_valid": metadata_valid,
         })
 
+    repeated_economic_groups = {
+        key: ids for key, ids in economic_groups.items() if len(ids) > 1
+    }
+    economic_duplicate_versions = sum(len(ids) - 1 for ids in repeated_economic_groups.values())
+
     periods: list[dict] = []
     expected_periods = present_periods = periods_with_sha = periods_with_published_at = 0
     duplicate_period_versions = 0
+    periods_with_economic_duplicates = 0
     for symbol in sorted(expected):
         for fiscal_period in sorted(expected[symbol]):
             expected_periods += 1
@@ -92,11 +122,21 @@ def audit_documents() -> dict:
                 periods_with_published_at += 1
             if len(versions) > 1:
                 duplicate_period_versions += 1
+
+            sig_counts: dict[str, int] = defaultdict(int)
+            for item in versions:
+                sig_counts[str(item.get("economic_signature_v5") or "")] += 1
+            economic_duplicate = any(count > 1 for sig, count in sig_counts.items() if sig)
+            if economic_duplicate:
+                periods_with_economic_duplicates += 1
+
             periods.append({
                 "symbol": symbol,
                 "fiscal_period": fiscal_period,
                 "present": bool(versions),
                 "version_count": len(versions),
+                "economic_identity_count": len({item.get("economic_signature_v5") for item in versions if item.get("economic_signature_v5")}),
+                "has_economic_duplicate_versions": economic_duplicate,
                 "has_source_document_sha256": has_sha,
                 "has_published_at": has_published_at,
                 "versions": versions,
@@ -110,7 +150,20 @@ def audit_documents() -> dict:
             "present_periods": sum(1 for item in subset if item["present"]),
             "sha_periods": sum(1 for item in subset if item["has_source_document_sha256"]),
             "published_at_periods": sum(1 for item in subset if item["has_published_at"]),
+            "periods_with_economic_duplicates": sum(1 for item in subset if item["has_economic_duplicate_versions"]),
         }
+
+    duplicate_group_details = [
+        {
+            "symbol": key[0],
+            "source_url": key[1],
+            "as_of": key[2],
+            "economic_signature_v5": key[3],
+            "document_ids": ids,
+            "redundant_versions": len(ids) - 1,
+        }
+        for key, ids in sorted(repeated_economic_groups.items())
+    ]
 
     return {
         "database_mode": DB_PERSISTENCE_MODE,
@@ -125,6 +178,10 @@ def audit_documents() -> dict:
         "invalid_metadata_json": invalid_metadata,
         "malformed_source_document_sha256": malformed_sha,
         "periods_with_multiple_versions": duplicate_period_versions,
+        "periods_with_economic_duplicate_versions": periods_with_economic_duplicates,
+        "economic_identity_groups": len(economic_groups),
+        "economic_duplicate_versions": economic_duplicate_versions,
+        "economic_duplicate_groups": duplicate_group_details,
         "published_at_policy": "missing is allowed live but excluded by no-lookahead backtests",
         "by_symbol": by_symbol,
         "periods": periods,
