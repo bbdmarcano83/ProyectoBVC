@@ -131,6 +131,7 @@
   const windowsBox = document.getElementById('benchmark-windows');
   const message = document.getElementById('benchmark-message');
   const fmt = v => (v === null || v === undefined || Number.isNaN(Number(v))) ? '—' : Number(v).toFixed(2) + '%';
+  const signClass = v => (v === null || v === undefined || Number.isNaN(Number(v))) ? '' : (Number(v) >= 0 ? 'pos' : 'neg');
   const cell = (label, value, cls='') => {
     const div = document.createElement('div'); div.className='benchmark-cell';
     const small=document.createElement('small'); small.textContent=label;
@@ -141,15 +142,15 @@
     .then(async r => { const d=await r.json(); if(!r.ok) throw new Error(d.error || d.detail || 'benchmark no disponible'); return d; })
     .then(data => {
       status.textContent = 'Actualizado ' + (data.as_of || '');
-      openBox.replaceChildren(); windowsBox.replaceChildren();
+      openBox.replaceChildren(); windowsBox.replaceChildren(); message.textContent='';
       const b=data.benchmark || {};
       if(b.available){
-        openBox.appendChild(cell('Cartera Bs', fmt(b.portfolio_return_bs_pct), Number(b.portfolio_return_bs_pct)>=0?'pos':'neg'));
-        openBox.appendChild(cell('IBC Bs', fmt(b.ibc_return_bs_pct), Number(b.ibc_return_bs_pct)>=0?'pos':'neg'));
-        openBox.appendChild(cell('Alpha vs IBC Bs', fmt(b.alpha_bs_pp), Number(b.alpha_bs_pp)>=0?'pos':'neg'));
-        openBox.appendChild(cell('Cartera USD', fmt(b.portfolio_return_usd_pct), b.portfolio_return_usd_pct===null?'':(Number(b.portfolio_return_usd_pct)>=0?'pos':'neg')));
-        openBox.appendChild(cell('IBC USD', fmt(b.ibc_return_usd_pct), b.ibc_return_usd_pct===null?'':(Number(b.ibc_return_usd_pct)>=0?'pos':'neg')));
-        openBox.appendChild(cell('Alpha vs IBC USD', fmt(b.alpha_usd_pp), b.alpha_usd_pp===null?'':(Number(b.alpha_usd_pp)>=0?'pos':'neg')));
+        openBox.appendChild(cell('Cartera Bs', fmt(b.portfolio_return_bs_pct), signClass(b.portfolio_return_bs_pct)));
+        openBox.appendChild(cell('IBC Bs', fmt(b.ibc_return_bs_pct), signClass(b.ibc_return_bs_pct)));
+        openBox.appendChild(cell('Alpha vs IBC Bs', fmt(b.alpha_bs_pp), signClass(b.alpha_bs_pp)));
+        openBox.appendChild(cell('Cartera USD', fmt(b.portfolio_return_usd_pct), signClass(b.portfolio_return_usd_pct)));
+        openBox.appendChild(cell('IBC USD', fmt(b.ibc_return_usd_pct), signClass(b.ibc_return_usd_pct)));
+        openBox.appendChild(cell('Alpha vs IBC USD', fmt(b.alpha_usd_pp), signClass(b.alpha_usd_pp)));
         openBox.appendChild(cell('Cobertura IBC', fmt(b.coverage_pct)));
         openBox.appendChild(cell('Cobertura USD', fmt(b.usd_coverage_pct)));
       } else {
@@ -159,10 +160,22 @@
       if(p.available){
         ['1M','3M','6M','YTD','1Y'].forEach(k => {
           const w=(p.windows||{})[k]||{};
-          windowsBox.appendChild(cell(k + ' cartera', w.available ? fmt(w.return_bs_pct) : 'Pendiente'));
+          if(!w.available){
+            windowsBox.appendChild(cell(k, 'Pendiente'));
+            return;
+          }
+          windowsBox.appendChild(cell(k + ' cartera Bs', fmt(w.return_bs_pct), signClass(w.return_bs_pct)));
+          windowsBox.appendChild(cell(k + ' IBC Bs', fmt(w.ibc_return_bs_pct), signClass(w.ibc_return_bs_pct)));
+          windowsBox.appendChild(cell(k + ' Alpha Bs', fmt(w.alpha_bs_pp), signClass(w.alpha_bs_pp)));
+          if(w.return_usd_pct !== null && w.return_usd_pct !== undefined){
+            windowsBox.appendChild(cell(k + ' cartera USD', fmt(w.return_usd_pct), signClass(w.return_usd_pct)));
+            windowsBox.appendChild(cell(k + ' IBC USD', fmt(w.ibc_return_usd_pct), signClass(w.ibc_return_usd_pct)));
+            windowsBox.appendChild(cell(k + ' Alpha USD', fmt(w.alpha_usd_pp), signClass(w.alpha_usd_pp)));
+          }
         });
-        windowsBox.appendChild(cell('Drawdown Bs observado', fmt(p.max_drawdown_bs_pct), Number(p.max_drawdown_bs_pct||0)<0?'neg':''));
-        windowsBox.appendChild(cell('Drawdown USD observado', fmt(p.max_drawdown_usd_observed_pct), Number(p.max_drawdown_usd_observed_pct||0)<0?'neg':''));
+        windowsBox.appendChild(cell('Drawdown cartera Bs', fmt(p.max_drawdown_bs_pct), signClass(p.max_drawdown_bs_pct)));
+        windowsBox.appendChild(cell('Drawdown IBC', fmt(p.ibc_max_drawdown_pct), signClass(p.ibc_max_drawdown_pct)));
+        windowsBox.appendChild(cell('Drawdown cartera USD', fmt(p.max_drawdown_usd_observed_pct), signClass(p.max_drawdown_usd_observed_pct)));
       } else if(!message.textContent){
         message.textContent='Ventanas 1M/3M/6M/YTD/1Y se habilitarán al acumular snapshots reales.';
       }
