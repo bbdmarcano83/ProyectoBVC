@@ -1,6 +1,7 @@
+import hashlib
 import unittest
 
-from services.fundamental_pdf_parser_v5 import extract_candidates_from_pages
+from services.fundamental_pdf_parser_v5 import extract_candidates_from_pages, source_document_sha256
 
 
 class FundamentalPdfParserV5Tests(unittest.TestCase):
@@ -18,6 +19,11 @@ class FundamentalPdfParserV5Tests(unittest.TestCase):
         self.assertAlmostEqual(out["total_assets"][0]["value"], 1234567.89)
         self.assertAlmostEqual(out["net_income"][0]["value"], 85400.50)
         self.assertTrue(out["equity"][0]["evidence"])
+
+    def test_source_document_sha256_fingerprints_exact_bytes(self):
+        raw = b"%PDF-1.4\nCaracasBull fixture\n"
+        self.assertEqual(source_document_sha256(raw), hashlib.sha256(raw).hexdigest())
+        self.assertIsNone(source_document_sha256(b""))
 
     def test_does_not_invent_missing_fields(self):
         out = extract_candidates_from_pages(["Documento sin cifras financieras reconocibles"])
