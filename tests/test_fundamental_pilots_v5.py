@@ -1,11 +1,17 @@
 import unittest
 
+from database import init_db
+from services.fundamental_collector_v5 import ingest_normalized_report
 from services.fundamental_pilots_v5 import PILOTS
 from services.fundamental_sources_v5 import get_source
-from services.fundamental_store_v5 import validate_snapshot
+from services.fundamental_store_v5 import validate_snapshot, load_latest_validated
 
 
 class FundamentalPilotV5Tests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        init_db()
+
     def test_three_model_families_are_represented(self):
         self.assertEqual(get_source("MVZ.A")["industry_type"], "financial")
         self.assertEqual(get_source("SVS")["industry_type"], "non_financial")
@@ -27,6 +33,27 @@ class FundamentalPilotV5Tests(unittest.TestCase):
         self.assertFalse(PILOTS["MVZ.A"]["audited"])
         self.assertTrue(PILOTS["SVS"]["audited"])
         self.assertTrue(PILOTS["ICP.B"]["audited"])
+
+    def test_end_to_end_ingestion_persists_three_validated_families(self):
+        for symbol, item in PILOTS.items():
+            out = ingest_normalized_report(
+                symbol,
+                item["data"],
+                source_url=item["source_url"],
+                as_of=item["as_of"],
+                document_type=item["document_type"],
+                fiscal_period=item["fiscal_period"],
+                audited=item["audited"],
+                metadata={"pilot_fixture": True, "evidence": item["evidence"]},
+            )
+            self.assertTrue(out["accepted"], f"{symbol}: {out}")
+            self.assertGreaterEqual(out["validation"]["score"], 70.0, symbol)
+
+        payload, meta = load_latest_validated()
+        self.assertTrue(meta["available"])
+        for symbol in PILOTS:
+            canonical = get_source(symbol)["canonical_symbol"]
+            self.assertIn(canonical, payload)
 
 
 if __name__ == "__main__":
