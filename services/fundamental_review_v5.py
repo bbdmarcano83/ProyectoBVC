@@ -2,7 +2,8 @@
 
 El parser produce múltiples candidatos con evidencia. Este módulo exige una
 selección explícita por índice/campo, conserva la evidencia elegida y sólo luego
-invoca el collector fail-closed (contabilidad + FX + persistencia).
+invoca el collector fail-closed (contabilidad + FX + persistencia). Cuando el
+parser dispone del SHA-256 del PDF, la huella se conserva en metadata auditable.
 """
 from __future__ import annotations
 
@@ -12,7 +13,14 @@ from services.fundamental_collector_v5 import ingest_normalized_report, coverage
 from services.fundamental_sources_v5 import get_source
 
 
-def build_review_package(symbol: str, candidates: dict[str, list[dict]], *, source_url: str, as_of: str) -> dict:
+def build_review_package(
+    symbol: str,
+    candidates: dict[str, list[dict]],
+    *,
+    source_url: str,
+    as_of: str,
+    source_document_sha256: str | None = None,
+) -> dict:
     symbol = str(symbol or "").upper().strip()
     source = get_source(symbol)
     if not source:
@@ -35,12 +43,16 @@ def build_review_package(symbol: str, candidates: dict[str, list[dict]], *, sour
             })
         if clean:
             fields[field] = clean
+    digest = str(source_document_sha256 or "").lower().strip()
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        digest = ""
     return {
         "valid": bool(fields),
         "symbol": symbol,
         "canonical_symbol": source.get("canonical_symbol"),
         "industry_type": source.get("industry_type"),
         "source_url": source_url,
+        "source_document_sha256": digest or None,
         "as_of": as_of,
         "fields": fields,
         "requires_explicit_selection": True,
@@ -125,6 +137,10 @@ def accept_reviewed_snapshot(
         "selected_evidence": selected_meta.get("evidence", {}),
         "review_required": False,
     }
+    digest = str(review.get("source_document_sha256") or "").strip().lower()
+    if len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest):
+        metadata["source_document_sha256"] = digest
+
     return ingest_normalized_report(
         symbol,
         record,
