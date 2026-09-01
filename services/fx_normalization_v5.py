@@ -3,7 +3,7 @@
 Regla principal: nunca comparar estados venezolanos históricos usando sólo VES
 nominales. Se conserva el dato original y se genera una vista USD trazable.
 
-- Saldos de balance: tasa BCV de cierre del `as_of`.
+- Saldos de balance y valores por acción a fecha de corte: tasa BCV de cierre.
 - Flujos del período: tasa BCV promedio del período cuando el estado es nominal.
 - Estados reexpresados a moneda constante de cierre: tasa BCV de cierre para
   todas las partidas monetarias reexpresadas.
@@ -18,6 +18,7 @@ from typing import Any
 BALANCE_FIELDS = {
     "total_assets", "total_liabilities", "equity", "cash", "total_debt",
     "current_assets", "current_liabilities", "net_ppe", "nav", "market_cap",
+    "nav_per_share", "market_price",
 }
 
 FLOW_FIELDS = {
@@ -26,7 +27,7 @@ FLOW_FIELDS = {
 }
 
 NON_MONETARY_FIELDS = {
-    "shares_outstanding", "market_price", "nav_per_share", "distribution_yield_pct",
+    "shares_outstanding", "distribution_yield_pct",
 }
 
 ALLOWED_BASES = {"nominal_ves", "constant_ves_end_period", "usd_reported"}
