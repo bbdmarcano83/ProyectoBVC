@@ -1,13 +1,15 @@
 """Auto-revisión fail-closed para backfill fundamental V5.
 
-Sólo auto-selecciona cuando la evidencia es inequívoca. En estados comparativos
-las cifras de Activos/Pasivos/Patrimonio deben pertenecer a la misma página y
-columna. Nunca fuerza una selección ambigua.
+Primero aplica reglas auditables específicas por emisor cuando existen; si no
+resuelven el documento, usa el método genérico de misma página/columna. Nunca
+fuerza una selección ambigua.
 """
 from __future__ import annotations
 
 from itertools import product
 from math import isfinite
+
+from services.fundamental_source_review_v5 import propose_issuer_specific
 
 
 def _num(v):
@@ -99,6 +101,11 @@ def _balance_selection(fields: dict[str, list[dict]], tolerance_pct: float = 1.0
 def propose_fail_closed_selections(review: dict) -> dict:
     if not review.get("valid"):
         return {"valid": False, "reason": "invalid_review_package", "selections": {}}
+
+    issuer_specific = propose_issuer_specific(review)
+    if issuer_specific and issuer_specific.get("valid"):
+        return issuer_specific
+
     fields = review.get("fields") or {}
     preferred_column = review.get("preferred_column")
     try:
@@ -133,4 +140,5 @@ def propose_fail_closed_selections(review: dict) -> dict:
         "reason": None if not missing else "ambiguous_or_missing_required_fields",
         "method": "same_page_same_column_accounting_equation_and_unique_values",
         "preferred_column": preferred_column,
+        "issuer_specific_attempted": bool(issuer_specific),
     }
