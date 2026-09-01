@@ -1,7 +1,8 @@
 """Rutas V5 aisladas del monolito main.py.
 
 El handler se expone a nivel de módulo para que el bootstrap pueda registrarlo
-directamente con ``add_api_route``. ``get_v5_router`` se conserva para compatibilidad.
+directamente con ``add_api_route``. ``get_v5_router`` se conserva para
+compatibilidad, pero respeta el mismo feature flag opt-in.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 from database import get_db, ActivoPortafolio, TransaccionHistorial
 from services.auth import get_usuario_actual, suscripcion_activa
 from services.bvc import obtener_datos_bvc, obtener_tasa_bcv, _to_float
+from services.feature_flags import portfolio_ibc_benchmark_v5_enabled
 from services.fx_history_v5 import get_close_rate
 from services.ibc_history_v5 import load_ibc_history
 from services.portfolio_benchmark_v5 import compare_open_portfolio_to_ibc, normalize_ibc_points, ibc_asof
@@ -22,7 +24,6 @@ from services.portfolio_snapshot_v5 import save_daily_snapshot, load_snapshots
 from services.portfolio_performance_v5 import analyze_snapshot_performance
 
 V5_BENCHMARK_PATH = "/api/v5/portfolio-benchmark"
-_ROUTER: APIRouter | None = None
 
 
 def _tx_dict(tx: TransaccionHistorial) -> dict:
@@ -69,6 +70,11 @@ def _audited_ibc_points() -> tuple[list[dict], dict]:
 
 
 async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)):
+    # Defensa adicional: aunque el handler sea invocado directamente, el feature
+    # sigue siendo opt-in y no debe generar snapshots con el flag apagado.
+    if not portfolio_ibc_benchmark_v5_enabled():
+        return JSONResponse({"error": "Benchmark V5 deshabilitado"}, status_code=404)
+
     usuario = get_usuario_actual(request, db)
     if not usuario:
         return JSONResponse({"error": "No autorizado"}, status_code=401)
@@ -130,9 +136,13 @@ async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)
 
 
 def get_v5_router() -> APIRouter:
-    global _ROUTER
-    if _ROUTER is None:
-        router = APIRouter()
-        router.add_api_route(V5_BENCHMARK_PATH, portfolio_benchmark_v5, methods=["GET"], response_class=JSONResponse)
-        _ROUTER = router
-    return _ROUTER
+    """Router de compatibilidad; se construye según el flag en cada llamada."""
+    router = APIRouter()
+    if portfolio_ibc_benchmark_v5_enabled():
+        router.add_api_route(
+            V5_BENCHMARK_PATH,
+            portfolio_benchmark_v5,
+            methods=["GET"],
+            response_class=JSONResponse,
+        )
+    return router
