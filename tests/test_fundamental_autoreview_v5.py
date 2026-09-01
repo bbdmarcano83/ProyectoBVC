@@ -51,6 +51,66 @@ class FundamentalAutoReviewV5Tests(unittest.TestCase):
         self.assertTrue(out["valid"])
         self.assertEqual(out["missing_required"], [])
 
+    def test_comparative_current_period_uses_column_zero(self):
+        review = {
+            "valid": True,
+            "industry_type": "non_financial",
+            "preferred_column": 0,
+            "fields": {
+                "total_assets": [
+                    {"index": 0, "value": 120.0, "page": 4, "column_index": 0},
+                    {"index": 1, "value": 100.0, "page": 4, "column_index": 1},
+                ],
+                "total_liabilities": [
+                    {"index": 0, "value": 50.0, "page": 4, "column_index": 0},
+                    {"index": 1, "value": 40.0, "page": 4, "column_index": 1},
+                ],
+                "equity": [
+                    {"index": 0, "value": 70.0, "page": 4, "column_index": 0},
+                    {"index": 1, "value": 60.0, "page": 4, "column_index": 1},
+                ],
+                "net_income": [
+                    {"index": 0, "value": 12.0, "page": 5, "column_index": 0},
+                    {"index": 1, "value": 10.0, "page": 5, "column_index": 1},
+                ],
+            },
+        }
+        out = propose_fail_closed_selections(review)
+        self.assertTrue(out["valid"])
+        self.assertEqual(out["selections"]["total_assets"], 0)
+        self.assertEqual(out["selections"]["net_income"], 0)
+
+    def test_comparative_prior_period_uses_column_one(self):
+        review = {
+            "valid": True,
+            "industry_type": "non_financial",
+            "preferred_column": 1,
+            "fields": {
+                "total_assets": [
+                    {"index": 0, "value": 120.0, "page": 4, "column_index": 0},
+                    {"index": 1, "value": 100.0, "page": 4, "column_index": 1},
+                ],
+                "total_liabilities": [
+                    {"index": 0, "value": 50.0, "page": 4, "column_index": 0},
+                    {"index": 1, "value": 40.0, "page": 4, "column_index": 1},
+                ],
+                "equity": [
+                    {"index": 0, "value": 70.0, "page": 4, "column_index": 0},
+                    {"index": 1, "value": 60.0, "page": 4, "column_index": 1},
+                ],
+                "net_income": [
+                    {"index": 0, "value": 12.0, "page": 5, "column_index": 0},
+                    {"index": 1, "value": 10.0, "page": 5, "column_index": 1},
+                ],
+            },
+        }
+        out = propose_fail_closed_selections(review)
+        self.assertTrue(out["valid"])
+        self.assertEqual(out["selections"]["total_assets"], 1)
+        self.assertEqual(out["selections"]["total_liabilities"], 1)
+        self.assertEqual(out["selections"]["equity"], 1)
+        self.assertEqual(out["selections"]["net_income"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
