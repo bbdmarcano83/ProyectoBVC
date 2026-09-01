@@ -81,6 +81,21 @@ class FundamentalIdentityV5Tests(unittest.TestCase):
         self.assertEqual(sig1, economic_signature(self.SOURCE, self.AS_OF, derived_changed))
         self.assertNotEqual(sig1, economic_signature(self.SOURCE, self.AS_OF, reported_changed))
 
+    def test_signature_normalizes_numeric_and_context_formatting(self):
+        first = self._payload()
+        reformatted = self._payload(
+            total_assets="1000000",
+            equity="250000.0",
+            net_income="80000",
+            currency=" ves ",
+            monetary_basis=" NOMINAL_VES ",
+            industry_type=" FINANCIAL ",
+        )
+        self.assertEqual(
+            economic_signature(self.SOURCE, self.AS_OF, first),
+            economic_signature(self.SOURCE, self.AS_OF, reformatted),
+        )
+
     def test_save_snapshot_recognizes_legacy_economic_duplicate(self):
         first = save_snapshot(
             "MVZ.A",
