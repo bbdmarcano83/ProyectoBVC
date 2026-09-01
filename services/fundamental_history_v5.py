@@ -52,12 +52,17 @@ def _comparable_usd(data: dict, field: str) -> float | None:
     return None
 
 
+def _has_any_comparable_usd(data: dict) -> bool:
+    return any(_comparable_usd(data, field) is not None for field in SERIES_FIELDS)
+
+
 def build_series_from_records(records: list[dict]) -> dict:
     """Pure builder used by DB adapter and tests.
 
     Each record requires `as_of`, `fiscal_period`, `document_type`, `data`.
     Duplicate annual dates keep the record with highest validation score and,
-    on tie, the latest snapshot id.
+    on tie, the latest snapshot id. A period counts toward USD history only if
+    at least one supported monetary field is genuinely comparable in USD.
     """
     annual: dict[str, dict] = {}
     for record in records or []:
@@ -74,7 +79,7 @@ def build_series_from_records(records: list[dict]) -> dict:
         if current is None or rank > current["rank"]:
             annual[as_of] = {"rank": rank, "data": data}
 
-    dates = sorted(annual)
+    dates = [day for day in sorted(annual) if _has_any_comparable_usd(annual[day]["data"])]
     result: dict[str, Any] = {
         "history_dates_usd": dates,
         "history_periods_usd": len(dates),
