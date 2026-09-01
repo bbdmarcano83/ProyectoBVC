@@ -72,7 +72,6 @@ jobs:
           services/portfolio_v4.py
           services/portfolio_v5.py
           services/portfolio_benchmark_v5.py
-          services/portfolio_benchmark_context_v5.py
           services/portfolio_snapshot_v5.py
           services/portfolio_performance_v5.py
           services/engine_router.py
