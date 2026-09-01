@@ -12,6 +12,7 @@ on:
       - "services/fundamental_autoreview_v5.py"
       - "services/fundamental_backfill_manifest_v5.py"
       - "services/fundamental_pilots_v5.py"
+      - "services/fx_history_v5.py"
   workflow_dispatch:
 
 permissions:
@@ -116,6 +117,8 @@ jobs:
               row = fundamentals.get(symbol) if isinstance(fundamentals, dict) else None
               if row:
                   print(f"Fundamental snapshot available: {symbol} as_of={row.get('as_of')}")
+                  if symbol == "MVZ.A":
+                      print(f"MVZ.A annual USD history periods: {len(row.get('fundamental_history_usd') or [])}")
               else:
                   missing.append(symbol)
                   print(f"Fundamental snapshot missing: {symbol}")
