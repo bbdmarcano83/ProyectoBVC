@@ -15,11 +15,11 @@ from sqlalchemy.orm import Session
 
 from database import get_db, ActivoPortafolio, TransaccionHistorial
 from services.auth import get_usuario_actual, suscripcion_activa
-from services.bvc import obtener_datos_bvc, obtener_tasa_bcv, _to_float
+from services.bvc import obtener_datos_bvc, obtener_tasa_bcv, _to_float, mercado_abierto
 from services.feature_flags import portfolio_ibc_benchmark_v5_enabled
 from services.fx_history_v5 import get_close_rate
 from services.ibc_history_v5 import load_ibc_history
-from services.portfolio_benchmark_v5 import compare_open_portfolio_to_ibc, normalize_ibc_points, ibc_asof
+from services.portfolio_benchmark_v5 import compare_open_portfolio_to_ibc, normalize_ibc_points
 from services.portfolio_snapshot_v5 import save_daily_snapshot, load_snapshots
 from services.portfolio_performance_v5 import analyze_snapshot_performance
 
@@ -69,6 +69,32 @@ def _audited_ibc_points() -> tuple[list[dict], dict]:
     return audited, out_meta
 
 
+def _terminal_ibc_point(points: list[tuple[date, float]], target: date) -> tuple[date, float] | None:
+    best = None
+    for day, level in points:
+        if day > target:
+            break
+        best = (day, level)
+    return best
+
+
+def snapshot_capture_policy(*, valuation_day: date, ibc_day: date | None, market_is_open: bool) -> dict:
+    """Decide si una observación puede convertirse en snapshot diario comparable."""
+    if market_is_open:
+        return {"capture": False, "reason": "market_intraday", "as_of": None}
+    if ibc_day is None:
+        return {"capture": False, "reason": "ibc_terminal_missing", "as_of": None}
+    if ibc_day != valuation_day:
+        return {
+            "capture": False,
+            "reason": "terminal_date_mismatch",
+            "as_of": None,
+            "valuation_as_of": valuation_day.isoformat(),
+            "ibc_as_of": ibc_day.isoformat(),
+        }
+    return {"capture": True, "reason": None, "as_of": valuation_day.isoformat()}
+
+
 async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)):
     # Defensa adicional: aunque el handler sea invocado directamente, el feature
     # sigue siendo opt-in y no debe generar snapshots con el flag apagado.
@@ -93,9 +119,12 @@ async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)
     transactions = [_tx_dict(tx) for tx in tx_rows]
     positions = [_position_dict(a, prices.get(str(a.simbolo).upper(), 0.0)) for a in assets]
 
+    valuation_day = date.today()
     ibc_raw, ibc_meta = _audited_ibc_points()
     normalized_ibc = normalize_ibc_points(ibc_raw)
-    current_ibc = ibc_asof(normalized_ibc, date.today()) if normalized_ibc else None
+    terminal_ibc = _terminal_ibc_point(normalized_ibc, valuation_day)
+    current_ibc_day = terminal_ibc[0] if terminal_ibc else None
+    current_ibc = terminal_ibc[1] if terminal_ibc else None
 
     open_benchmark = compare_open_portfolio_to_ibc(
         positions,
@@ -104,24 +133,37 @@ async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)
         current_ibc=current_ibc,
         current_fx=current_fx if current_fx > 0 else None,
     )
+    open_benchmark = dict(open_benchmark)
+    open_benchmark["valuation_as_of"] = valuation_day.isoformat()
+    open_benchmark["ibc_as_of"] = current_ibc_day.isoformat() if current_ibc_day else None
+    open_benchmark["terminal_dates_aligned"] = bool(current_ibc_day == valuation_day)
 
-    try:
-        snapshot_state = save_daily_snapshot(
-            usuario.id,
-            prices=prices,
-            fx_bcv=current_fx if current_fx > 0 else None,
-            ibc_level=current_ibc,
-            source="portfolio_view",
-        )
-    except Exception as exc:
-        snapshot_state = {"saved": False, "error": type(exc).__name__}
+    capture = snapshot_capture_policy(
+        valuation_day=valuation_day,
+        ibc_day=current_ibc_day,
+        market_is_open=mercado_abierto(),
+    )
+    if capture["capture"]:
+        try:
+            snapshot_state = save_daily_snapshot(
+                usuario.id,
+                prices=prices,
+                fx_bcv=current_fx if current_fx > 0 else None,
+                ibc_level=current_ibc,
+                as_of=valuation_day,
+                source="market_close_aligned",
+            )
+        except Exception as exc:
+            snapshot_state = {"saved": False, "error": type(exc).__name__}
+    else:
+        snapshot_state = {"saved": False, **capture}
 
     snapshots = load_snapshots(usuario.id)
     temporal = analyze_snapshot_performance(snapshots, transactions, ibc_points=ibc_raw)
 
     return JSONResponse({
         "engine_version": "v5-portfolio-benchmark",
-        "as_of": date.today().isoformat(),
+        "as_of": valuation_day.isoformat(),
         "benchmark": open_benchmark,
         "performance": temporal,
         "ibc": ibc_meta,
@@ -130,6 +172,7 @@ async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)
         "notes": [
             "Benchmark abierto: lotes FIFO y fechas equivalentes contra IBC.",
             "USD usa BCV histórico por fecha; si falta, no se aproxima.",
+            "Snapshots temporales sólo se guardan con mercado cerrado e IBC del mismo día.",
             "Ventanas 1M/3M/6M/YTD/1Y: Modified Dietz y benchmark IBC con los mismos flujos.",
         ],
     })
