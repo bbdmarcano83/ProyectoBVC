@@ -67,8 +67,8 @@ def _vehicle_metrics(data: dict) -> dict:
     equity = prefer_usd(fx, "equity")
     assets = prefer_usd(fx, "total_assets")
     net_income = prefer_usd(fx, "net_income")
-    nav_per_share = _f(data.get("nav_per_share"))
-    market_price = _f(data.get("market_price"))
+    nav_per_share = prefer_usd(fx, "nav_per_share")
+    market_price = prefer_usd(fx, "market_price")
     distribution_yield = _f(data.get("distribution_yield_pct"))
     pb = _div(market_cap, equity); roa = _div(net_income, assets)
     discount_nav = None
