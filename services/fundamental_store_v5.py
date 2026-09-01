@@ -14,6 +14,7 @@ from datetime import date, datetime
 from typing import Any
 
 from database import SessionLocal, FundamentalDocument, FundamentalSnapshot
+from services.fundamental_identity_v5 import economic_signature
 from services.fundamental_sources_v5 import get_source
 
 NUMERIC_FIELDS = {
@@ -112,6 +113,98 @@ def document_hash(source_url: str, as_of: str, payload: dict) -> str:
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
+def _snapshot_payload(snap: FundamentalSnapshot | None) -> dict:
+    if snap is None:
+        return {}
+    try:
+        parsed = json.loads(str(snap.data_json or "{}"))
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _find_economic_duplicate(db, canonical: str, source_url: str, as_of: str, signature: str):
+    """Encuentra un documento legado que represente la misma economía.
+
+    No confía en el `document_hash` histórico porque éste incluía campos
+    derivados. Primero usa metadata si ya contiene la firma estable y, para
+    documentos legados, la reconstruye desde el snapshot persistido.
+    """
+    candidates = db.query(FundamentalDocument).filter(
+        FundamentalDocument.simbolo == canonical,
+        FundamentalDocument.source_url == source_url,
+        FundamentalDocument.as_of == as_of,
+    ).all()
+
+    for doc in candidates:
+        meta = _metadata_dict(doc.metadata_json)
+        persisted_signature = str(meta.get("economic_signature_v5") or "").strip().lower()
+        snap = db.query(FundamentalSnapshot).filter(
+            FundamentalSnapshot.document_id == doc.id,
+            FundamentalSnapshot.simbolo == canonical,
+        ).first()
+        if not persisted_signature:
+            persisted_signature = economic_signature(source_url, as_of, _snapshot_payload(snap))
+        if persisted_signature == signature:
+            return doc, snap
+    return None, None
+
+
+def _handle_duplicate(
+    db,
+    existing_doc: FundamentalDocument,
+    snap: FundamentalSnapshot | None,
+    *,
+    validation: dict,
+    incoming_meta: dict,
+    incoming_sha: str | None,
+    economic_sig: str,
+    economic_duplicate: bool,
+) -> dict:
+    existing_meta = _metadata_dict(existing_doc.metadata_json)
+    existing_sha = _valid_sha256(existing_meta.get("source_document_sha256"))
+    if incoming_sha and existing_sha and incoming_sha != existing_sha:
+        return {
+            "saved": False,
+            "duplicate": False,
+            "source_document_hash_conflict": True,
+            "document_id": existing_doc.id,
+            "snapshot_id": snap.id if snap else None,
+            "validation": validation,
+            "existing_source_document_sha256": existing_sha,
+            "incoming_source_document_sha256": incoming_sha,
+        }
+
+    metadata_enriched = False
+    if incoming_sha and not existing_sha:
+        existing_meta["source_document_sha256"] = incoming_sha
+        metadata_enriched = True
+    if existing_meta.get("economic_signature_v5") != economic_sig:
+        existing_meta["economic_signature_v5"] = economic_sig
+        metadata_enriched = True
+    for key, value in incoming_meta.items():
+        if key in {"source_document_sha256", "economic_signature_v5"} or value in (None, ""):
+            continue
+        if key not in existing_meta:
+            existing_meta[key] = value
+            metadata_enriched = True
+    if metadata_enriched:
+        existing_doc.metadata_json = canonical_json(existing_meta)
+        db.commit()
+
+    return {
+        "saved": False,
+        "duplicate": True,
+        "economic_duplicate": bool(economic_duplicate),
+        "metadata_enriched": metadata_enriched,
+        "document_id": existing_doc.id,
+        "snapshot_id": snap.id if snap else None,
+        "validation": validation,
+        "source_document_sha256": incoming_sha or existing_sha,
+        "economic_signature_v5": economic_sig,
+    }
+
+
 def validate_snapshot(symbol: str, payload: dict, source_url: str, as_of: str) -> dict:
     symbol = str(symbol or "").upper().strip()
     source = get_source(symbol)
@@ -202,53 +295,37 @@ def save_snapshot(
     source = validation["source"]
     canonical = str(source.get("canonical_symbol") or symbol).upper()
     h = document_hash(source_url, as_of, payload)
+    economic_sig = economic_signature(source_url, as_of, payload)
     incoming_meta = dict(metadata or {})
+    incoming_meta["economic_signature_v5"] = economic_sig
     incoming_sha = _valid_sha256(incoming_meta.get("source_document_sha256"))
 
     with SessionLocal() as db:
         existing_doc = db.query(FundamentalDocument).filter(FundamentalDocument.document_hash == h).first()
+        snap = None
+        economic_duplicate = False
         if existing_doc:
             snap = db.query(FundamentalSnapshot).filter(
                 FundamentalSnapshot.document_id == existing_doc.id,
                 FundamentalSnapshot.simbolo == canonical,
             ).first()
-            existing_meta = _metadata_dict(existing_doc.metadata_json)
-            existing_sha = _valid_sha256(existing_meta.get("source_document_sha256"))
-            if incoming_sha and existing_sha and incoming_sha != existing_sha:
-                return {
-                    "saved": False,
-                    "duplicate": False,
-                    "source_document_hash_conflict": True,
-                    "document_id": existing_doc.id,
-                    "snapshot_id": snap.id if snap else None,
-                    "validation": validation,
-                    "existing_source_document_sha256": existing_sha,
-                    "incoming_source_document_sha256": incoming_sha,
-                }
+        else:
+            existing_doc, snap = _find_economic_duplicate(
+                db, canonical, source_url, as_of, economic_sig
+            )
+            economic_duplicate = existing_doc is not None
 
-            metadata_enriched = False
-            if incoming_sha and not existing_sha:
-                existing_meta["source_document_sha256"] = incoming_sha
-                metadata_enriched = True
-            for key, value in incoming_meta.items():
-                if key == "source_document_sha256" or value in (None, ""):
-                    continue
-                if key not in existing_meta:
-                    existing_meta[key] = value
-                    metadata_enriched = True
-            if metadata_enriched:
-                existing_doc.metadata_json = canonical_json(existing_meta)
-                db.commit()
-
-            return {
-                "saved": False,
-                "duplicate": True,
-                "metadata_enriched": metadata_enriched,
-                "document_id": existing_doc.id,
-                "snapshot_id": snap.id if snap else None,
-                "validation": validation,
-                "source_document_sha256": incoming_sha or existing_sha,
-            }
+        if existing_doc:
+            return _handle_duplicate(
+                db,
+                existing_doc,
+                snap,
+                validation=validation,
+                incoming_meta=incoming_meta,
+                incoming_sha=incoming_sha,
+                economic_sig=economic_sig,
+                economic_duplicate=economic_duplicate,
+            )
 
         doc = FundamentalDocument(
             simbolo=canonical,
@@ -297,6 +374,7 @@ def save_snapshot(
             "snapshot_id": snap.id,
             "validation": validation,
             "source_document_sha256": incoming_sha,
+            "economic_signature_v5": economic_sig,
         }
 
 
