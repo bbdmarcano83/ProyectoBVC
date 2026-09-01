@@ -7,7 +7,7 @@ BCV cuando existe metadata FX validada; nunca se inventan tasas históricas.
 from __future__ import annotations
 from typing import Any
 
-from services.fundamentals_v5 import load_fundamentals
+from services.fundamentals_v5 import load_fundamentals, _growth
 from services.fundamental_sources_v5 import get_source
 from services.fx_normalization_v5 import normalize_to_usd, prefer_usd
 
@@ -28,16 +28,6 @@ def _positive_ratio(values: Any) -> float | None:
     clean = [_f(v) for v in values]; clean = [v for v in clean if v is not None]
     if not clean: return None
     return sum(1 for v in clean if v > 0) / len(clean) * 100.0
-
-
-def _growth(values: Any) -> float | None:
-    if not isinstance(values, list): return None
-    clean = [_f(v) for v in values]; clean = [v for v in clean if v is not None]
-    if len(clean) < 2 or clean[0] == 0: return None
-    years = len(clean) - 1
-    if clean[0] > 0 and clean[-1] > 0:
-        return ((clean[-1] / clean[0]) ** (1 / years) - 1) * 100.0
-    return (clean[-1] / clean[0] - 1) * 100.0
 
 
 def _percentile(rows: list[dict], key: str, higher: bool = True) -> dict[str, float]:
@@ -76,19 +66,24 @@ def _vehicle_metrics(data: dict) -> dict:
         discount_nav = (nav_per_share - market_price) / nav_per_share * 100.0
     earnings_history = data.get("earnings_history_usd") if isinstance(data.get("earnings_history_usd"), list) else data.get("earnings_history")
     nav_history = data.get("nav_history_usd") if isinstance(data.get("nav_history_usd"), list) else data.get("nav_history")
+    nav_history_dates = data.get("nav_history_usd_dates") if isinstance(data.get("nav_history_usd_dates"), list) else data.get("nav_history_dates")
     return {
         "vehicle_pb_v5": pb,
         "vehicle_roa_pct_v5": roa * 100.0 if roa is not None else None,
         "vehicle_discount_to_nav_pct_v5": discount_nav,
         "vehicle_distribution_yield_pct_v5": distribution_yield,
         "vehicle_positive_income_periods_pct_v5": _positive_ratio(earnings_history),
-        "vehicle_nav_cagr_pct_v5": _growth(nav_history),
+        "vehicle_nav_cagr_pct_v5": _growth(nav_history or [], nav_history_dates if isinstance(nav_history_dates, list) else None),
         "fx_valid_v5": bool(fx_meta.get("valid")),
         "fx_flags_v5": list(fx_meta.get("flags") or []),
         "fx_coverage_pct_v5": fx.get("fx_coverage_pct_v5"),
         "fx_rate_bcv_close_v5": fx.get("fx_rate_bcv_close_v5"),
         "fx_rate_bcv_avg_v5": fx.get("fx_rate_bcv_avg_v5"),
         "fx_source_v5": fx.get("fx_source_v5"),
+        "market_fx_valid_v5": fx.get("market_fx_valid_v5"),
+        "market_fx_rate_bcv_v5": fx.get("market_fx_rate_bcv_v5"),
+        "market_fx_source_v5": fx.get("market_fx_source_v5"),
+        "valuation_as_of_v5": fx.get("valuation_as_of_v5"),
         "monetary_basis_v5": fx.get("monetary_basis_v5"),
     }
 
