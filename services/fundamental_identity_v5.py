@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from typing import Any
 
 # Campos económicos reportados por el emisor. Se excluye market_cap porque es
@@ -44,6 +45,25 @@ def _canonical_json(data: dict) -> str:
     return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _numeric(value: Any) -> float | Any:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return value
+    return result if math.isfinite(result) else value
+
+
+def _context(key: str, value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if key == "currency":
+        return text.upper()
+    if key in {"monetary_basis", "industry_type"}:
+        return text.lower()
+    return text
+
+
 def economic_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
     """Devuelve sólo la parte económica estable de un snapshot.
 
@@ -55,10 +75,14 @@ def economic_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
         return {}
 
     out: dict[str, Any] = {}
-    for key in sorted(REPORTED_NUMERIC_FIELDS | REPORTING_CONTEXT_FIELDS):
+    for key in sorted(REPORTED_NUMERIC_FIELDS):
         value = payload.get(key)
         if value not in (None, ""):
-            out[key] = value
+            out[key] = _numeric(value)
+    for key in sorted(REPORTING_CONTEXT_FIELDS):
+        value = payload.get(key)
+        if value not in (None, ""):
+            out[key] = _context(key, value)
     return out
 
 
