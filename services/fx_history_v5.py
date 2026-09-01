@@ -7,9 +7,11 @@ se presenta como BCV oficial y queda explícita en metadata.
 
 Reglas:
 - tasa de cierre = última tasa publicada <= fecha del estado;
-- promedio de período = promedio calendario con forward-fill cuando hay historia diaria completa;
+- promedio de período = promedio calendario con forward-fill sólo cuando la
+  historia cacheada cubre realmente el fin solicitado;
 - fallback anual sólo para FY completo y años explícitamente verificados;
 - nunca se usa la tasa actual para un estado histórico;
+- una caché vieja no puede extenderse indefinidamente hacia el futuro;
 - los datos primarios se cachean/persisten en la misma DB (Neon en producción).
 """
 from __future__ import annotations
@@ -27,6 +29,7 @@ HISTORY_URL = "https://ve.dolarapi.com/v1/historicos/dolares/oficial"
 SOURCE_NAME = "DolarAPI · dólar oficial (fuente declarada: BCV)"
 SOURCE_KIND = "bcv_derived_api"
 SOURCE_CONFIDENCE = 95
+MAX_PUBLICATION_GAP_DAYS = 5
 
 FALLBACK_SOURCE_URLS = (
     "https://www.exchange-rates.org/exchange-rate-history/usd-ves-{year}",
@@ -168,6 +171,25 @@ def _load_records() -> list[tuple[date, float]]:
         return out
 
 
+def coverage_bounds(records: list[tuple[date, float]]) -> tuple[date | None, date | None]:
+    valid = sorted((day, rate) for day, rate in (records or []) if rate is not None)
+    if not valid:
+        return None, None
+    return valid[0][0], valid[-1][0]
+
+
+def records_cover_target(records: list[tuple[date, float]], target: str | date | datetime,
+                         max_gap_days: int = MAX_PUBLICATION_GAP_DAYS) -> bool:
+    """True only when cached history reaches target or a short non-publishing gap."""
+    target_day = _date(target)
+    first, last = coverage_bounds(records)
+    if first is None or last is None or first > target_day:
+        return False
+    if last >= target_day:
+        return True
+    return 0 <= (target_day - last).days <= max_gap_days
+
+
 def close_rate_from_records(records: list[tuple[date, float]], target: str | date | datetime) -> float | None:
     target_day = _date(target)
     eligible = [rate for day, rate in records if day <= target_day]
@@ -199,21 +221,28 @@ def calendar_average_from_records(records: list[tuple[date, float]], start: str 
 
 def get_close_rate(target: str | date | datetime, refresh_if_missing: bool = True) -> float | None:
     records = _load_records()
-    rate = close_rate_from_records(records, target)
-    if rate is None and refresh_if_missing:
+    if refresh_if_missing and not records_cover_target(records, target):
         refresh_history()
-        rate = close_rate_from_records(_load_records(), target)
-    return rate
+        records = _load_records()
+    if not records_cover_target(records, target):
+        return None
+    return close_rate_from_records(records, target)
 
 
 def get_period_average(start: str | date | datetime, end: str | date | datetime,
                        refresh_if_missing: bool = True) -> float | None:
     records = _load_records()
-    avg = calendar_average_from_records(records, start, end)
-    if avg is None and refresh_if_missing:
+    start_day, end_day = _date(start), _date(end)
+    has_start = close_rate_from_records(records, start_day) is not None
+    has_end_coverage = records_cover_target(records, end_day)
+    if refresh_if_missing and (not has_start or not has_end_coverage):
         refresh_history()
-        avg = calendar_average_from_records(_load_records(), start, end)
-    return avg
+        records = _load_records()
+        has_start = close_rate_from_records(records, start_day) is not None
+        has_end_coverage = records_cover_target(records, end_day)
+    if not has_start or not has_end_coverage:
+        return None
+    return calendar_average_from_records(records, start_day, end_day)
 
 
 def infer_period_start(fiscal_period: str | None, as_of: str) -> str | None:
