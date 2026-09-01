@@ -3,6 +3,10 @@
 Usa Modified Dietz entre snapshots para evitar atribuir a rendimiento compras o
 ventas realizadas dentro de la ventana. Para comparar contra IBC crea un
 benchmark sintético que recibe los mismos flujos en las mismas fechas.
+
+Una ventana nominal (1M/3M/6M/YTD/1Y) sólo se publica si existe un snapshot en
+o antes de su fecha de inicio. Nunca se presenta un período más corto como si
+cubriera la ventana completa.
 """
 from __future__ import annotations
 
@@ -36,7 +40,9 @@ def _tx_flow_bs(tx: dict) -> float:
     kind = str(tx.get("tipo") or "").lower()
     neto = _f(tx.get("neto"))
     if neto <= 0:
-        qty = _f(tx.get("cantidad")); price = _f(tx.get("precio")); fee = _f(tx.get("fee_total"))
+        qty = _f(tx.get("cantidad"))
+        price = _f(tx.get("precio"))
+        fee = _f(tx.get("fee_total"))
         gross = qty * price
         neto = gross + fee if kind == "compra" else max(0.0, gross - fee)
     if kind == "compra":
@@ -52,7 +58,9 @@ def _normalize_snapshots(rows: Iterable[dict]) -> list[dict]:
         d = _date(raw.get("as_of"))
         value = _f(raw.get("total_market_bs"))
         if d and value >= 0:
-            item = dict(raw); item["_date"] = d; item["_value"] = value
+            item = dict(raw)
+            item["_date"] = d
+            item["_value"] = value
             out.append(item)
     out.sort(key=lambda x: x["_date"])
     return out
@@ -60,7 +68,8 @@ def _normalize_snapshots(rows: Iterable[dict]) -> list[dict]:
 
 def modified_dietz_return(start_value: float, end_value: float, start: date, end: date, flows: list[tuple[date, float]]) -> float | None:
     """Retorno % Modified Dietz para un intervalo con flujos fechados."""
-    start_value = _f(start_value); end_value = _f(end_value)
+    start_value = _f(start_value)
+    end_value = _f(end_value)
     days = (end - start).days
     if start_value <= 0 or days <= 0:
         return None
@@ -80,23 +89,27 @@ def modified_dietz_return(start_value: float, end_value: float, start: date, end
 
 
 def _window_start(today: date, name: str) -> date:
-    if name == "1M": return today - timedelta(days=31)
-    if name == "3M": return today - timedelta(days=92)
-    if name == "6M": return today - timedelta(days=183)
-    if name == "1Y": return today - timedelta(days=366)
-    if name == "YTD": return date(today.year, 1, 1)
+    if name == "1M":
+        return today - timedelta(days=31)
+    if name == "3M":
+        return today - timedelta(days=92)
+    if name == "6M":
+        return today - timedelta(days=183)
+    if name == "1Y":
+        return today - timedelta(days=366)
+    if name == "YTD":
+        return date(today.year, 1, 1)
     return today
 
 
 def _asof_snapshot(snaps: list[dict], target: date) -> dict | None:
+    """Último snapshot <= target; sin historia previa, falla cerrado."""
     best = None
     for s in snaps:
         if s["_date"] > target:
             break
         best = s
-    if best is not None:
-        return best
-    return snaps[0] if snaps else None
+    return best
 
 
 def max_drawdown(values: Iterable[float]) -> float | None:
@@ -169,7 +182,12 @@ def analyze_snapshot_performance(
         target = _window_start(today, name)
         start_snap = _asof_snapshot(snaps, target)
         if not start_snap or start_snap["_date"] >= terminal["_date"]:
-            windows[name] = {"available": False, "reason": "sin_historia_suficiente"}
+            windows[name] = {
+                "available": False,
+                "reason": "sin_historia_suficiente",
+                "required_start_date": target.isoformat(),
+                "first_snapshot_date": snaps[0]["_date"].isoformat(),
+            }
             continue
 
         start_day = start_snap["_date"]
@@ -181,6 +199,7 @@ def analyze_snapshot_performance(
             "available": portfolio_ret is not None,
             "return_bs_pct": round(portfolio_ret, 2) if portfolio_ret is not None else None,
             "start_date": start_day.isoformat(),
+            "required_start_date": target.isoformat(),
             "end_date": end_day.isoformat(),
             "flows_count": len(window_txs),
             "method": "modified_dietz",
@@ -233,5 +252,5 @@ def analyze_snapshot_performance(
         "max_drawdown_bs_pct": max_drawdown([s["_value"] for s in snaps]),
         "max_drawdown_usd_observed_pct": max_drawdown(usd_values),
         "ibc_max_drawdown_pct": max_drawdown([v for v in ibc_levels if v is not None]),
-        "note": "Ventanas corrigen flujos con Modified Dietz; benchmark IBC recibe los mismos flujos y fechas. Drawdown de cartera sobre valor observado puede reflejar flujos.",
+        "note": "Ventanas corrigen flujos con Modified Dietz y exigen cobertura completa del inicio; benchmark IBC recibe los mismos flujos y fechas. Drawdown de cartera sobre valor observado puede reflejar flujos.",
     }
