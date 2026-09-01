@@ -96,3 +96,5 @@ jobs:
           if found == 0:
               raise SystemExit("No pilot fundamental snapshot passed validation")
           PY
+
+# trigger: DATABASE_URL configured; run real backfill
