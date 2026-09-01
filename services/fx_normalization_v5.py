@@ -7,9 +7,12 @@ nominales. Se conserva el dato original y se genera una vista USD trazable.
 - Flujos del período: tasa BCV promedio del período cuando el estado es nominal.
 - Estados reexpresados a moneda constante de cierre: tasa BCV de cierre para
   todas las partidas monetarias reexpresadas.
+- Precio de mercado y capitalización pertenecen a una fecha de valoración,
+  no al cierre contable. Exigen `valuation_as_of` + `market_fx_rate_bcv`.
 
-Nunca usa la tasa actual para convertir un estado histórico. Si falta la tasa
-correspondiente, no se inventa USD y el snapshot queda con cobertura FX parcial.
+Nunca usa la tasa actual para convertir un estado histórico ni la tasa histórica
+del estado para convertir una cotización actual. Si falta la tasa correspondiente,
+no se inventa USD y el snapshot queda con cobertura FX parcial.
 """
 from __future__ import annotations
 
@@ -17,8 +20,11 @@ from typing import Any
 
 BALANCE_FIELDS = {
     "total_assets", "total_liabilities", "equity", "cash", "total_debt",
-    "current_assets", "current_liabilities", "net_ppe", "nav", "market_cap",
-    "nav_per_share", "market_price",
+    "current_assets", "current_liabilities", "net_ppe", "nav", "nav_per_share",
+}
+
+MARKET_FIELDS = {
+    "market_cap", "market_price",
 }
 
 FLOW_FIELDS = {
@@ -49,6 +55,9 @@ def validate_fx_metadata(data: dict) -> dict:
     avg_rate = _f(data.get("fx_rate_bcv_avg"))
     source = str(data.get("fx_source_url") or "").strip()
     fx_as_of = str(data.get("fx_as_of") or "").strip()
+    market_rate = _f(data.get("market_fx_rate_bcv"))
+    market_source = str(data.get("market_fx_source_url") or "").strip()
+    valuation_as_of = str(data.get("valuation_as_of") or data.get("market_price_as_of") or "").strip()
     flags: list[str] = []
 
     if currency in {"USD", "US$"}:
@@ -61,9 +70,18 @@ def validate_fx_metadata(data: dict) -> dict:
         if basis == "nominal_ves" and (avg_rate is None or avg_rate <= 0):
             flags.append("missing_bcv_average_rate")
         if not source.startswith("https://"):
-            flags.append("missing_official_fx_source")
+            flags.append("missing_fx_source_url")
         if not fx_as_of:
             flags.append("missing_fx_as_of")
+
+        market_present = any(_f(data.get(field)) is not None for field in MARKET_FIELDS)
+        if market_present:
+            if market_rate is None or market_rate <= 0:
+                flags.append("missing_market_bcv_rate")
+            if not valuation_as_of:
+                flags.append("missing_valuation_as_of")
+            if not market_source.startswith("https://"):
+                flags.append("missing_market_fx_source_url")
 
     return {
         "valid": not flags,
@@ -74,6 +92,9 @@ def validate_fx_metadata(data: dict) -> dict:
         "fx_rate_bcv_avg": avg_rate,
         "fx_source_url": source or None,
         "fx_as_of": fx_as_of or None,
+        "market_fx_rate_bcv": market_rate,
+        "market_fx_source_url": market_source or None,
+        "valuation_as_of": valuation_as_of or None,
     }
 
 
@@ -84,11 +105,12 @@ def normalize_to_usd(data: dict) -> tuple[dict, dict]:
     basis = meta["monetary_basis"]
     close_rate = meta["fx_rate_bcv_close"]
     avg_rate = meta["fx_rate_bcv_avg"]
+    market_rate = meta["market_fx_rate_bcv"]
     converted = 0
     eligible = 0
 
     if basis == "usd_reported":
-        for field in BALANCE_FIELDS | FLOW_FIELDS:
+        for field in BALANCE_FIELDS | FLOW_FIELDS | MARKET_FIELDS:
             value = _f(out.get(field))
             if value is not None:
                 eligible += 1
@@ -115,15 +137,32 @@ def normalize_to_usd(data: dict) -> tuple[dict, dict]:
                 out[f"{field}_usd"] = value / flow_rate
                 converted += 1
 
+        for field in MARKET_FIELDS:
+            value = _f(out.get(field))
+            if value is None:
+                continue
+            eligible += 1
+            if market_rate and market_rate > 0 and meta.get("valuation_as_of"):
+                out[f"{field}_usd"] = value / market_rate
+                converted += 1
+
         out["fx_normalization_method_v5"] = (
-            "bcv_close_all_constant_ves" if basis == "constant_ves_end_period"
-            else "bcv_close_balance_avg_flows"
+            "bcv_close_all_constant_ves+valuation_fx_market" if basis == "constant_ves_end_period"
+            else "bcv_close_balance_avg_flows+valuation_fx_market"
         )
 
     out["fx_rate_bcv_close_v5"] = close_rate
     out["fx_rate_bcv_avg_v5"] = avg_rate
     out["fx_source_v5"] = meta["fx_source_url"]
     out["fx_as_of_v5"] = meta["fx_as_of"]
+    out["market_fx_rate_bcv_v5"] = market_rate
+    out["market_fx_source_v5"] = meta["market_fx_source_url"]
+    out["valuation_as_of_v5"] = meta["valuation_as_of"]
+    market_present = any(_f(out.get(field)) is not None for field in MARKET_FIELDS)
+    out["market_fx_valid_v5"] = (
+        True if basis == "usd_reported" else
+        (not market_present or bool(market_rate and market_rate > 0 and meta.get("valuation_as_of") and meta.get("market_fx_source_url")))
+    )
     out["monetary_basis_v5"] = basis
     out["fx_coverage_pct_v5"] = round(converted / max(1, eligible) * 100.0, 1) if eligible else 0.0
 
@@ -131,11 +170,19 @@ def normalize_to_usd(data: dict) -> tuple[dict, dict]:
         "eligible_fields": eligible,
         "converted_fields": converted,
         "coverage_pct": out["fx_coverage_pct_v5"],
+        "market_fx_valid": out["market_fx_valid_v5"],
     })
     return out, meta
 
 
 def prefer_usd(data: dict, field: str) -> float | None:
-    """Use normalized USD when available, otherwise the reported field."""
+    """Use normalized USD without mixing raw VES market values into USD ratios."""
     usd = _f(data.get(f"{field}_usd"))
-    return usd if usd is not None else _f(data.get(field))
+    if usd is not None:
+        return usd
+    currency = str(data.get("currency") or "").upper().strip()
+    if currency in {"USD", "US$"}:
+        return _f(data.get(field))
+    if field in MARKET_FIELDS:
+        return None
+    return _f(data.get(field))
