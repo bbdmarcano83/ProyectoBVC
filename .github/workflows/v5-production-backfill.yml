@@ -66,7 +66,25 @@ jobs:
           print("V5 scoring remains disabled during backfill")
           PY
 
+      - name: Check persisted IBC coverage
+        id: ibc_check
+        shell: bash
+        run: |
+          count=$(python - <<'PY'
+          from services.ibc_store_v5 import load_persisted_ibc
+          points, _ = load_persisted_ibc()
+          print(len(points or []))
+          PY
+          )
+          echo "Persisted IBC points: $count"
+          if [ "$count" -ge 1000 ]; then
+            echo "needs_backfill=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_backfill=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Backfill IBC 2022-current into Neon
+        if: steps.ibc_check.outputs.needs_backfill == 'true'
         run: |
           python scripts/ibc_backfill_v5.py \
             --from-year 2022 \
@@ -104,4 +122,4 @@ jobs:
               raise SystemExit("Missing verified pilot fundamentals: " + ", ".join(missing))
           PY
 
-# trigger: persist verified pilots first; historical PDF extension remains fail-closed
+# production backfill is idempotent; populated IBC history is not re-downloaded
