@@ -21,7 +21,7 @@ class InvestmentVehicleV5Tests(unittest.TestCase):
         self.assertIsNotNone(icp["vehicle_score_v5"])
         self.assertEqual(icp["fundamental_score_v5"], icp["vehicle_score_v5"])
         self.assertIsNone(icp["greenblatt_score_v5"])
-        self.assertEqual(icp["fundamental_method_v5"], "investment_vehicle_nav_value_quality")
+        self.assertEqual(icp["fundamental_method_v5"], "investment_vehicle_nav_value_quality_usd_bcv")
         self.assertEqual(meta["vehicle_scored_count"], 2)
 
     def test_missing_vehicle_data_fails_closed(self):
