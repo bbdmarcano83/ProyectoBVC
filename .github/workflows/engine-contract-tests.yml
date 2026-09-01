@@ -54,6 +54,7 @@ jobs:
           services/fundamental_backfill_manifest_v5.py
           services/fundamental_pdf_parser_v5.py
           services/fundamental_review_v5.py
+          services/fundamental_autoreview_v5.py
           services/fundamental_history_v5.py
           services/fundamental_trend_v5.py
           services/fx_normalization_v5.py
