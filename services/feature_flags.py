@@ -32,6 +32,11 @@ def portfolio_v4_shadow_enabled() -> bool:
     return flag_enabled("PORTFOLIO_ENGINE_V4_SHADOW_ENABLED")
 
 
+def portfolio_ibc_benchmark_v5_enabled() -> bool:
+    """Benchmark Portafolio vs IBC V5; opt-in y apagado por defecto."""
+    return flag_enabled("PORTFOLIO_IBC_BENCHMARK_V5_ENABLED")
+
+
 def security_hardening_v1_enabled() -> bool:
     return flag_enabled("SECURITY_HARDENING_V1_ENABLED")
 
@@ -39,4 +44,5 @@ def security_hardening_v1_enabled() -> bool:
 # Aliases temporales para compatibilidad con la primera rama V3/V4.
 SCORING_ENGINE_V3_ENABLED = scoring_v3_enabled
 PORTFOLIO_ENGINE_V4_ENABLED = portfolio_v4_enabled
+PORTFOLIO_IBC_BENCHMARK_V5_ENABLED = portfolio_ibc_benchmark_v5_enabled
 SECURITY_HARDENING_V1_ENABLED = security_hardening_v1_enabled
