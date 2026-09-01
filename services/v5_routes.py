@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date
-from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -109,7 +108,6 @@ def get_v5_router() -> APIRouter:
             current_fx=current_fx if current_fx > 0 else None,
         )
 
-        snapshot_state = None
         try:
             snapshot_state = save_daily_snapshot(
                 usuario.id,
@@ -122,7 +120,7 @@ def get_v5_router() -> APIRouter:
             snapshot_state = {"saved": False, "error": type(exc).__name__}
 
         snapshots = load_snapshots(usuario.id)
-        temporal = analyze_snapshot_performance(snapshots, transactions)
+        temporal = analyze_snapshot_performance(snapshots, transactions, ibc_points=ibc_raw)
 
         return JSONResponse({
             "engine_version": "v5-portfolio-benchmark",
@@ -135,7 +133,7 @@ def get_v5_router() -> APIRouter:
             "notes": [
                 "Benchmark abierto: lotes FIFO y fechas equivalentes contra IBC.",
                 "USD usa BCV histórico por fecha; si falta, no se aproxima.",
-                "Ventanas temporales usan snapshots reales y Modified Dietz para corregir flujos.",
+                "Ventanas 1M/3M/6M/YTD/1Y: Modified Dietz y benchmark IBC con los mismos flujos.",
             ],
         })
 
