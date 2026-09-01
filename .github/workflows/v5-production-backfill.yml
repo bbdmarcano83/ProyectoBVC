@@ -105,19 +105,22 @@ jobs:
           from services.ibc_store_v5 import load_persisted_ibc
           from services.fundamental_store_v5 import load_latest_validated
 
-          points, meta = load_persisted_ibc()
+          points, ibc_meta = load_persisted_ibc()
           if not points:
               raise SystemExit("IBC backfill produced no persisted points")
           print(f"IBC persisted points: {len(points)}")
 
+          fundamentals, fundamental_meta = load_latest_validated()
           missing = []
           for symbol in ("MVZ.A", "SVS", "ICP.B"):
-              row = load_latest_validated(symbol)
+              row = fundamentals.get(symbol) if isinstance(fundamentals, dict) else None
               if row:
-                  print(f"Fundamental snapshot available: {symbol}")
+                  print(f"Fundamental snapshot available: {symbol} as_of={row.get('as_of')}")
               else:
                   missing.append(symbol)
                   print(f"Fundamental snapshot missing: {symbol}")
+          print(f"Fundamental payload count: {len(fundamentals or {})}")
+          print(f"Fundamental history meta: {fundamental_meta.get('history', {})}")
           if missing:
               raise SystemExit("Missing verified pilot fundamentals: " + ", ".join(missing))
           PY
