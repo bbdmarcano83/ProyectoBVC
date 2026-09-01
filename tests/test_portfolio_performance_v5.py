@@ -33,6 +33,7 @@ class PortfolioPerformanceV5Tests(unittest.TestCase):
         self.assertIn("6M", out["windows"])
         self.assertIsNotNone(out["max_drawdown_bs_pct"])
         self.assertIsNotNone(out["max_drawdown_usd_observed_pct"])
+        self.assertFalse(out["windows"]["1Y"]["available"])
 
     def test_ibc_window_receives_same_midperiod_contribution(self):
         snaps = [
@@ -55,6 +56,29 @@ class PortfolioPerformanceV5Tests(unittest.TestCase):
         self.assertIsNotNone(w["alpha_bs_pp"])
         # Si el aporte se tratara como rentabilidad, el retorno de cartera sería 120%; no debe serlo.
         self.assertLess(w["return_bs_pct"], 20.0)
+
+    def test_ytd_is_unavailable_when_history_starts_after_year_start(self):
+        snaps = [
+            {"as_of": "2026-03-01", "total_market_bs": 100},
+            {"as_of": "2026-09-01", "total_market_bs": 140},
+        ]
+        out = analyze_snapshot_performance(snaps, [], as_of=date(2026, 9, 1))
+        ytd = out["windows"]["YTD"]
+        self.assertFalse(ytd["available"])
+        self.assertEqual(ytd["reason"], "sin_historia_suficiente")
+        self.assertEqual(ytd["required_start_date"], "2026-01-01")
+        self.assertEqual(ytd["first_snapshot_date"], "2026-03-01")
+
+    def test_previous_snapshot_before_target_is_valid_for_window(self):
+        snaps = [
+            {"as_of": "2026-05-30", "total_market_bs": 100},
+            {"as_of": "2026-06-15", "total_market_bs": 110},
+            {"as_of": "2026-07-01", "total_market_bs": 120},
+        ]
+        out = analyze_snapshot_performance(snaps, [], as_of=date(2026, 7, 1))
+        one_month = out["windows"]["1M"]  # target 2026-05-31
+        self.assertTrue(one_month["available"])
+        self.assertEqual(one_month["start_date"], "2026-05-30")
 
     def test_drawdown(self):
         self.assertAlmostEqual(max_drawdown([100, 120, 90, 130]), -25.0)
