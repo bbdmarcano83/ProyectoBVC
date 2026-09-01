@@ -36,6 +36,8 @@ jobs:
           services/schema_compat.py
           services/security_runtime.py
           services/secret_guard.py
+          services/v5_routes_bootstrap.py
+          services/v5_routes.py
           services/pagos.py
           services/feature_flags.py
           services/scoring_v2.py
