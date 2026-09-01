@@ -1,8 +1,9 @@
 """Collector/ingestion layer for Caracas Bull V5 fundamentals.
 
-This module intentionally separates acquisition from interpretation. Network
-adapters may discover/download official reports, but only normalized records
-that pass source and accounting validation are persisted.
+Acquisition, accounting validation and FX normalization are separate concerns.
+Production ingestion is fail-closed for VES: a report is not persisted as a
+usable V5 snapshot until its historical BCV close/period rate is resolved.
+Controlled fixtures may explicitly disable that network-dependent gate.
 """
 from __future__ import annotations
 
@@ -10,6 +11,8 @@ from typing import Any
 
 from services.fundamental_sources_v5 import get_source, source_audit_summary
 from services.fundamental_store_v5 import save_snapshot, validate_snapshot
+from services.fx_history_v5 import attach_historical_bcv_fx
+from services.fx_normalization_v5 import normalize_to_usd, validate_fx_metadata
 
 REQUIRED_BY_TYPE = {
     "financial": {"total_assets", "equity", "net_income"},
@@ -66,6 +69,33 @@ def coverage_report(symbol: str, record: dict[str, Any]) -> dict:
     }
 
 
+def _prepare_fx(record: dict, *, as_of: str, fiscal_period: str | None,
+                period_start: str | None, hydrate_fx: bool) -> tuple[dict, dict]:
+    out = dict(record)
+    currency = str(out.get("currency") or "").upper().strip()
+    if currency in {"USD", "US$"}:
+        normalized, meta = normalize_to_usd(out)
+        return normalized, meta
+    if currency not in {"VES", "BS", "BS."}:
+        return out, {"valid": False, "flags": ["unsupported_or_missing_currency"]}
+
+    fx_meta = validate_fx_metadata(out)
+    if hydrate_fx and not fx_meta.get("valid"):
+        out, history_meta = attach_historical_bcv_fx(
+            out,
+            as_of=as_of,
+            fiscal_period=fiscal_period,
+            period_start=period_start,
+            refresh_if_missing=True,
+        )
+    else:
+        history_meta = {"ok": bool(fx_meta.get("valid")), "skipped": True}
+
+    normalized, final_meta = normalize_to_usd(out)
+    final_meta["history_resolution"] = history_meta
+    return normalized, final_meta
+
+
 def ingest_normalized_report(
     symbol: str,
     record: dict[str, Any],
@@ -77,9 +107,34 @@ def ingest_normalized_report(
     audited: bool = False,
     published_at: str | None = None,
     metadata: dict | None = None,
+    period_start: str | None = None,
+    hydrate_fx: bool = True,
+    require_fx: bool = True,
 ) -> dict:
-    """Single write entry point for collectors and future admin imports."""
+    """Single write entry point for collectors and future admin imports.
+
+    Defaults are production-safe: VES reports must resolve historical FX before
+    persistence. Tests/fixtures can opt out explicitly with both flags False.
+    """
     normalized = normalize_record(symbol, record)
+    normalized, fx = _prepare_fx(
+        normalized,
+        as_of=as_of,
+        fiscal_period=fiscal_period,
+        period_start=period_start,
+        hydrate_fx=hydrate_fx,
+    )
+
+    if require_fx and not fx.get("valid"):
+        return {
+            "accepted": False,
+            "coverage": coverage_report(symbol, normalized),
+            "validation": {"valid": False, "score": 0.0, "notes": ["FX histórico requerido"]},
+            "fx": fx,
+            "persisted": False,
+            "error": "historical_fx_required",
+        }
+
     coverage = coverage_report(symbol, normalized)
     validation = validate_snapshot(symbol, normalized, source_url, as_of)
     if not validation.get("valid"):
@@ -87,9 +142,12 @@ def ingest_normalized_report(
             "accepted": False,
             "coverage": coverage,
             "validation": validation,
+            "fx": fx,
             "persisted": False,
         }
 
+    meta = dict(metadata or {})
+    meta["fx_validation"] = fx
     persisted = save_snapshot(
         symbol,
         normalized,
@@ -99,12 +157,13 @@ def ingest_normalized_report(
         fiscal_period=fiscal_period,
         audited=audited,
         published_at=published_at,
-        metadata=metadata,
+        metadata=meta,
     )
     return {
         "accepted": bool(persisted.get("saved") or persisted.get("duplicate")),
         "coverage": coverage,
         "validation": validation,
+        "fx": fx,
         "persisted": bool(persisted.get("saved")),
         "duplicate": bool(persisted.get("duplicate")),
         "document_id": persisted.get("document_id"),
