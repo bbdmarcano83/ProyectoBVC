@@ -48,6 +48,7 @@ jobs:
           services/fundamental_collector_v5.py
           services/fundamental_discovery_v5.py
           services/fundamental_pilots_v5.py
+          services/fundamental_history_v5.py
           services/fundamental_trend_v5.py
           services/fx_normalization_v5.py
           services/fx_history_v5.py
