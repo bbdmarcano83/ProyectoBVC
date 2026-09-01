@@ -1,13 +1,13 @@
 """Fundamental engine V5 for Caracas Bull.
 
-Combines four complementary lenses without inventing missing data:
+Combines complementary lenses without inventing missing data:
 - Greenblatt: quality + value (ROC / earnings yield) for non-financials.
 - Graham: balance-sheet safety, earnings consistency and conservative valuation.
 - Buffett: durable profitability, ROE/ROA, cash generation and consistency.
 - Financials: dedicated ROE/ROA/P-B/P-E path instead of EBIT/EV mechanics.
 
-Data is opt-in and auditable. The engine accepts FUNDAMENTALS_V5_JSON or
-FUNDAMENTALS_V5_PATH. Missing metrics remain missing; they are never imputed.
+Primary runtime source is the validated persistent snapshot store. JSON/file
+inputs remain available as an explicit fallback for tests and controlled imports.
 """
 from __future__ import annotations
 
@@ -54,15 +54,45 @@ def _growth(values: list[Any]) -> float | None:
     clean = [v for v in clean if v is not None]
     if len(clean) < 2 or clean[0] == 0:
         return None
-    # Input convention is oldest -> newest.
     years = len(clean) - 1
     if clean[0] > 0 and clean[-1] > 0:
         return ((clean[-1] / clean[0]) ** (1.0 / years) - 1.0) * 100.0
     return (clean[-1] / clean[0] - 1.0) * 100.0
 
 
+def _normalize_payload(payload: Any) -> dict[str, dict] | None:
+    if isinstance(payload, dict) and isinstance(payload.get("symbols"), dict):
+        payload = payload["symbols"]
+    if isinstance(payload, list):
+        mapped: dict[str, dict] = {}
+        for item in payload:
+            if isinstance(item, dict) and item.get("simbolo"):
+                mapped[str(item["simbolo"]).upper()] = item
+        payload = mapped
+    if not isinstance(payload, dict):
+        return None
+    return {
+        str(symbol).upper(): data
+        for symbol, data in payload.items()
+        if isinstance(data, dict)
+    }
+
+
 def load_fundamentals() -> tuple[dict[str, dict], dict]:
-    """Load auditable fundamental snapshots without network-side guessing."""
+    """Load only auditable fundamental snapshots; never infer missing values."""
+    # 1) Persistent validated store (Neon in production).
+    try:
+        from services.fundamental_store_v5 import load_latest_validated
+        db_payload, db_meta = load_latest_validated()
+        if db_payload:
+            return db_payload, db_meta
+    except Exception as exc:
+        db_meta = {"source": "database:fundamental_snapshots", "available": False, "count": 0,
+                   "error": f"{type(exc).__name__}"}
+    else:
+        db_meta = {"source": "database:fundamental_snapshots", "available": False, "count": 0}
+
+    # 2) Explicit controlled fallback for tests/manual staging imports.
     raw = os.getenv("FUNDAMENTALS_V5_JSON", "").strip()
     source = "none"
     if raw:
@@ -76,31 +106,18 @@ def load_fundamentals() -> tuple[dict[str, dict], dict]:
                 source = f"file:{p.name}"
 
     if not raw:
-        return {}, {"source": source, "available": False, "count": 0}
+        return {}, {**db_meta, "fallback_source": source}
 
     try:
         payload = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         return {}, {"source": source, "available": False, "count": 0, "error": "invalid_json"}
 
-    if isinstance(payload, dict) and isinstance(payload.get("symbols"), dict):
-        payload = payload["symbols"]
-    if isinstance(payload, list):
-        mapped: dict[str, dict] = {}
-        for item in payload:
-            if isinstance(item, dict) and item.get("simbolo"):
-                mapped[str(item["simbolo"]).upper()] = item
-        payload = mapped
-
-    if not isinstance(payload, dict):
+    normalized = _normalize_payload(payload)
+    if normalized is None:
         return {}, {"source": source, "available": False, "count": 0, "error": "invalid_shape"}
-
-    normalized = {
-        str(symbol).upper(): data
-        for symbol, data in payload.items()
-        if isinstance(data, dict)
-    }
-    return normalized, {"source": source, "available": bool(normalized), "count": len(normalized)}
+    return normalized, {"source": source, "available": bool(normalized), "count": len(normalized),
+                        "persistent_store_empty": True}
 
 
 def _is_financial(data: dict, sector: str = "") -> bool:
@@ -205,12 +222,22 @@ def enrich_fundamental_scores(market_rows: list[dict]) -> tuple[list[dict], dict
     enriched: list[dict] = []
     calc_rows: list[dict] = []
 
+    from services.fundamental_sources_v5 import get_source
+
     for row in market_rows:
         item = dict(row)
         symbol = str(item.get("simbolo") or "").upper()
-        data = fundamentals.get(symbol)
+        src = get_source(symbol)
+        canonical = str(src.get("canonical_symbol") if src else symbol).upper()
+        data = fundamentals.get(symbol) or fundamentals.get(canonical)
         if not data:
             item["fundamentals_available_v5"] = False
+            enriched.append(item)
+            continue
+        # Investment vehicles are scored by their dedicated engine, not here.
+        if src and src.get("industry_type") == "investment_vehicle":
+            item["fundamentals_available_v5"] = True
+            item["industry_type_v5"] = "investment_vehicle"
             enriched.append(item)
             continue
         metrics = compute_metrics(data, str(item.get("sector") or ""))
@@ -242,7 +269,7 @@ def enrich_fundamental_scores(market_rows: list[dict]) -> tuple[list[dict], dict
     ranks = {key: percentile_map(calc_rows, key, high) for key, high in rank_specs.items()}
 
     for item in enriched:
-        if not item.get("fundamentals_available_v5"):
+        if not item.get("fundamentals_available_v5") or item.get("industry_type_v5") == "investment_vehicle":
             continue
         sym = str(item.get("simbolo"))
         def r(key: str) -> float | None:
@@ -288,6 +315,6 @@ def enrich_fundamental_scores(market_rows: list[dict]) -> tuple[list[dict], dict
     meta.update({
         "coverage_pct": round(scored / max(1, len(market_rows)) * 100.0, 1),
         "scored_count": scored,
-        "method": "Greenblatt + Graham + Buffett, with dedicated financials path",
+        "method": "Greenblatt + Graham + Buffett, with dedicated financials/investment-vehicle paths",
     })
     return enriched, meta
