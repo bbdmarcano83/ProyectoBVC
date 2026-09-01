@@ -61,6 +61,7 @@ jobs:
           services/ibc_history_v5.py
           services/ibc_sources_v5.py
           services/ibc_store_v5.py
+          services/ibc_backfill_v5.py
           services/investment_vehicle_v5.py
           services/scoring_postprocess.py
           services/backtest_v3.py
