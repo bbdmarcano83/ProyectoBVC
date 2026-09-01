@@ -7,20 +7,32 @@ from sqlalchemy.orm import Session
 def ensure_admin_account(db: Session) -> dict:
     """Crea o asegura la cuenta Admin sin duplicarla.
 
+    Antes del rol Admin ejecuta la compatibilidad de esquema dialect-safe para
+    instalaciones legacy. Esto sustituye como fuente de verdad al bloque SQL
+    antiguo de main.py, sin depender de que exista una cuenta Admin configurada.
+
     - Normaliza ADMIN_EMAIL igual que el login.
     - Si el usuario ya existe, conserva su password y sus datos normales.
     - Garantiza es_admin=True, activo=True y plan pro activo.
-    - No hace nada si faltan ADMIN_EMAIL o ADMIN_PASSWORD.
+    - No hace cambios de cuenta si faltan ADMIN_EMAIL o ADMIN_PASSWORD.
     """
     from database import Usuario, Suscripcion
     from services.auth import hash_password
+    from services.schema_compat import ensure_legacy_columns
+
+    schema_state = ensure_legacy_columns(db)
 
     email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
     password = os.environ.get("ADMIN_PASSWORD", "")
     nombre = os.environ.get("ADMIN_NOMBRE", "Admin").strip()[:100] or "Admin"
 
     if not email or not password:
-        return {"configured": False, "created": False, "updated": False}
+        return {
+            "configured": False,
+            "created": False,
+            "updated": False,
+            "schema_compat": schema_state,
+        }
 
     if "@" not in email:
         raise ValueError("ADMIN_EMAIL inválido")
@@ -86,4 +98,5 @@ def ensure_admin_account(db: Session) -> dict:
         "email": usuario.email,
         "is_admin": bool(usuario.es_admin),
         "plan": suscripcion.plan,
+        "schema_compat": schema_state,
     }
