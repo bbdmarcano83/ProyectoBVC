@@ -23,16 +23,38 @@ class PortfolioPerformanceV5Tests(unittest.TestCase):
 
     def test_snapshot_analysis_exposes_windows_and_drawdown(self):
         snaps = [
-            {"as_of": "2026-01-02", "total_market_bs": 100, "total_market_usd": 10},
-            {"as_of": "2026-03-01", "total_market_bs": 120, "total_market_usd": 11},
-            {"as_of": "2026-06-01", "total_market_bs": 110, "total_market_usd": 9},
-            {"as_of": "2026-09-01", "total_market_bs": 150, "total_market_usd": 12},
+            {"as_of": "2026-01-02", "total_market_bs": 100, "total_market_usd": 10, "fx_bcv": 10},
+            {"as_of": "2026-03-01", "total_market_bs": 120, "total_market_usd": 11, "fx_bcv": 10.9},
+            {"as_of": "2026-06-01", "total_market_bs": 110, "total_market_usd": 9, "fx_bcv": 12.2},
+            {"as_of": "2026-09-01", "total_market_bs": 150, "total_market_usd": 12, "fx_bcv": 12.5},
         ]
         out = analyze_snapshot_performance(snaps, [], as_of=date(2026, 9, 1))
         self.assertTrue(out["available"])
         self.assertIn("6M", out["windows"])
         self.assertIsNotNone(out["max_drawdown_bs_pct"])
         self.assertIsNotNone(out["max_drawdown_usd_observed_pct"])
+
+    def test_ibc_window_receives_same_midperiod_contribution(self):
+        snaps = [
+            {"as_of": "2026-01-01", "total_market_bs": 100, "total_market_usd": 10, "fx_bcv": 10},
+            {"as_of": "2026-02-01", "total_market_bs": 220, "total_market_usd": 20, "fx_bcv": 11},
+        ]
+        tx = [{
+            "fecha": "2026-01-16", "tipo": "compra", "cantidad": 1, "precio": 100,
+            "neto": 100, "tasa_bcv": 10,
+        }]
+        ibc = [
+            {"date": "2026-01-01", "close": 100},
+            {"date": "2026-01-16", "close": 105},
+            {"date": "2026-02-01", "close": 110},
+        ]
+        out = analyze_snapshot_performance(snaps, tx, ibc_points=ibc, as_of=date(2026, 2, 1))
+        w = out["windows"]["1M"]
+        self.assertTrue(w["available"])
+        self.assertIsNotNone(w["ibc_return_bs_pct"])
+        self.assertIsNotNone(w["alpha_bs_pp"])
+        # Si el aporte se tratara como rentabilidad, el retorno de cartera sería 120%; no debe serlo.
+        self.assertLess(w["return_bs_pct"], 20.0)
 
     def test_drawdown(self):
         self.assertAlmostEqual(max_drawdown([100, 120, 90, 130]), -25.0)
