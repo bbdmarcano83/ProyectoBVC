@@ -48,6 +48,19 @@ def _preferred_column(doc: dict) -> int:
     return 0
 
 
+def _monetary_basis(symbol: str) -> str:
+    """Base monetaria verificada por emisor para los estados primarios del piloto.
+
+    Mercantil presenta sus estados históricos en VES nominales. Sivensa y
+    CrecePymes presentan los estados primarios usados por este backfill en
+    bolívares constantes al cierre. Los anexos nominales de CrecePymes no se usan.
+    """
+    symbol = str(symbol or "").upper().strip()
+    if symbol in {"SVS", "ICP.B"}:
+        return "constant_ves_end_period"
+    return "nominal_ves"
+
+
 def build_review(symbol: str, period: str) -> dict:
     doc = _document(symbol, period)
     candidates, parse_meta = fetch_and_parse_official_pdf(symbol, doc["url"])
@@ -72,7 +85,7 @@ def _persist_review(package: dict, payload: dict) -> dict:
         fiscal_period=doc["fiscal_period"],
         audited=bool(doc.get("audited")),
         currency=str(payload.get("currency") or "VES"),
-        monetary_basis=str(payload.get("monetary_basis") or "nominal_ves"),
+        monetary_basis=str(payload.get("monetary_basis") or _monetary_basis(review.get("symbol"))),
         period_start=payload.get("period_start"),
         published_at=payload.get("published_at"),
         extra_fields=extra_fields,
@@ -106,7 +119,7 @@ def auto_persist(symbol: str, period: str) -> dict:
     payload = {
         "selections": proposal["selections"],
         "currency": "VES",
-        "monetary_basis": "nominal_ves",
+        "monetary_basis": _monetary_basis(symbol),
         "extra_fields": {},
     }
     out = _persist_review(package, payload)
