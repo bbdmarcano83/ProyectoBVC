@@ -34,7 +34,9 @@ class FundamentalPilotV5Tests(unittest.TestCase):
         self.assertTrue(PILOTS["SVS"]["audited"])
         self.assertTrue(PILOTS["ICP.B"]["audited"])
 
-    def test_end_to_end_ingestion_persists_three_validated_families(self):
+    def test_end_to_end_ingestion_persists_three_validated_families_offline_fixture_mode(self):
+        # Los fixtures no hacen red en CI. Producción usa los defaults
+        # hydrate_fx=True + require_fx=True y por tanto falla cerrado si falta FX.
         for symbol, item in PILOTS.items():
             out = ingest_normalized_report(
                 symbol,
@@ -45,6 +47,8 @@ class FundamentalPilotV5Tests(unittest.TestCase):
                 fiscal_period=item["fiscal_period"],
                 audited=item["audited"],
                 metadata={"pilot_fixture": True, "evidence": item["evidence"]},
+                hydrate_fx=False,
+                require_fx=False,
             )
             self.assertTrue(out["accepted"], f"{symbol}: {out}")
             self.assertGreaterEqual(out["validation"]["score"], 70.0, symbol)
