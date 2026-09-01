@@ -9,6 +9,7 @@ from services.scoring_engine_v5 import _v5_signal, apply_v5
 class FundamentalMetricsV5Tests(unittest.TestCase):
     def test_non_financial_greenblatt_metrics_are_computed_from_supplied_data(self):
         data = {
+            "currency": "USD",
             "industry_type": "non_financial",
             "market_cap": 1000,
             "total_debt": 200,
@@ -31,6 +32,7 @@ class FundamentalMetricsV5Tests(unittest.TestCase):
 
     def test_financials_use_dedicated_path(self):
         data = {
+            "currency": "USD",
             "industry_type": "financial",
             "market_cap": 800,
             "net_income": 80,
