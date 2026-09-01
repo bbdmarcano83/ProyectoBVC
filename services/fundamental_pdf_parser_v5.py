@@ -1,8 +1,8 @@
 """Extractor PDF V5 orientado a evidencia, no a auto-ingesta ciega.
 
 Descarga documentos oficiales registrados y devuelve candidatos por campo con
-página y fragmento. No elige automáticamente entre múltiples cifras ni guarda en
-Neon; la normalización/validación contable ocurre después.
+página, columna comparativa y fragmento. No elige automáticamente entre múltiples
+cifras ni guarda en Neon; la normalización/validación contable ocurre después.
 """
 from __future__ import annotations
 
@@ -31,12 +31,8 @@ FIELD_ALIASES = {
     "nav": ("valor neto de los activos", "valor de unidad de inversión", "valor patrimonial"),
 }
 
-# La alternativa entre paréntesis va primero para evitar que el motor empiece
-# el match dentro de `(1.250,75)` y pierda el signo contable de pérdida.
 _NUMBER_BODY = r"(?:\d{1,3}(?:[\.\s]\d{3})*(?:,\d+)?|\d+(?:[\.,]\d+)?)"
-NUMBER_RE = re.compile(
-    rf"(?<!\w)(?:Bs\.?\s*)?(?:\(-?{_NUMBER_BODY}\)|-?{_NUMBER_BODY})"
-)
+NUMBER_RE = re.compile(rf"(?<!\w)(?:Bs\.?\s*)?(?:\(-?{_NUMBER_BODY}\)|-?{_NUMBER_BODY})")
 
 
 def _normalize_number(raw: str) -> float | None:
@@ -86,6 +82,7 @@ def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
         for field, aliases in FIELD_ALIASES.items():
             for alias in aliases:
                 start = 0
+                occurrence = 0
                 while True:
                     idx = lower.find(alias, start)
                     if idx < 0:
@@ -93,7 +90,7 @@ def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
                     window = text[max(0, idx - 80): min(len(text), idx + len(alias) + 180)]
                     after = text[idx + len(alias): min(len(text), idx + len(alias) + 140)]
                     matches = NUMBER_RE.findall(after)
-                    for token in matches[:3]:
+                    for column_index, token in enumerate(matches[:3]):
                         value = _normalize_number(token)
                         if value is None:
                             continue
@@ -103,7 +100,10 @@ def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
                             "page": page_no,
                             "alias": alias,
                             "evidence": window,
+                            "column_index": column_index,
+                            "occurrence": occurrence,
                         })
+                    occurrence += 1
                     start = idx + len(alias)
     return {k: v for k, v in candidates.items() if v}
 
@@ -144,12 +144,26 @@ def fetch_and_parse_official_pdf(symbol: str, url: str, timeout: float = 20.0) -
     if not _official_host_allowed(symbol, url):
         return {}, {"valid": False, "reason": "host_not_registered_for_issuer"}
     try:
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; CaracasBull-FundamentalAudit/1.0)",
+            "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.5",
+        }
+        with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
             response = client.get(url)
             response.raise_for_status()
             data = response.content
+            content_type = str(response.headers.get("content-type") or "").lower()
     except Exception as exc:
         return {}, {"valid": False, "reason": f"download_error:{type(exc).__name__}"}
+    if not data.startswith(b"%PDF"):
+        return {}, {
+            "valid": False,
+            "reason": "download_not_pdf",
+            "symbol": symbol,
+            "source_url": url,
+            "bytes": len(data),
+            "content_type": content_type,
+        }
     candidates, meta = parse_pdf_bytes(data)
-    meta.update({"symbol": symbol, "source_url": url, "bytes": len(data)})
+    meta.update({"symbol": symbol, "source_url": url, "bytes": len(data), "content_type": content_type})
     return candidates, meta
