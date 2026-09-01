@@ -30,6 +30,8 @@ def build_review_package(symbol: str, candidates: dict[str, list[dict]], *, sour
                 "page": option.get("page"),
                 "alias": option.get("alias"),
                 "evidence": option.get("evidence"),
+                "column_index": option.get("column_index"),
+                "occurrence": option.get("occurrence"),
             })
         if clean:
             fields[field] = clean
@@ -73,6 +75,8 @@ def select_candidates(review: dict, selections: dict[str, int], *, extra_fields:
             "raw": choice.get("raw"),
             "alias": choice.get("alias"),
             "evidence": choice.get("evidence"),
+            "column_index": choice.get("column_index"),
+            "occurrence": choice.get("occurrence"),
         }
     return selected, {
         "valid": not errors and bool(selected),
