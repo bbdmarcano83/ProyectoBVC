@@ -12,6 +12,8 @@ from typing import Any
 
 from services.fundamentals_v5 import enrich_fundamental_scores
 
+_LAST_V5_MAP: dict[str, dict] = {}
+
 
 def _n(v: Any, default: float = 0.0) -> float:
     try:
@@ -117,6 +119,9 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
         if stage == "OPORTUNIDAD HÍBRIDA CONFIRMADA":
             confirmed += 1
 
+    global _LAST_V5_MAP
+    _LAST_V5_MAP = {str(r.get("simbolo")): dict(r) for r in rows if r.get("simbolo")}
+
     metadata["engine_version"] = "V5-HYBRID"
     metadata["v5"] = {
         "fundamentals": fmeta,
@@ -131,3 +136,7 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
         "routes": ["quality_pullback", "market_leader"],
     }
     return rows, metadata
+
+
+def get_last_scoring_map_v5() -> dict[str, dict]:
+    return {k: dict(v) for k, v in _LAST_V5_MAP.items()}
