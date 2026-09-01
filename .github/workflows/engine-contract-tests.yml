@@ -59,6 +59,7 @@ jobs:
           services/portafolio.py
           services/portfolio_v4.py
           services/portfolio_v5.py
+          services/portfolio_benchmark_v5.py
           services/engine_router.py
           services/alertas_cierre.py
       - name: Validate Jinja templates
