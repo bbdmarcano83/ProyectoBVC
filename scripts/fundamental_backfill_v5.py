@@ -10,7 +10,7 @@ import argparse
 import json
 from pathlib import Path
 
-from database import DB_PERSISTENCE_MODE
+from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapshot, engine
 from services.fundamental_autoreview_v5 import propose_fail_closed_selections
 from services.fundamental_backfill_manifest_v5 import PILOT_BACKFILL_V5
 from services.fundamental_pdf_parser_v5 import fetch_and_parse_official_pdf
@@ -20,6 +20,11 @@ from services.fundamental_review_v5 import build_review_package, accept_reviewed
 def _require_external_db() -> None:
     if DB_PERSISTENCE_MODE != "external":
         raise RuntimeError("external_database_required_for_persistent_backfill")
+
+
+def _ensure_v5_fundamental_schema() -> None:
+    FundamentalDocument.__table__.create(bind=engine, checkfirst=True)
+    FundamentalSnapshot.__table__.create(bind=engine, checkfirst=True)
 
 
 def _document(symbol: str, period: str) -> dict:
@@ -34,10 +39,20 @@ def _document(symbol: str, period: str) -> dict:
     return {**doc, "industry_type": issuer.get("industry_type"), "issuer": issuer.get("issuer")}
 
 
+def _preferred_column(doc: dict) -> int:
+    # En estados comparativos el período principal está en la primera columna.
+    # Sólo cuando reutilizamos el auditado 2024 para FY2023 buscamos la segunda.
+    kind = str(doc.get("document_type") or "")
+    if kind == "comparative_in_2024_audit":
+        return 1
+    return 0
+
+
 def build_review(symbol: str, period: str) -> dict:
     doc = _document(symbol, period)
     candidates, parse_meta = fetch_and_parse_official_pdf(symbol, doc["url"])
     review = build_review_package(symbol, candidates, source_url=doc["url"], as_of=doc["as_of"])
+    review["preferred_column"] = _preferred_column(doc)
     return {"document": doc, "parse": parse_meta, "review": review}
 
 
@@ -69,6 +84,7 @@ def _persist_review(package: dict, payload: dict) -> dict:
 
 def accept(symbol: str, period: str, selections_path: str) -> dict:
     _require_external_db()
+    _ensure_v5_fundamental_schema()
     package = build_review(symbol, period)
     payload = json.loads(Path(selections_path).read_text(encoding="utf-8"))
     return _persist_review(package, payload)
@@ -76,6 +92,7 @@ def accept(symbol: str, period: str, selections_path: str) -> dict:
 
 def auto_persist(symbol: str, period: str) -> dict:
     _require_external_db()
+    _ensure_v5_fundamental_schema()
     package = build_review(symbol, period)
     review = package["review"]
     proposal = propose_fail_closed_selections(review)
@@ -99,6 +116,7 @@ def auto_persist(symbol: str, period: str) -> dict:
 
 def auto_persist_all() -> dict:
     _require_external_db()
+    _ensure_v5_fundamental_schema()
     rows = []
     accepted = rejected = persisted = 0
     for symbol, issuer in PILOT_BACKFILL_V5.items():
