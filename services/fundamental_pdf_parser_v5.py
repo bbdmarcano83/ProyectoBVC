@@ -3,10 +3,12 @@
 Descarga documentos oficiales registrados y devuelve candidatos por campo con
 página, columna comparativa y fragmento. No elige automáticamente entre múltiples
 cifras ni guarda en Neon; la normalización/validación contable ocurre después.
+Cada PDF descargado queda identificado por SHA-256 de sus bytes exactos.
 """
 from __future__ import annotations
 
 from io import BytesIO
+import hashlib
 import re
 from urllib.parse import urlparse
 from typing import Iterable
@@ -33,6 +35,12 @@ FIELD_ALIASES = {
 
 _NUMBER_BODY = r"(?:\d{1,3}(?:[\.\s]\d{3})*(?:,\d+)?|\d+(?:[\.,]\d+)?)"
 NUMBER_RE = re.compile(rf"(?<!\w)(?:Bs\.?\s*)?(?:\(-?{_NUMBER_BODY}\)|-?{_NUMBER_BODY})")
+
+
+def source_document_sha256(data: bytes) -> str | None:
+    if not isinstance(data, (bytes, bytearray)) or not data:
+        return None
+    return hashlib.sha256(bytes(data)).hexdigest()
 
 
 def _normalize_number(raw: str) -> float | None:
@@ -111,10 +119,15 @@ def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
 def parse_pdf_bytes(data: bytes) -> tuple[dict, dict]:
     if not data or len(data) > MAX_PDF_BYTES:
         return {}, {"valid": False, "reason": "pdf_empty_or_too_large"}
+    digest = source_document_sha256(data)
     try:
         reader = PdfReader(BytesIO(data))
     except Exception as exc:
-        return {}, {"valid": False, "reason": f"pdf_parse_error:{type(exc).__name__}"}
+        return {}, {
+            "valid": False,
+            "reason": f"pdf_parse_error:{type(exc).__name__}",
+            "source_document_sha256": digest,
+        }
     pages = []
     empty_pages = 0
     for page in reader.pages:
@@ -132,6 +145,7 @@ def parse_pdf_bytes(data: bytes) -> tuple[dict, dict]:
         "empty_pages": empty_pages,
         "fields_with_candidates": len(candidates),
         "requires_review": True,
+        "source_document_sha256": digest,
     }
 
 
@@ -155,6 +169,7 @@ def fetch_and_parse_official_pdf(symbol: str, url: str, timeout: float = 20.0) -
             content_type = str(response.headers.get("content-type") or "").lower()
     except Exception as exc:
         return {}, {"valid": False, "reason": f"download_error:{type(exc).__name__}"}
+    digest = source_document_sha256(data)
     if not data.startswith(b"%PDF"):
         return {}, {
             "valid": False,
@@ -163,7 +178,14 @@ def fetch_and_parse_official_pdf(symbol: str, url: str, timeout: float = 20.0) -
             "source_url": url,
             "bytes": len(data),
             "content_type": content_type,
+            "source_document_sha256": digest,
         }
     candidates, meta = parse_pdf_bytes(data)
-    meta.update({"symbol": symbol, "source_url": url, "bytes": len(data), "content_type": content_type})
+    meta.update({
+        "symbol": symbol,
+        "source_url": url,
+        "bytes": len(data),
+        "content_type": content_type,
+        "source_document_sha256": digest,
+    })
     return candidates, meta
