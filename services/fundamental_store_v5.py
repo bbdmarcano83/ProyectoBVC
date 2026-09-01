@@ -34,7 +34,6 @@ def _f(value: Any) -> float | None:
 
 
 def _iso_date(value: Any) -> date | None:
-    """Parse an exact YYYY-MM-DD date; timestamps are intentionally rejected."""
     text = str(value or "").strip()
     if len(text) != 10:
         return None
@@ -46,7 +45,6 @@ def _iso_date(value: Any) -> date | None:
 
 
 def _published_date(value: Any) -> date | None:
-    """Accept YYYY-MM-DD or an ISO timestamp whose first component is a date."""
     text = str(value or "").strip()
     if not text:
         return None
@@ -58,6 +56,23 @@ def _published_date(value: Any) -> date | None:
     except ValueError:
         return None
     return parsed.date()
+
+
+def _valid_sha256(value: Any) -> str | None:
+    digest = str(value or "").strip().lower()
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        return None
+    return digest
+
+
+def _metadata_dict(raw: Any) -> dict:
+    if isinstance(raw, dict):
+        return dict(raw)
+    try:
+        parsed = json.loads(str(raw or "{}"))
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def validate_document_dates(as_of: str, published_at: str | None = None) -> dict:
@@ -83,7 +98,6 @@ def validate_document_dates(as_of: str, published_at: str | None = None) -> dict
 
 
 def is_document_available_on(published_at: str | None, decision_date: str) -> bool:
-    """Fail closed when publication is unknown or occurs after decision date."""
     decision = _iso_date(decision_date)
     published = _published_date(published_at)
     return bool(decision and published and published <= decision)
@@ -99,7 +113,6 @@ def document_hash(source_url: str, as_of: str, payload: dict) -> str:
 
 
 def validate_snapshot(symbol: str, payload: dict, source_url: str, as_of: str) -> dict:
-    """Valida trazabilidad y coherencia contable sin completar faltantes."""
     symbol = str(symbol or "").upper().strip()
     source = get_source(symbol)
     notes: list[str] = []
@@ -173,7 +186,6 @@ def save_snapshot(
     published_at: str | None = None,
     metadata: dict | None = None,
 ) -> dict:
-    """Guarda un documento y snapshot idempotentemente por hash."""
     symbol = str(symbol or "").upper().strip()
     validation = validate_snapshot(symbol, payload, source_url, as_of)
     if not validation["valid"]:
@@ -190,6 +202,8 @@ def save_snapshot(
     source = validation["source"]
     canonical = str(source.get("canonical_symbol") or symbol).upper()
     h = document_hash(source_url, as_of, payload)
+    incoming_meta = dict(metadata or {})
+    incoming_sha = _valid_sha256(incoming_meta.get("source_document_sha256"))
 
     with SessionLocal() as db:
         existing_doc = db.query(FundamentalDocument).filter(FundamentalDocument.document_hash == h).first()
@@ -198,12 +212,42 @@ def save_snapshot(
                 FundamentalSnapshot.document_id == existing_doc.id,
                 FundamentalSnapshot.simbolo == canonical,
             ).first()
+            existing_meta = _metadata_dict(existing_doc.metadata_json)
+            existing_sha = _valid_sha256(existing_meta.get("source_document_sha256"))
+            if incoming_sha and existing_sha and incoming_sha != existing_sha:
+                return {
+                    "saved": False,
+                    "duplicate": False,
+                    "source_document_hash_conflict": True,
+                    "document_id": existing_doc.id,
+                    "snapshot_id": snap.id if snap else None,
+                    "validation": validation,
+                    "existing_source_document_sha256": existing_sha,
+                    "incoming_source_document_sha256": incoming_sha,
+                }
+
+            metadata_enriched = False
+            if incoming_sha and not existing_sha:
+                existing_meta["source_document_sha256"] = incoming_sha
+                metadata_enriched = True
+            for key, value in incoming_meta.items():
+                if key == "source_document_sha256" or value in (None, ""):
+                    continue
+                if key not in existing_meta:
+                    existing_meta[key] = value
+                    metadata_enriched = True
+            if metadata_enriched:
+                existing_doc.metadata_json = canonical_json(existing_meta)
+                db.commit()
+
             return {
                 "saved": False,
                 "duplicate": True,
+                "metadata_enriched": metadata_enriched,
                 "document_id": existing_doc.id,
                 "snapshot_id": snap.id if snap else None,
                 "validation": validation,
+                "source_document_sha256": incoming_sha or existing_sha,
             }
 
         doc = FundamentalDocument(
@@ -218,7 +262,7 @@ def save_snapshot(
             audited=bool(audited),
             document_hash=h,
             published_at=published_at,
-            metadata_json=canonical_json(metadata or {}),
+            metadata_json=canonical_json(incoming_meta),
         )
         db.add(doc)
         db.flush()
@@ -252,6 +296,7 @@ def save_snapshot(
             "document_id": doc.id,
             "snapshot_id": snap.id,
             "validation": validation,
+            "source_document_sha256": incoming_sha,
         }
 
 
@@ -276,7 +321,6 @@ def _latest_payload_from_rows(rows: list[FundamentalSnapshot]) -> tuple[dict[str
 
 
 def load_latest_validated() -> tuple[dict[str, dict], dict]:
-    """Carga el snapshot validado más reciente para uso live."""
     with SessionLocal() as db:
         rows = db.query(FundamentalSnapshot).filter(FundamentalSnapshot.validated.is_(True)).all()
 
@@ -303,12 +347,6 @@ def load_latest_validated() -> tuple[dict[str, dict], dict]:
 
 
 def load_validated_as_of(decision_date: str, *, require_published_at: bool = True) -> tuple[dict[str, dict], dict]:
-    """Backtest-safe loader: only information actually published by decision_date.
-
-    Unknown publication dates fail closed by default. Comparable histories are
-    rebuilt from the same eligible subset, so a future FY cannot leak through a
-    history array even when the latest visible snapshot itself is older.
-    """
     decision = _iso_date(decision_date)
     if decision is None:
         return {}, {
