@@ -1,7 +1,7 @@
-"""Runtime facade for ProyectoBVC Portfolio Engine V4.
+"""Runtime facade for ProyectoBVC Portfolio Engine V4/V5.
 
-Mantiene las funciones legacy y añade inteligencia V4 sin requerir persistencia.
-Rollback: PORTFOLIO_ENGINE_V4_ENABLED=false.
+V4 remains the portfolio risk/concentration/fees foundation. When V5 scoring
+is enabled and available, a read-only V5 decision overlay is added.
 """
 from __future__ import annotations
 
@@ -13,9 +13,13 @@ from services.portafolio_legacy import resumen_portafolio as _resumen_legacy
 from services.bvc import _to_float
 
 
-def _enabled() -> bool:
-    raw = os.environ.get("PORTFOLIO_ENGINE_V4_ENABLED", "true")
+def _flag(name: str, default: str) -> bool:
+    raw = os.environ.get(name, default)
     return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _enabled() -> bool:
+    return _flag("PORTFOLIO_ENGINE_V4_ENABLED", "true")
 
 
 def calcular_fila(simb: str, datos: dict, precio_actual: float, total_mkt: float, tasa: float) -> dict:
@@ -52,4 +56,16 @@ def resumen_portafolio(portafolio: dict, datos_bolsa: list, tasa: float) -> dict
     enriched = enriquecer_resumen_v4(resumen, filas, scoring_map)
     enriched["engine_version"] = "v4-stateless-full"
     enriched["storage"] = "stateless"
+
+    if _flag("SCORING_ENGINE_V5_ENABLED", "false"):
+        try:
+            from services.scoring_engine_v5 import get_last_scoring_map_v5
+            from services.portfolio_v5 import analizar_portafolio_v5
+            v5_map = get_last_scoring_map_v5()
+            if v5_map:
+                enriched["portfolio_v5"] = analizar_portafolio_v5(filas, v5_map)
+                enriched["engine_version"] = "v4+v5-hybrid"
+        except Exception:
+            pass
+
     return enriched
