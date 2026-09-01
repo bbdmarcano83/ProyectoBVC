@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [audit/v3-v4-engine]
+    branches: [audit/v3-v4-engine, feature/v5-philosophy-engine]
 
 permissions:
   contents: read
@@ -16,6 +16,7 @@ jobs:
     env:
       APP_ENV: development
       SCORING_ENGINE_V3_ENABLED: "true"
+      SCORING_ENGINE_V5_ENABLED: "false"
       PORTFOLIO_ENGINE_V4_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +41,8 @@ jobs:
           services/scoring.py
           services/scoring_v3.py
           services/scoring_engine_v3.py
+          services/scoring_engine_v5.py
+          services/fundamentals_v5.py
           services/scoring_postprocess.py
           services/backtest_v3.py
           services/portafolio_legacy.py
