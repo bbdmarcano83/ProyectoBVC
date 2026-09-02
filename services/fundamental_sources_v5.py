@@ -7,23 +7,24 @@ confirmar una señal V5.
 """
 from __future__ import annotations
 from copy import deepcopy
+from urllib.parse import urlparse
 
 SOURCE_REGISTRY: dict[str, dict] = {
     # Bancos / financieras operativas
     "MVZ.A": {"issuer":"Mercantil Servicios Financieros, C.A.","aliases":["MVZ.B"],"industry_type":"financial","primary_url":"https://www.msf.com/content/inversionistas/informacion_financiera/reportes.html","source_type":"issuer_official","confidence":100,"coverage":"annual_audited+semiannual_audited+quarterly+monthly_bank_balances","latest_verified":"2026-Q2","status":"verified_primary"},
-    "BNC": {"issuer":"Banco Nacional de Crédito, C.A., Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.bncenlinea.com/bnc/informes-anuales","source_type":"issuer_official","confidence":100,"coverage":"annual_reports","latest_verified":"2025-12","status":"verified_primary"},
-    "BPV": {"issuer":"Banco Provincial, S.A. Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.provincial.com/","source_type":"issuer_official","confidence":100,"coverage":"semiannual_financial_reports+audited_statements","latest_verified":"2025-H2","status":"verified_primary"},
+    "BNC": {"issuer":"Banco Nacional de Crédito, C.A., Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.bncenlinea.com/bnc/informes-anuales","document_hosts":["d3q4nr72nuserl.cloudfront.net"],"source_type":"issuer_official","confidence":100,"coverage":"annual_reports","latest_verified":"2025-12","status":"verified_primary"},
+    "BPV": {"issuer":"Banco Provincial, S.A. Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.provincial.com/personas/informacion-corporativa/informacion-financiera.html","source_type":"issuer_official","confidence":100,"coverage":"semiannual_financial_reports+audited_statements","latest_verified":"2025-H2","status":"verified_primary"},
     "BVL": {"issuer":"Banco de Venezuela, S.A. Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.bancodevenezuela.com/reportes-financieros/","source_type":"issuer_official","confidence":100,"coverage":"management_reports+published_balances+audited_statements+dividends","latest_verified":"2026-07","status":"verified_primary"},
-    "ABC.A": {"issuer":"Banco del Caribe, C.A., Banco Universal (Bancaribe)","aliases":[],"industry_type":"financial","primary_url":"https://www.bancaribe.com.ve/cifras-e-informes","source_type":"issuer_official","confidence":100,"coverage":"monthly_balances+semiannual_management+external_auditor_reports","latest_verified":"2025-H2","status":"verified_primary"},
+    "ABC.A": {"issuer":"Banco del Caribe, C.A., Banco Universal (Bancaribe)","aliases":[],"industry_type":"financial","primary_url":"https://www.bancaribe.com.ve/cifras-e-informes","document_hosts":["d3olc33sy92l9e.cloudfront.net"],"source_type":"issuer_official","confidence":100,"coverage":"monthly_balances+semiannual_management+external_auditor_reports","latest_verified":"2025-H2","status":"verified_primary"},
 
     # Empresas operativas / holdings no bancarios
-    "IVC.A": {"issuer":"INVACA Inmuebles, Valores y Capitales, S.A.C.A.","aliases":["IVC.B"],"industry_type":"non_financial","primary_url":"https://invaca.com.ve/es/investor-hub","source_type":"issuer_official","confidence":100,"coverage":"consolidated_audited+investor_reports","latest_verified":"2025-06","status":"verified_primary"},
+    "IVC.A": {"issuer":"INVACA Inmuebles, Valores y Capitales, S.A.C.A.","aliases":["IVC.B"],"industry_type":"non_financial","primary_url":"https://invaca.com.ve/es/investor-hub","document_hosts":["ambitious-art-5a4bef14f6.media.strapiapp.com"],"source_type":"issuer_official","confidence":100,"coverage":"consolidated_audited+investor_reports","latest_verified":"2025-06","status":"verified_primary"},
     "TPG": {"issuer":"C.A. Telares de Palo Grande","aliases":[],"industry_type":"non_financial","primary_url":"https://telaresdepalogrande.com/tpg/wp/quienes-somos/informacion-financiera/","source_type":"issuer_official","confidence":100,"coverage":"annual_audited_2014_2025+shareholder_reports","latest_verified":"2025-12","status":"verified_primary"},
-    "CGQ": {"issuer":"Corporación Grupo Químico, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.grupoquimico.com/accionistas-1","source_type":"issuer_official","confidence":100,"coverage":"financial_management_reports_2020_2025+assemblies","latest_verified":"2025","status":"verified_primary"},
+    "CGQ": {"issuer":"Corporación Grupo Químico, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.grupoquimico.com/accionistas-1","document_hosts":["4c3ab626-4c41-42d8-a4ea-e2a38f89cf5d.filesusr.com"],"source_type":"issuer_official","confidence":100,"coverage":"financial_management_reports_2020_2025+assemblies","latest_verified":"2025","status":"verified_primary"},
     "ARC.A": {"issuer":"ARCA Inmuebles y Valores, C.A.","aliases":["ARC.B"],"industry_type":"non_financial","primary_url":"https://arcainmueblesyvalores.com/","source_type":"issuer_official","confidence":100,"coverage":"audited_financial_statements","latest_verified":"2023-12","status":"verified_primary"},
     "SVS": {"issuer":"Sivensa, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://sivensa.com.ve/inversionistas/","source_type":"issuer_official","confidence":100,"coverage":"annual_audited+quarterly","latest_verified":"2025-09-30","status":"verified_primary"},
     "ENV": {"issuer":"Envases Venezolanos, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://envasesvenezolanos.com.ve/estados-financieros/","source_type":"issuer_official","confidence":100,"coverage":"annual_financial_statements","latest_verified":"2023","status":"verified_primary"},
-    "CRM.A": {"issuer":"Corimon, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.corimon.com/estados-financieros-2026/","source_type":"issuer_official","confidence":100,"coverage":"consolidated_financial_statements+commissioner_reports","latest_verified":"2025-03","status":"verified_primary"},
+    "CRM.A": {"issuer":"Corimon, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.corimon.com/estados-financieros-2026/","document_hosts":["www.bolsadecaracas.com"],"source_type":"issuer_official","confidence":100,"coverage":"consolidated_financial_statements+commissioner_reports","latest_verified":"2025-03","status":"verified_primary"},
     "DOM": {"issuer":"Domínguez & Cía., S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://domcia.com/informacion-financiera/","source_type":"issuer_official","confidence":100,"coverage":"financial_information+shareholder_notices","latest_verified":"2026","status":"verified_primary"},
     "PIV.B": {"issuer":"PIVCA Promotora de Inversiones y Valores, C.A.","aliases":["PIV.A"],"industry_type":"non_financial","primary_url":"https://pivca.com/prospectos/","source_type":"issuer_official","confidence":100,"coverage":"audited_financial_statements+prospectuses","latest_verified":"2025","status":"verified_primary"},
     "EFE": {"issuer":"Productos EFE, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://empresaspolar.com/","source_type":"issuer_official","confidence":95,"coverage":"shareholder_assemblies+audited_financial_statements_referenced","latest_verified":"2025-09","status":"verified_manual_route"},
@@ -68,6 +69,43 @@ def get_source(symbol: str) -> dict | None:
     out = deepcopy(SOURCE_REGISTRY[canonical])
     out["canonical_symbol"] = canonical
     return out
+
+
+def registered_hosts(source: dict | None) -> set[str]:
+    """Devuelve únicamente hosts declarados por el registro auditable."""
+    if not isinstance(source, dict):
+        return set()
+    hosts: set[str] = set()
+    for key in ("primary_url", "url", "source_url", "discovery_url"):
+        value = source.get(key)
+        if value:
+            host = (urlparse(str(value)).hostname or "").lower().strip(".")
+            if host:
+                hosts.add(host)
+    for key in ("urls", "document_hosts"):
+        values = source.get(key, [])
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            raw = str(value or "").strip()
+            host = (urlparse(raw).hostname or "").lower().strip(".") if "://" in raw else raw.lower().strip(".")
+            if host:
+                hosts.add(host)
+    return hosts
+
+
+def source_url_allowed(symbol: str, url: str) -> bool:
+    """Gate fail-closed para páginas y documentos oficiales registrados."""
+    target = (urlparse(str(url or "")).hostname or "").lower().strip(".")
+    hosts = registered_hosts(get_source(symbol))
+    if not target or not hosts:
+        return False
+    target_key = target.removeprefix("www.")
+    return any(
+        target_key == host.removeprefix("www.")
+        or target_key.endswith("." + host.removeprefix("www."))
+        for host in hosts
+    )
 
 
 def source_confidence(symbol: str) -> int:

@@ -27,6 +27,16 @@ class FundamentalDiscoveryV5Tests(unittest.TestCase):
         self.assertNotIn("https://evil.example/estado-financiero.pdf", urls)
         self.assertEqual(len(docs), 2)
 
+    def test_parser_accepts_registered_official_cdn(self):
+        html = '<a href="https://d3q4nr72nuserl.cloudfront.net/audited-2025.pdf">Auditado 2025</a>'
+        docs = parse_candidate_links(
+            html,
+            "https://www.bncenlinea.com/bnc/",
+            "https://www.bncenlinea.com/",
+            symbol="BNC",
+        )
+        self.assertEqual([d["url"] for d in docs], ["https://d3q4nr72nuserl.cloudfront.net/audited-2025.pdf"])
+
 
 if __name__ == "__main__":
     unittest.main()

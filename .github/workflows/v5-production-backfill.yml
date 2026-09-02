@@ -2,7 +2,7 @@ name: V5 production backfill
 
 on:
   push:
-    branches: [feature/v5-philosophy-engine]
+    branches: [feature/v5-philosophy-engine, feature/full-fundamentals-v5]
     paths:
       - ".github/workflows/v5-production-backfill.yml"
       - "scripts/ibc_backfill_v5.py"
@@ -28,7 +28,7 @@ concurrency:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       APP_ENV: production
       SCORING_ENGINE_V3_ENABLED: "true"
@@ -99,8 +99,7 @@ jobs:
       - name: Persist verified fundamental pilots into Neon
         run: python scripts/persist_verified_pilots_v5.py
 
-      - name: Extend pilot fundamental history from official PDFs
-        continue-on-error: true
+      - name: Extend verified fundamental history from official PDFs
         run: python scripts/fundamental_backfill_v5.py --all
 
       - name: Verify persisted datasets

@@ -13,7 +13,7 @@ from collections import defaultdict
 from typing import Any
 
 from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapshot, SessionLocal
-from services.fundamental_backfill_manifest_v5 import PILOT_BACKFILL_V5
+from services.fundamental_backfill_manifest_v5 import FUNDAMENTAL_BACKFILL_V5
 from services.fundamental_identity_v5 import economic_signature
 
 
@@ -47,7 +47,7 @@ def _sha256(value: Any) -> str | None:
 def audit_documents() -> dict:
     expected: dict[str, set[str]] = {
         symbol: {str(doc.get("fiscal_period") or "") for doc in issuer.get("documents", []) if doc.get("fiscal_period")}
-        for symbol, issuer in PILOT_BACKFILL_V5.items()
+        for symbol, issuer in FUNDAMENTAL_BACKFILL_V5.items()
     }
     pilot_symbols = set(expected)
 

@@ -1,6 +1,7 @@
 import unittest
 
-from services.fundamental_backfill_manifest_v5 import PILOT_BACKFILL_V5, manifest_summary
+from services.fundamental_backfill_manifest_v5 import FUNDAMENTAL_BACKFILL_V5, PILOT_BACKFILL_V5, full_manifest_summary, manifest_summary
+from services.fundamental_sources_v5 import source_url_allowed
 from services.ibc_sources_v5 import classify_source, prefer_point
 
 
@@ -28,6 +29,15 @@ class BackfillSourcePolicyV5Tests(unittest.TestCase):
                     continue
                 self.assertTrue(url.startswith("https://"), (symbol, url))
                 self.assertTrue(any(domain in url.lower() for domain in allowed[symbol]), (symbol, url))
+
+    def test_verified_manifest_has_auditable_units_and_registered_hosts(self):
+        summary = full_manifest_summary()
+        self.assertGreaterEqual(summary["issuers"], 14)
+        self.assertGreaterEqual(summary["documents"], 44)
+        for symbol, cfg in FUNDAMENTAL_BACKFILL_V5.items():
+            for doc in cfg["documents"]:
+                self.assertTrue(source_url_allowed(symbol, doc["url"]), (symbol, doc["url"]))
+                self.assertGreater(float(doc.get("value_multiplier", 1)), 0)
 
     def test_ibc_source_priority_prefers_bvc_official(self):
         official = {"date": "2025-12-30", "close": 100, "source_url": "https://www.bolsadecaracas.com/resumen"}

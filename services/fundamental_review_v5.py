@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from typing import Any
+from math import isfinite
 
 from services.fundamental_collector_v5 import ingest_normalized_report, coverage_report
 from services.fundamental_sources_v5 import get_source
@@ -97,6 +98,9 @@ def build_review_package(
                 "context_quality": option.get("context_quality"),
                 "page_years": option.get("page_years") or [],
                 "derived_from": option.get("derived_from") or [],
+                "page_value_multiplier": option.get("page_value_multiplier"),
+                "page_statement_unit": option.get("page_statement_unit"),
+                "page_monetary_basis": option.get("page_monetary_basis"),
             })
         if clean:
             fields[field] = clean
@@ -120,9 +124,21 @@ def build_review_package(
     }
 
 
-def select_candidates(review: dict, selections: dict[str, int], *, extra_fields: dict[str, Any] | None = None) -> tuple[dict, dict]:
+def select_candidates(
+    review: dict,
+    selections: dict[str, int],
+    *,
+    extra_fields: dict[str, Any] | None = None,
+    value_multiplier: float = 1.0,
+) -> tuple[dict, dict]:
     if not review.get("valid"):
         return {}, {"valid": False, "reason": "invalid_review_package"}
+    try:
+        multiplier = float(value_multiplier)
+    except (TypeError, ValueError):
+        multiplier = 0.0
+    if not isfinite(multiplier) or multiplier <= 0:
+        return {}, {"valid": False, "reason": "invalid_value_multiplier", "errors": ["value_multiplier:invalido"]}
     selected: dict[str, Any] = dict(extra_fields or {})
     evidence: dict[str, dict] = {}
     errors = []
@@ -141,7 +157,11 @@ def select_candidates(review: dict, selections: dict[str, int], *, extra_fields:
         if choice is None:
             errors.append(f"{field}:indice_fuera_de_rango")
             continue
-        selected[field] = choice["value"]
+        detected_multiplier = choice.get("page_value_multiplier")
+        if detected_multiplier is not None and abs(float(detected_multiplier) - multiplier) > 1e-9:
+            errors.append(f"{field}:escala_declarada_no_coincide_con_folio")
+            continue
+        selected[field] = float(choice["value"]) * multiplier
         evidence[field] = {
             "page": choice.get("page"),
             "raw": choice.get("raw"),
@@ -152,12 +172,17 @@ def select_candidates(review: dict, selections: dict[str, int], *, extra_fields:
             "context_quality": choice.get("context_quality"),
             "page_years": choice.get("page_years") or [],
             "derived_from": choice.get("derived_from") or [],
+            "reported_value_multiplier": multiplier,
+            "normalized_value": selected[field],
+            "page_statement_unit": choice.get("page_statement_unit"),
+            "page_monetary_basis": choice.get("page_monetary_basis"),
         }
     return selected, {
         "valid": not errors and bool(selected),
         "errors": errors,
         "evidence": evidence,
         "selected_fields": sorted(selected),
+        "reported_value_multiplier": multiplier,
     }
 
 
@@ -175,14 +200,35 @@ def accept_reviewed_snapshot(
     extra_fields: dict[str, Any] | None = None,
     hydrate_fx: bool = True,
     require_fx: bool = True,
+    value_multiplier: float = 1.0,
+    document_metadata: dict[str, Any] | None = None,
 ) -> dict:
     """Acepta sólo una selección explícita y la pasa por todos los gates V5."""
     extras = dict(extra_fields or {})
     extras["currency"] = currency
     extras["monetary_basis"] = monetary_basis
-    record, selected_meta = select_candidates(review, selections, extra_fields=extras)
+    record, selected_meta = select_candidates(
+        review,
+        selections,
+        extra_fields=extras,
+        value_multiplier=value_multiplier,
+    )
     if not selected_meta.get("valid"):
         return {"accepted": False, "persisted": False, "selection": selected_meta}
+
+    detected_bases = {
+        row.get("page_monetary_basis")
+        for row in (selected_meta.get("evidence") or {}).values()
+        if row.get("page_monetary_basis")
+    }
+    if detected_bases and monetary_basis not in detected_bases:
+        return {
+            "accepted": False,
+            "persisted": False,
+            "selection": selected_meta,
+            "error": "declared_monetary_basis_mismatch",
+            "detected_monetary_basis": sorted(detected_bases),
+        }
 
     symbol = str(review.get("symbol") or "").upper()
     coverage = coverage_report(symbol, record)
@@ -200,7 +246,13 @@ def accept_reviewed_snapshot(
         "selected_evidence": selected_meta.get("evidence", {}),
         "review_required": False,
         "preferred_column_evidence": review.get("preferred_column_evidence"),
+        "reported_value_multiplier": selected_meta.get("reported_value_multiplier", 1.0),
     }
+    if isinstance(document_metadata, dict):
+        metadata.update({
+            str(key): value for key, value in document_metadata.items()
+            if value is not None
+        })
     digest = str(review.get("source_document_sha256") or "").strip().lower()
     if len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest):
         metadata["source_document_sha256"] = digest

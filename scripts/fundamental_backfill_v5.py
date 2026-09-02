@@ -14,7 +14,8 @@ from pathlib import Path
 
 from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapshot, engine
 from services.fundamental_autoreview_v5 import propose_fail_closed_selections
-from services.fundamental_backfill_manifest_v5 import PILOT_BACKFILL_V5
+from services.fundamental_backfill_manifest_v5 import FUNDAMENTAL_BACKFILL_V5
+from services.fundamental_bvc_image_parser_v5 import fetch_and_parse_bvc_post
 from services.fundamental_pdf_parser_v5 import fetch_and_parse_official_pdf
 from services.fundamental_review_v5 import build_review_package, accept_reviewed_snapshot
 
@@ -30,9 +31,9 @@ def _ensure_v5_fundamental_schema() -> None:
 
 
 def _document(symbol: str, period: str) -> dict:
-    issuer = PILOT_BACKFILL_V5.get(symbol)
+    issuer = FUNDAMENTAL_BACKFILL_V5.get(symbol)
     if not issuer:
-        raise SystemExit(f"Símbolo no incluido en piloto: {symbol}")
+        raise SystemExit(f"Símbolo no incluido en el manifiesto verificado: {symbol}")
     doc = next((d for d in issuer.get("documents", []) if d.get("fiscal_period") == period), None)
     if not doc:
         raise SystemExit(f"Período no registrado: {symbol} {period}")
@@ -42,6 +43,8 @@ def _document(symbol: str, period: str) -> dict:
 
 
 def _preferred_column(doc: dict) -> int:
+    if doc.get("preferred_column") is not None:
+        return int(doc["preferred_column"])
     kind = str(doc.get("document_type") or "")
     if kind == "comparative_in_2024_audit":
         return 1
@@ -57,7 +60,10 @@ def _monetary_basis(symbol: str) -> str:
 
 def build_review(symbol: str, period: str) -> dict:
     doc = _document(symbol, period)
-    candidates, parse_meta = fetch_and_parse_official_pdf(symbol, doc["url"])
+    if doc.get("bvc_post_id"):
+        candidates, parse_meta = fetch_and_parse_bvc_post(symbol, int(doc["bvc_post_id"]))
+    else:
+        candidates, parse_meta = fetch_and_parse_official_pdf(symbol, doc["url"])
     review = build_review_package(
         symbol,
         candidates,
@@ -84,13 +90,21 @@ def _persist_review(package: dict, payload: dict) -> dict:
         document_type=doc["document_type"],
         fiscal_period=doc["fiscal_period"],
         audited=bool(doc.get("audited")),
-        currency=str(payload.get("currency") or "VES"),
-        monetary_basis=str(payload.get("monetary_basis") or _monetary_basis(review.get("symbol"))),
+        currency=str(payload.get("currency") or doc.get("currency") or "VES"),
+        monetary_basis=str(payload.get("monetary_basis") or doc.get("monetary_basis") or _monetary_basis(review.get("symbol"))),
         period_start=payload.get("period_start"),
-        published_at=payload.get("published_at") or doc.get("published_at"),
+        published_at=payload.get("published_at") or doc.get("published_at") or package["parse"].get("published_at"),
         extra_fields=extra_fields,
         hydrate_fx=True,
         require_fx=True,
+        value_multiplier=doc.get("value_multiplier", 1.0),
+        document_metadata={
+            "audit_opinion": doc.get("audit_opinion"),
+            "validation_notes": doc.get("validation_notes"),
+            "statement_unit_evidence": doc.get("statement_unit_evidence"),
+            "source_document_kind": package["parse"].get("source_document_kind", "pdf"),
+            "source_media_urls": package["parse"].get("media_urls"),
+        },
     )
     return {"document": doc, "parse": package["parse"], "result": result}
 
@@ -118,8 +132,8 @@ def auto_persist(symbol: str, period: str) -> dict:
         }
     payload = {
         "selections": proposal["selections"],
-        "currency": "VES",
-        "monetary_basis": _monetary_basis(symbol),
+        "currency": package["document"].get("currency", "VES"),
+        "monetary_basis": package["document"].get("monetary_basis") or _monetary_basis(symbol),
         "extra_fields": {},
     }
     out = _persist_review(package, payload)
@@ -132,7 +146,7 @@ def auto_persist_all() -> dict:
     _ensure_v5_fundamental_schema()
     rows = []
     accepted = rejected = persisted = 0
-    for symbol, issuer in PILOT_BACKFILL_V5.items():
+    for symbol, issuer in FUNDAMENTAL_BACKFILL_V5.items():
         for doc in issuer.get("documents", []):
             period = str(doc.get("fiscal_period") or "")
             try:
