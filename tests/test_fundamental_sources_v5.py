@@ -17,7 +17,7 @@ class FundamentalSourceRegistryTests(unittest.TestCase):
             self.assertEqual(get_source(symbol)["status"], "verified_primary")
 
     def test_investment_vehicles_use_dedicated_model(self):
-        for symbol in ("ICP.B", "PER", "MTC.B", "CCP.B", "PCP.B"):
+        for symbol in ("ICP.B", "PER", "MTC.B", "CCP.B", "PCP.B", "VNA.B"):
             src = get_source(symbol)
             self.assertIsNotNone(src)
             self.assertEqual(src["industry_type"], "investment_vehicle")
@@ -28,7 +28,7 @@ class FundamentalSourceRegistryTests(unittest.TestCase):
             "MPA", "PCP.B", "EFE", "RST", "FNV", "ENV", "IVC.B", "CCP.B",
             "GZL", "ICP.B", "SVS", "BVL", "MVZ.B", "PTN", "CRM.A", "FNC",
             "DOM", "CGQ", "MTC.B", "ABC.A", "IVC.A", "MVZ.A", "CCR", "GMC.B",
-            "ARC.B",
+            "ARC.B", "VNA.B",
         )
         audit = source_audit_summary(list(observed))
         self.assertEqual(audit["symbols"], len(observed))

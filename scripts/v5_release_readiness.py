@@ -52,8 +52,8 @@ def _iso_day(value) -> date | None:
         return None
 
 
-def _flag_is_false(name: str) -> bool:
-    return str(os.environ.get(name, "false")).strip().lower() in {"", "0", "false", "no", "off"}
+def _flag_is_true(name: str) -> bool:
+    return str(os.environ.get(name, "false")).strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
 def _fx_state() -> dict:
@@ -92,10 +92,10 @@ def run_gate() -> dict:
     if DB_PERSISTENCE_MODE != "external":
         errors.append("external_neon_database_required")
 
-    if not _flag_is_false("SCORING_ENGINE_V5_ENABLED"):
-        errors.append("scoring_v5_must_remain_disabled_during_release_gate")
-    if not _flag_is_false("PORTFOLIO_IBC_BENCHMARK_V5_ENABLED"):
-        errors.append("portfolio_ibc_v5_must_remain_disabled_during_release_gate")
+    if not _flag_is_true("SCORING_ENGINE_V5_ENABLED"):
+        errors.append("scoring_v5_must_be_enabled_for_live_release")
+    if not _flag_is_true("PORTFOLIO_IBC_BENCHMARK_V5_ENABLED"):
+        errors.append("portfolio_ibc_v5_must_be_enabled_for_live_release")
 
     points, ibc_meta = load_persisted_ibc()
     ibc_points = len(points or [])

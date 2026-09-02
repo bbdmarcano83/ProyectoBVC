@@ -28,7 +28,9 @@
     <div class="v3card"><small>Oportunidades</small><strong>{{ v5.get('confirmed_opportunities', metadata.get('confirmed_opportunities',0)) if metadata else 0 }}</strong></div>
     <div class="v3card"><small>Quality issues</small><strong>{{ metadata.get('data_quality_issues',0) if metadata else 0 }}</strong></div>
     {% if v5 %}
-    <div class="v3card"><small>Cobertura fundamental</small><strong>{{ v5.get('fundamentals',{}).get('coverage_pct',0) }}%</strong></div>
+    <div class="v3card"><small>Universo analizado</small><strong>{{ metadata.get('titulos_ok', resultados|length) }}/{{ metadata.get('titulos_total', resultados|length) }}</strong></div>
+    <div class="v3card"><small>Fuentes registradas</small><strong>{{ v5.get('source_audit',{}).get('coverage_pct',0) }}%</strong></div>
+    <div class="v3card"><small>Fundamentales auditados</small><strong>{{ v5.get('fundamentals',{}).get('scored_count',0) }}/{{ resultados|length }}</strong></div>
     {% else %}
     <div class="v3card"><small>Storage</small><strong>{{ metadata.get('storage','legacy') if metadata else 'legacy' }}</strong></div>
     {% endif %}
@@ -131,7 +133,7 @@
   </div>
 
   <div style="font-size:10px; color:var(--text-secondary); margin-top:12px; line-height:1.5;">
-    V5 separa calidad/valor fundamental de fortaleza, timing, confianza y riesgo. No inventa datos faltantes. Las señales son analíticas y no constituyen recomendación de inversión.
+    V5 analiza todo el universo disponible con mercado, liquidez, riesgo y momentum. La confirmación híbrida sólo se habilita donde existen fundamentales auditados y FX histórico válido; nunca se inventan datos faltantes. Las señales son analíticas y no constituyen recomendación de inversión.
   </div>
 </div>
 

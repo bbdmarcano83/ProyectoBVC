@@ -59,7 +59,10 @@ Ausencia de un campo = ausencia real. V5 no lo reemplaza por cero ni lo estima.
 
 `services/fundamentals_v5.py` consulta primero `fundamental_snapshots` validados. El JSON/archivo manual queda sólo como fallback controlado para tests o staging.
 
-`SCORING_ENGINE_V5_ENABLED=false` sigue siendo el default hasta que tengamos cobertura y validación suficientes.
+`SCORING_ENGINE_V5_ENABLED=true` es el default de producción tras completar las
+compuertas de V5. Un valor explícito `false` conserva el rollback inmediato a
+V3. Todos los títulos reciben análisis de mercado V3+V5; la confirmación híbrida
+permanece fail-closed cuando faltan fundamentales auditables o FX histórico.
 
 ## Próxima fase
 

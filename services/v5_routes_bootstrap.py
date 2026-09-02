@@ -2,8 +2,8 @@
 
 El bootstrap es reentrante y registra directamente el endpoint con
 ``add_api_route`` para evitar depender del estado interno de APIRouter durante
-reloads/tests. El benchmark Portafolio vs IBC es opt-in: con su feature flag
-apagado la ruta ni siquiera se registra, evitando trabajo/snapshots ocultos.
+reloads/tests. El benchmark Portafolio vs IBC está activo por defecto; con un
+rollback explícito la ruta ni siquiera se registra, evitando trabajo oculto.
 """
 from __future__ import annotations
 

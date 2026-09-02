@@ -30,7 +30,14 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
     señales_venta = []
 
     if plan in ("pro", "trial"):
-        señales_compra = [r for r in resultados if r.get("señal_compra")]
+        v5_active = bool((metadata or {}).get("v5"))
+        if v5_active:
+            señales_compra = [
+                r for r in resultados
+                if r.get("signal_stage_v5") == "OPORTUNIDAD HÍBRIDA CONFIRMADA"
+            ]
+        else:
+            señales_compra = [r for r in resultados if r.get("señal_compra")]
         activos_db = db.query(ActivoPortafolio).filter(ActivoPortafolio.usuario_id == usuario.id).all()
         portafolio_map = {a.simbolo: a for a in activos_db}
 

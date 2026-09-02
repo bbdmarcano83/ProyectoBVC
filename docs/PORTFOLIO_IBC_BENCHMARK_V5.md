@@ -9,7 +9,7 @@ Comparar el rendimiento económico del portafolio abierto contra el Índice Burs
 El benchmark es opt-in y permanece apagado por defecto:
 
 ```text
-PORTFOLIO_IBC_BENCHMARK_V5_ENABLED=false
+PORTFOLIO_IBC_BENCHMARK_V5_ENABLED=true
 ```
 
 Con el flag apagado `/api/v5/portfolio-benchmark` no se registra. El handler y el router de compatibilidad también vuelven a validar el flag para impedir accesos laterales y evitar generación silenciosa de snapshots.
