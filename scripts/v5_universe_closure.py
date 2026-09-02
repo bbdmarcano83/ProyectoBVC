@@ -2,6 +2,7 @@
 
 The report distinguishes source registration from actual usable fundamentals.
 It never upgrades missing data: gaps remain explicit and fail-closed.
+This script is intentionally safe to run repeatedly against production Neon.
 """
 from __future__ import annotations
 
