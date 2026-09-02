@@ -1,15 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Scoring V3 — Caracas Bull{% endblock %}
+{% block title %}Scoring — Caracas Bull{% endblock %}
 
 {% block content %}
 {% set market = metadata.get('market', {}) if metadata else {} %}
-<div class="container" style="max-width:1180px; padding:20px 16px;">
+{% set v5 = metadata.get('v5', {}) if metadata else {} %}
+<div class="container" style="max-width:1280px; padding:20px 16px;">
   <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:18px;">
     <div>
-      <h1 style="font-size:22px; margin:0 0 5px;">Scoring Engine V3</h1>
+      <h1 style="font-size:22px; margin:0 0 5px;">Scoring Engine {{ 'V5 Híbrido' if v5 else 'V3' }}</h1>
       <div style="font-size:12px; color:var(--text-secondary);">
         {{ resultados|length }} títulos · {{ ibc_count }} IBC · BCV YTD {{ deval }}% · {{ metadata.get('engine_version','legacy') if metadata else 'legacy' }}
       </div>
+      {% if v5 %}
+      <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">Greenblatt + Graham + Buffett + Momentum/Confirmación · sin imputar fundamentales faltantes</div>
+      {% endif %}
     </div>
     <form method="GET" action="/scoring" style="display:flex; gap:8px; align-items:center;">
       <input type="number" name="deval" value="{{ deval }}" step="1" style="width:82px; padding:7px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-primary);">
@@ -21,10 +25,20 @@
     <div class="v3card"><small>Régimen</small><strong>{{ market.get('regime','—') }}</strong></div>
     <div class="v3card"><small>Breadth</small><strong>{{ market.get('breadth_score','—') }}</strong></div>
     <div class="v3card"><small>Score alto</small><strong>{{ alto_count }}</strong></div>
-    <div class="v3card"><small>Oportunidades</small><strong>{{ metadata.get('confirmed_opportunities',0) if metadata else 0 }}</strong></div>
+    <div class="v3card"><small>Oportunidades</small><strong>{{ v5.get('confirmed_opportunities', metadata.get('confirmed_opportunities',0)) if metadata else 0 }}</strong></div>
     <div class="v3card"><small>Quality issues</small><strong>{{ metadata.get('data_quality_issues',0) if metadata else 0 }}</strong></div>
+    {% if v5 %}
+    <div class="v3card"><small>Cobertura fundamental</small><strong>{{ v5.get('fundamentals',{}).get('coverage_pct',0) }}%</strong></div>
+    {% else %}
     <div class="v3card"><small>Storage</small><strong>{{ metadata.get('storage','legacy') if metadata else 'legacy' }}</strong></div>
+    {% endif %}
   </div>
+
+  {% if v5 %}
+  <div style="border:1px solid var(--border); background:var(--bg-card); border-radius:12px; padding:12px 14px; margin-bottom:14px; font-size:11px; line-height:1.55;">
+    <b>Filosofía Caracas Bull V5:</b> negocio de calidad + valoración/margen de seguridad + mercado que confirma + riesgo/liquidez aceptables. Una caída por sí sola nunca mejora la señal. Se admiten dos rutas: <b>pullback de calidad</b> y <b>líder de momentum</b>.
+  </div>
+  {% endif %}
 
   {% if señales_compra %}
   <div style="border:1px solid rgba(27,175,122,.35); background:rgba(27,175,122,.08); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
@@ -48,11 +62,12 @@
   {% endif %}
 
   <div style="overflow:auto; background:var(--bg-card); border-radius:12px; border:1px solid var(--border);">
-    <table style="width:100%; border-collapse:collapse; min-width:1050px; font-size:12px;">
+    <table style="width:100%; border-collapse:collapse; min-width:1200px; font-size:12px;">
       <thead>
         <tr style="border-bottom:1px solid var(--border); color:var(--text-secondary);">
-          <th class="thl">#</th><th class="thl">Título</th><th class="thc">Score</th><th class="thc">Confidence</th>
-          <th class="thc">Strength</th><th class="thc">Opportunity</th><th class="thc">Risk</th>
+          <th class="thl">#</th><th class="thl">Título</th><th class="thc">V3</th>
+          {% if v5 %}<th class="thc">Fundamental</th><th class="thc">V5</th>{% endif %}
+          <th class="thc">Confidence</th><th class="thc">Strength</th><th class="thc">Opportunity</th><th class="thc">Risk</th>
           <th class="thc">Mom 20d</th><th class="thc">Mom 60d</th><th class="thc">Liq %ile</th><th class="thc">Estado</th>
         </tr>
       </thead>
@@ -66,6 +81,10 @@
             <div style="color:var(--text-secondary); font-size:10px;">{{ r.sector }} · sector #{{ r.get('sector_rank_v3','—') }}</div>
           </td>
           <td class="tdc"><b style="font-size:15px;">{{ r.total }}</b></td>
+          {% if v5 %}
+          <td class="tdc">{{ r.get('fundamental_score_v5','—') if r.get('fundamental_score_v5') is not none else '—' }}</td>
+          <td class="tdc"><b>{{ r.get('philosophy_score_v5','—') if r.get('philosophy_score_v5') is not none else '—' }}</b></td>
+          {% endif %}
           <td class="tdc">{{ r.get('confidence_score_v3','—') }}</td>
           <td class="tdc">{{ r.get('strength_score_v3','—') }}</td>
           <td class="tdc">{{ r.get('opportunity_score_v3','—') }}</td>
@@ -74,31 +93,35 @@
           <td class="tdc">{% if h.get('momentum_60d_pct') is not none %}{{ h.get('momentum_60d_pct') }}%{% else %}—{% endif %}</td>
           <td class="tdc">{{ r.get('liquidity_percentile_v3','—') }}</td>
           <td class="tdc">
-            {% set stage = r.get('signal_stage_v3', r.accion_label) %}
-            <span class="stage {% if stage == 'OPORTUNIDAD CONFIRMADA' %}go{% elif stage == 'PREPARAR COMPRA' %}prep{% endif %}">{{ stage }}</span>
+            {% set stage = r.get('signal_stage_v5', r.get('signal_stage_v3', r.accion_label)) %}
+            <span class="stage {% if 'CONFIRMADA' in stage %}go{% elif 'PREPARAR' in stage %}prep{% endif %}">{{ stage }}</span>
           </td>
         </tr>
         <tr id="d-{{ loop.index }}" style="display:none; border-bottom:1px solid var(--border);">
-          <td colspan="11" style="padding:12px 16px; background:var(--bg-body);">
+          <td colspan="{{ 13 if v5 else 11 }}" style="padding:12px 16px; background:var(--bg-body);">
+            {% if v5 %}
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:12px;">
+              <div><small>Greenblatt</small><div><b>{{ r.get('greenblatt_score_v5','—') }}</b></div></div>
+              <div><small>Graham</small><div><b>{{ r.get('graham_score_v5','—') }}</b></div></div>
+              <div><small>Buffett</small><div><b>{{ r.get('buffett_score_v5','—') }}</b></div></div>
+              <div><small>Cobertura fundamental</small><div><b>{{ r.get('fundamental_coverage_v5','—') }}%</b></div></div>
+              <div><small>Earnings Yield</small><div><b>{{ r.get('earnings_yield_pct_v5','—') }}{% if r.get('earnings_yield_pct_v5') is not none %}%{% endif %}</b></div></div>
+              <div><small>ROC / ROE</small><div><b>{% if r.get('industry_type_v5') == 'financial' %}ROE {{ r.get('roe_pct_v5','—') }}%{% else %}ROC {{ r.get('return_on_capital_pct_v5','—') }}%{% endif %}</b></div></div>
+            </div>
+            {% if r.get('explain_v5') %}<div style="margin-bottom:10px; font-size:11px;"><b>Lectura V5:</b> {{ r.get('explain_v5')|join(' · ') }}</div>{% endif %}
+            {% endif %}
             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px;">
               <div><small>Retorno YTD</small><div><b>{{ r.rend_pct }}%</b> · percentil {{ r.get('return_percentile_v3','—') }}</div></div>
               <div><small>Volatilidad anualizada</small><div><b>{{ h.get('volatility_annualized_pct','—') }}%</b></div></div>
               <div><small>Downside vol</small><div><b>{{ h.get('downside_volatility_pct','—') }}%</b></div></div>
               <div><small>Max drawdown 60d</small><div><b>{{ h.get('max_drawdown_60d_pct','—') }}%</b></div></div>
               <div><small>Frecuencia negociación 60d</small><div><b>{{ h.get('trading_frequency_60d_pct','—') }}%</b></div></div>
-              <div><small>Concentración mayor rueda</small><div><b>{{ h.get('max_day_volume_share_pct','—') }}%</b></div></div>
               <div><small>Confirmación precio/volumen</small><div><b>{{ h.get('price_volume_confirmation','—') }}</b></div></div>
               <div><small>Caída desde máximo</small><div><b>{{ r.get('caida_pct','—') }}%</b></div></div>
             </div>
-            {% if r.get('explain_v3') %}
-            <div style="margin-top:10px; font-size:11px;"><b>Explicación:</b> {{ r.get('explain_v3')|join(' · ') }}</div>
-            {% endif %}
-            {% if r.get('quality_flags_v3') %}
-            <div style="margin-top:7px; font-size:11px; color:#c47a20;"><b>Quality flags:</b> {{ r.get('quality_flags_v3')|join(', ') }}</div>
-            {% endif %}
-            {% if r.get('corporate_events_v3') %}
-            <div style="margin-top:7px; font-size:11px; color:#d03b3b;"><b>Eventos:</b> {{ r.get('corporate_events_v3') }}</div>
-            {% endif %}
+            {% if r.get('explain_v3') %}<div style="margin-top:10px; font-size:11px;"><b>Explicación V3:</b> {{ r.get('explain_v3')|join(' · ') }}</div>{% endif %}
+            {% if r.get('quality_flags_v3') %}<div style="margin-top:7px; font-size:11px; color:#c47a20;"><b>Quality flags:</b> {{ r.get('quality_flags_v3')|join(', ') }}</div>{% endif %}
+            {% if r.get('corporate_events_v3') %}<div style="margin-top:7px; font-size:11px; color:#d03b3b;"><b>Eventos:</b> {{ r.get('corporate_events_v3') }}</div>{% endif %}
             <div style="margin-top:9px;"><a href="/detalle/{{ r.simbolo }}" style="font-size:11px; color:var(--accent);">Abrir detalle →</a></div>
           </td>
         </tr>
@@ -108,7 +131,7 @@
   </div>
 
   <div style="font-size:10px; color:var(--text-secondary); margin-top:12px; line-height:1.5;">
-    V3 separa fortaleza del activo, confianza de datos, oportunidad de entrada y riesgo. Las señales son analíticas y no constituyen recomendación de inversión.
+    V5 separa calidad/valor fundamental de fortaleza, timing, confianza y riesgo. No inventa datos faltantes. Las señales son analíticas y no constituyen recomendación de inversión.
   </div>
 </div>
 

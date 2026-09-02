@@ -180,6 +180,53 @@ class AlertaPrecio(Base):
     )
 
 
+class FundamentalDocument(Base):
+    """Documento fuente oficial, identificado por hash para evitar duplicados."""
+    __tablename__ = "fundamental_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    simbolo = Column(String(20), nullable=False, index=True)
+    issuer = Column(String(180), nullable=True)
+    source_url = Column(Text, nullable=False)
+    source_type = Column(String(50), nullable=False)
+    source_confidence = Column(Integer, nullable=False, default=0)
+    document_type = Column(String(60), nullable=False)
+    fiscal_period = Column(String(40), nullable=False)
+    as_of = Column(String(40), nullable=False)
+    audited = Column(Boolean, nullable=False, default=False)
+    document_hash = Column(String(64), nullable=False, unique=True, index=True)
+    published_at = Column(String(40), nullable=True)
+    collected_at = Column(DateTime, server_default=func.now(), nullable=False)
+    metadata_json = Column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("source_confidence >= 0 AND source_confidence <= 100", name="ck_fund_doc_confidence"),
+        Index("ix_fund_doc_symbol_period", "simbolo", "as_of"),
+    )
+
+
+class FundamentalSnapshot(Base):
+    """Snapshot normalizado y validado usado por el motor V5."""
+    __tablename__ = "fundamental_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("fundamental_documents.id", ondelete="CASCADE"), nullable=False)
+    simbolo = Column(String(20), nullable=False, index=True)
+    industry_type = Column(String(30), nullable=False)
+    as_of = Column(String(40), nullable=False)
+    validated = Column(Boolean, nullable=False, default=False, index=True)
+    validation_score = Column(Float, nullable=False, default=0.0)
+    validation_notes = Column(Text, nullable=True)
+    data_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("document_id", "simbolo", name="uq_fund_snapshot_document_symbol"),
+        CheckConstraint("validation_score >= 0 AND validation_score <= 100", name="ck_fund_snapshot_validation"),
+        Index("ix_fund_snapshot_symbol_validated_asof", "simbolo", "validated", "as_of"),
+    )
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -193,8 +240,6 @@ def init_db():
                 action = "created" if admin_state.get("created") else ("updated" if admin_state.get("updated") else "ok")
                 print(f"[DB] admin={action} user_id={admin_state.get('user_id')}")
     except Exception as exc:
-        # No exponer credenciales en logs. En producción, si ADMIN_* está
-        # configurado incorrectamente, el error queda visible sin imprimir secretos.
         print(f"[DB] admin-bootstrap-error={type(exc).__name__}: {exc}")
 
     backend = "sqlite-ephemeral" if IS_SQLITE else ("postgresql-external" if IS_POSTGRES else "external")

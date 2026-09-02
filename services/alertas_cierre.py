@@ -1,12 +1,19 @@
-"""Alertas Telegram al cierre — V3/V4.
+"""Alertas Telegram al cierre — V3/V4/V5.
 
-Consume el scoring runtime activo. No persiste snapshots; todas las alertas se
-construyen con la corrida actual y las posiciones disponibles en la instancia.
+Además de alertas, registra un snapshot diario idempotente de cada cartera activa
+para construir una comparación histórica real contra IBC y USD sin sesgo de
+composición actual.
 """
+from datetime import date
+
 from database import SessionLocal, Usuario, ActivoPortafolio
 from services.telegram import enviar_mensaje
 from services.scoring import calcular_scoring_completo
 from services.auth import suscripcion_activa, get_plan
+from services.bvc import obtener_tasa_bcv
+from services.portfolio_snapshot_v5 import save_daily_snapshot
+from services.ibc_history_v5 import load_ibc_history
+from services.portfolio_benchmark_v5 import normalize_ibc_points, ibc_asof
 
 
 def _score(r: dict) -> float:
@@ -97,20 +104,49 @@ async def generar_alerta_pro(resultados: list, deval: float, metadata: dict | No
     return msg
 
 
+def _current_ibc_level() -> float | None:
+    points_raw, _ = load_ibc_history()
+    points = normalize_ibc_points(points_raw)
+    return ibc_asof(points, date.today()) if points else None
+
+
 async def enviar_alertas_cierre():
     db = SessionLocal()
     try:
         resultados, deval, metadata = await calcular_scoring_completo()
-        usuarios = db.query(Usuario).filter(
-            Usuario.telegram_chat_id.isnot(None),
-            Usuario.telegram_chat_id != "",
-            Usuario.activo.is_(True),
-        ).all()
+        prices = {
+            str(r.get("simbolo") or "").upper(): float(r.get("precio") or 0)
+            for r in resultados if r.get("simbolo")
+        }
+        tasa_bcv = await obtener_tasa_bcv()
+        ibc_level = _current_ibc_level()
+
+        # El snapshot no depende de Telegram: se conserva historia de toda cartera
+        # activa con suscripción. Errores de snapshot no bloquean las alertas.
+        usuarios_activos = db.query(Usuario).filter(Usuario.activo.is_(True)).all()
+        snapshots = 0
+        snapshot_errors = 0
+        for usuario in usuarios_activos:
+            if not suscripcion_activa(usuario):
+                continue
+            try:
+                state = save_daily_snapshot(
+                    usuario.id,
+                    prices=prices,
+                    fx_bcv=tasa_bcv,
+                    ibc_level=ibc_level,
+                    source="market_close",
+                )
+                if state.get("saved"):
+                    snapshots += 1
+            except Exception as exc:
+                print(f"[PortfolioSnapshot] Error: {type(exc).__name__}")
+                snapshot_errors += 1
+
+        usuarios = [u for u in usuarios_activos if u.telegram_chat_id and suscripcion_activa(u)]
         enviados = 0
         errores = 0
         for usuario in usuarios:
-            if not suscripcion_activa(usuario):
-                continue
             plan = get_plan(usuario)
             try:
                 if plan == "pro":
@@ -126,6 +162,12 @@ async def enviar_alertas_cierre():
             except Exception as exc:
                 print(f"[Alertas] Error: {type(exc).__name__}")
                 errores += 1
-        return {"enviados": enviados, "errores": errores, "engine": metadata.get("engine_version")}
+        return {
+            "enviados": enviados,
+            "errores": errores,
+            "snapshots": snapshots,
+            "snapshot_errors": snapshot_errors,
+            "engine": metadata.get("engine_version"),
+        }
     finally:
         db.close()

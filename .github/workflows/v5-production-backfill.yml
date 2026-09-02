@@ -1,0 +1,169 @@
+name: V5 production backfill
+
+on:
+  push:
+    branches: [feature/v5-philosophy-engine]
+    paths:
+      - ".github/workflows/v5-production-backfill.yml"
+      - "scripts/ibc_backfill_v5.py"
+      - "scripts/fundamental_backfill_v5.py"
+      - "scripts/persist_verified_pilots_v5.py"
+      - "services/ibc_backfill_v5.py"
+      - "services/fundamental_autoreview_v5.py"
+      - "services/fundamental_backfill_manifest_v5.py"
+      - "services/fundamental_pilots_v5.py"
+      - "services/crecepymes_history_v5.py"
+      - "services/fx_history_v5.py"
+      - "services/fundamental_history_v5.py"
+      - "services/fundamental_trend_v5.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v5-production-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: production
+      SCORING_ENGINE_V3_ENABLED: "true"
+      SCORING_ENGINE_V5_ENABLED: "false"
+      PORTFOLIO_ENGINE_V4_ENABLED: "true"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: "."
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Require external Neon secret
+        shell: bash
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL secret is not configured in GitHub Actions."
+            exit 2
+          fi
+          python - <<'PY'
+          import os
+          value = os.environ.get("DATABASE_URL", "")
+          if not value.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+              raise SystemExit("DATABASE_URL must be PostgreSQL/Neon")
+          print("External PostgreSQL secret detected; value intentionally not printed.")
+          PY
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Verify V5 remains disabled
+        run: |
+          python - <<'PY'
+          import os
+          assert os.environ.get("SCORING_ENGINE_V5_ENABLED", "").lower() == "false"
+          print("V5 scoring remains disabled during backfill")
+          PY
+
+      - name: Check persisted IBC coverage
+        id: ibc_check
+        shell: bash
+        run: |
+          count=$(python - <<'PY'
+          from services.ibc_store_v5 import load_persisted_ibc
+          points, _ = load_persisted_ibc()
+          print(len(points or []))
+          PY
+          )
+          echo "Persisted IBC points: $count"
+          if [ "$count" -ge 1000 ]; then
+            echo "needs_backfill=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_backfill=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Backfill IBC 2022-current into Neon
+        if: steps.ibc_check.outputs.needs_backfill == 'true'
+        run: |
+          python scripts/ibc_backfill_v5.py \
+            --from-year 2022 \
+            --from-month 1 \
+            --to-year 2026 \
+            --to-month 9
+
+      - name: Persist verified fundamental pilots into Neon
+        run: python scripts/persist_verified_pilots_v5.py
+
+      - name: Extend pilot fundamental history from official PDFs
+        continue-on-error: true
+        run: python scripts/fundamental_backfill_v5.py --all
+
+      - name: Verify persisted datasets
+        run: |
+          python - <<'PY'
+          from services.ibc_store_v5 import load_persisted_ibc
+          from services.fundamental_store_v5 import load_latest_validated
+          from services.fundamental_trend_v5 import compute_fundamental_trend_from_series
+
+          points, ibc_meta = load_persisted_ibc()
+          if not points:
+              raise SystemExit("IBC backfill produced no persisted points")
+          print(f"IBC persisted points: {len(points)}")
+
+          fundamentals, fundamental_meta = load_latest_validated()
+          missing = []
+          expected_history = {
+              "MVZ.A": {
+                  "industry": "financial",
+                  "dates": ["2022-12-31", "2023-12-31", "2024-12-31", "2025-12-31"],
+                  "min_periods": 4,
+              },
+              "SVS": {
+                  "industry": "non_financial",
+                  "dates": ["2022-09-30", "2023-09-30", "2024-09-30", "2025-09-30"],
+                  "min_periods": 4,
+              },
+              "ICP.B": {
+                  "industry": "investment_vehicle",
+                  "dates": ["2022-12-31", "2024-12-31", "2025-12-31"],
+                  "min_periods": 3,
+              },
+          }
+
+          for symbol in ("MVZ.A", "SVS", "ICP.B"):
+              row = fundamentals.get(symbol) if isinstance(fundamentals, dict) else None
+              if row:
+                  print(f"Fundamental snapshot available: {symbol} as_of={row.get('as_of')}")
+                  expected = expected_history[symbol]
+                  periods = int(row.get("history_periods_usd") or 0)
+                  dates = [str(x) for x in (row.get("history_dates_usd") or [])]
+                  print(f"{symbol} annual USD history periods: {periods}")
+                  print(f"{symbol} annual USD history dates: {dates}")
+                  trend = compute_fundamental_trend_from_series(row, expected["industry"])
+                  print(f"{symbol} Fundamental Trend: {trend}")
+                  if periods < expected["min_periods"]:
+                      raise SystemExit(
+                          f"{symbol} expected >={expected['min_periods']} annual USD periods, got {periods}"
+                      )
+                  missing_dates = [day for day in expected["dates"] if day not in dates]
+                  if missing_dates:
+                      raise SystemExit(f"{symbol} missing annual USD dates: {missing_dates}")
+                  if symbol == "MVZ.A" and any(str(day).startswith("2026-06") for day in dates):
+                      raise SystemExit("Quarterly 2026-Q2 leaked into annual history")
+                  if symbol == "ICP.B" and "2023-12-31" in dates:
+                      print("ICP.B FY2023 present from an independently persisted source; not required by verified-pilot gate")
+              else:
+                  missing.append(symbol)
+                  print(f"Fundamental snapshot missing: {symbol}")
+          print(f"Fundamental payload count: {len(fundamentals or {})}")
+          print(f"Fundamental history meta: {fundamental_meta.get('history', {})}")
+          if missing:
+              raise SystemExit("Missing verified pilot fundamentals: " + ", ".join(missing))
+          PY
+
+# production backfill is idempotent; populated IBC history is not re-downloaded

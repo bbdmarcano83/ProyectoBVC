@@ -1,0 +1,40 @@
+name: V5 CrecePymes diagnostic
+
+on:
+  push:
+    branches: [feature/v5-philosophy-engine]
+    paths:
+      - ".github/workflows/v5-crecepymes-diagnostic.yml"
+      - "scripts/diagnose_crecepymes_v5.py"
+      - "services/fundamental_pdf_parser_v5.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_ENV: development
+      SCORING_ENGINE_V5_ENABLED: "false"
+      PYTHONPATH: "."
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify read-only diagnostic contract
+        run: |
+          python - <<'PY'
+          import os
+          assert os.environ.get("SCORING_ENGINE_V5_ENABLED") == "false"
+          assert not os.environ.get("DATABASE_URL")
+          print("Read-only diagnostic: no DATABASE_URL and V5 disabled")
+          PY
+      - name: Extract CrecePymes PDF candidates
+        run: python scripts/diagnose_crecepymes_v5.py

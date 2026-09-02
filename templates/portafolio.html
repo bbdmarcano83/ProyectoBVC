@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Portfolio V4 — Caracas Bull{% endblock %}
+{% block title %}Portfolio V4/V5 — Caracas Bull{% endblock %}
 {% block content %}
 {% set v4 = resumen.get('portfolio_v4', {}) %}
 <div class="container" style="max-width:1120px; padding:20px 16px;">
   <div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;">
     <div>
-      <h1 style="font-size:22px;margin:0 0 5px;">Portfolio Engine V4</h1>
+      <h1 style="font-size:22px;margin:0 0 5px;">Portfolio Engine V4 / Benchmark V5</h1>
       <div style="font-size:12px;color:var(--text-secondary);">{{ filas|length }} posiciones · BCV {{ tasa }} · {{ resumen.get('engine_version','legacy') }}</div>
     </div>
     <details>
@@ -43,6 +43,19 @@
     <div class="metric"><span>Fricción rotación</span><b>{{ v4.get('friccion_rotacion_pct','—') }}%</b></div>
   </div>
   {% endif %}
+
+  <section id="benchmark-v5" class="benchmark-box" aria-live="polite">
+    <div class="benchmark-head">
+      <div>
+        <b>Portafolio vs IBC · V5</b>
+        <div class="benchmark-note">Mismas fechas/flujos · Bs y USD/BCV histórico · sin aproximar datos faltantes</div>
+      </div>
+      <span id="benchmark-status" class="benchmark-note">Cargando…</span>
+    </div>
+    <div id="benchmark-open" class="benchmark-grid"></div>
+    <div id="benchmark-windows" class="benchmark-grid windows"></div>
+    <div id="benchmark-message" class="benchmark-note" style="margin-top:8px;"></div>
+  </section>
 
   {% if v4.get('candidatos_toma_ganancia') %}
   <div class="notice good"><b>Toma de ganancia:</b>
@@ -97,7 +110,7 @@
   </div>
 
   <div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:15px;align-items:center;">
-    <div style="font-size:10px;color:var(--text-secondary);max-width:650px;">V4 mide salud, concentración y riesgo de cartera. La rotación sólo debe ejecutarse cuando una ventaja esperada validada supera la fricción estimada; una diferencia de score por sí sola no implica retorno.</div>
+    <div style="font-size:10px;color:var(--text-secondary);max-width:650px;">V4 mide salud, concentración y riesgo. V5 compara el resultado real contra IBC con fechas y flujos equivalentes. La rotación sólo debe ejecutarse cuando una ventaja esperada validada supera la fricción estimada.</div>
     <form action="/configurar" method="post" style="display:flex;gap:6px;align-items:center;">
       <label style="font-size:10px;color:var(--text-secondary);">BCV fallback</label>
       <input name="tasa" type="number" step="any" value="{{ tasa }}" style="width:95px;padding:6px;border:1px solid var(--border);border-radius:7px;background:var(--bg-card);color:var(--text-primary);">
@@ -108,5 +121,87 @@
 
 <style>
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px}.pcard{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}.pcard.focus{border-color:rgba(27,175,122,.45)}.pcard small{font-size:10px;color:var(--text-secondary)}.pcard strong{font-size:15px}.metric{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:9px 11px;display:flex;justify-content:space-between;gap:8px;font-size:11px}.metric span{color:var(--text-secondary)}.pos{color:#1baf7a}.neg{color:#d03b3b}.notice{padding:10px 12px;border-radius:9px;margin:8px 0;font-size:11px}.notice.good{background:rgba(27,175,122,.09);border:1px solid rgba(27,175,122,.3)}.notice.bad{background:rgba(208,59,59,.07);border:1px solid rgba(208,59,59,.3)}th,td{padding:9px 8px;text-align:center}th{font-size:10px;font-weight:500}.left{text-align:left}.formbox,.inlineform{margin-top:8px;padding:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:9px;display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:6px}.formbox input,.inlineform input{padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-body);color:var(--text-primary);min-width:0}.formbox button,.inlineform button,button{cursor:pointer;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);padding:5px 8px}.danger{color:#d03b3b;border-color:rgba(208,59,59,.25)}
+.benchmark-box{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:12px;margin:14px 0}.benchmark-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}.benchmark-note{font-size:10px;color:var(--text-secondary)}.benchmark-status-live{color:#1baf7a;font-weight:600}.benchmark-status-provisional{color:#c58a00;font-weight:700}.benchmark-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-top:10px}.benchmark-cell{border:1px solid var(--border);border-radius:8px;padding:8px 10px}.benchmark-cell small{display:block;font-size:9px;color:var(--text-secondary);margin-bottom:3px}.benchmark-cell b{font-size:13px}.benchmark-grid.windows .benchmark-cell b{font-size:12px}
 </style>
+
+<script>
+(function(){
+  const status = document.getElementById('benchmark-status');
+  const openBox = document.getElementById('benchmark-open');
+  const windowsBox = document.getElementById('benchmark-windows');
+  const message = document.getElementById('benchmark-message');
+  const fmt = v => (v === null || v === undefined || Number.isNaN(Number(v))) ? '—' : Number(v).toFixed(2) + '%';
+  const signClass = v => (v === null || v === undefined || Number.isNaN(Number(v))) ? '' : (Number(v) >= 0 ? 'pos' : 'neg');
+  const cell = (label, value, cls='') => {
+    const div = document.createElement('div'); div.className='benchmark-cell';
+    const small=document.createElement('small'); small.textContent=label;
+    const b=document.createElement('b'); b.textContent=value; if(cls) b.className=cls;
+    div.appendChild(small); div.appendChild(b); return div;
+  };
+  fetch('/api/v5/portfolio-benchmark', {credentials:'same-origin'})
+    .then(async r => {
+      let d={};
+      try { d=await r.json(); } catch (_) {}
+      if(!r.ok) throw new Error(d.error || d.detail || (r.status === 404 ? 'Benchmark V5 deshabilitado' : 'Benchmark no disponible'));
+      return d;
+    })
+    .then(data => {
+      openBox.replaceChildren(); windowsBox.replaceChildren(); message.textContent='';
+      const b=data.benchmark || {};
+      const aligned = b.terminal_dates_aligned === true;
+      const valuationDate = b.valuation_as_of || data.as_of || '—';
+      const ibcDate = b.ibc_as_of || '—';
+      status.classList.remove('benchmark-status-live','benchmark-status-provisional');
+      if(aligned){
+        status.textContent = 'Cierre comparable · ' + valuationDate;
+        status.classList.add('benchmark-status-live');
+      } else {
+        status.textContent = 'PROVISIONAL · cartera ' + valuationDate + ' / IBC ' + ibcDate;
+        status.classList.add('benchmark-status-provisional');
+        message.textContent = 'Alpha provisional: la valoración de la cartera y el último cierre IBC no corresponden a la misma fecha.';
+      }
+      if(b.available){
+        openBox.appendChild(cell('Cartera Bs', fmt(b.portfolio_return_bs_pct), signClass(b.portfolio_return_bs_pct)));
+        openBox.appendChild(cell('IBC Bs', fmt(b.ibc_return_bs_pct), signClass(b.ibc_return_bs_pct)));
+        openBox.appendChild(cell('Alpha vs IBC Bs', fmt(b.alpha_bs_pp), signClass(b.alpha_bs_pp)));
+        openBox.appendChild(cell('Cartera USD', fmt(b.portfolio_return_usd_pct), signClass(b.portfolio_return_usd_pct)));
+        openBox.appendChild(cell('IBC USD', fmt(b.ibc_return_usd_pct), signClass(b.ibc_return_usd_pct)));
+        openBox.appendChild(cell('Alpha vs IBC USD', fmt(b.alpha_usd_pp), signClass(b.alpha_usd_pp)));
+        openBox.appendChild(cell('Cobertura IBC', fmt(b.coverage_pct)));
+        openBox.appendChild(cell('Cobertura USD', fmt(b.usd_coverage_pct)));
+      } else {
+        const pending = 'IBC desde entrada pendiente: ' + (b.reason || 'histórico insuficiente');
+        message.textContent = message.textContent ? message.textContent + ' · ' + pending : pending;
+      }
+      const p=data.performance || {};
+      if(p.available){
+        ['1M','3M','6M','YTD','1Y'].forEach(k => {
+          const w=(p.windows||{})[k]||{};
+          if(!w.available){
+            windowsBox.appendChild(cell(k, 'Pendiente'));
+            return;
+          }
+          windowsBox.appendChild(cell(k + ' cartera Bs', fmt(w.return_bs_pct), signClass(w.return_bs_pct)));
+          windowsBox.appendChild(cell(k + ' IBC Bs', fmt(w.ibc_return_bs_pct), signClass(w.ibc_return_bs_pct)));
+          windowsBox.appendChild(cell(k + ' Alpha Bs', fmt(w.alpha_bs_pp), signClass(w.alpha_bs_pp)));
+          if(w.return_usd_pct !== null && w.return_usd_pct !== undefined){
+            windowsBox.appendChild(cell(k + ' cartera USD', fmt(w.return_usd_pct), signClass(w.return_usd_pct)));
+            windowsBox.appendChild(cell(k + ' IBC USD', fmt(w.ibc_return_usd_pct), signClass(w.ibc_return_usd_pct)));
+            windowsBox.appendChild(cell(k + ' Alpha USD', fmt(w.alpha_usd_pp), signClass(w.alpha_usd_pp)));
+          }
+        });
+        windowsBox.appendChild(cell('Drawdown cartera Bs', fmt(p.max_drawdown_bs_pct), signClass(p.max_drawdown_bs_pct)));
+        windowsBox.appendChild(cell('Drawdown IBC', fmt(p.ibc_max_drawdown_pct), signClass(p.ibc_max_drawdown_pct)));
+        windowsBox.appendChild(cell('Drawdown cartera USD', fmt(p.max_drawdown_usd_observed_pct), signClass(p.max_drawdown_usd_observed_pct)));
+      } else if(!message.textContent){
+        message.textContent='Ventanas 1M/3M/6M/YTD/1Y se habilitarán al acumular snapshots reales.';
+      }
+    })
+    .catch(err => {
+      status.classList.remove('benchmark-status-live','benchmark-status-provisional');
+      status.textContent='Pendiente';
+      message.textContent=err.message;
+    });
+})();
+</script>
 {% endblock %}

@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [audit/v3-v4-engine]
+    branches: [audit/v3-v4-engine, feature/v5-philosophy-engine]
 
 permissions:
   contents: read
@@ -16,7 +16,9 @@ jobs:
     env:
       APP_ENV: development
       SCORING_ENGINE_V3_ENABLED: "true"
+      SCORING_ENGINE_V5_ENABLED: "false"
       PORTFOLIO_ENGINE_V4_ENABLED: "true"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,19 +34,47 @@ jobs:
           services/__init__.py
           services/auth.py
           services/admin_bootstrap.py
+          services/schema_compat.py
           services/security_runtime.py
           services/secret_guard.py
+          services/v5_routes_bootstrap.py
+          services/v5_routes.py
           services/pagos.py
           services/feature_flags.py
           services/scoring_v2.py
           services/scoring.py
           services/scoring_v3.py
           services/scoring_engine_v3.py
+          services/scoring_engine_v5.py
+          services/fundamentals_v5.py
+          services/fundamental_sources_v5.py
+          services/fundamental_identity_v5.py
+          services/fundamental_store_v5.py
+          services/fundamental_collector_v5.py
+          services/fundamental_discovery_v5.py
+          services/fundamental_pilots_v5.py
+          services/fundamental_backfill_manifest_v5.py
+          services/fundamental_pdf_parser_v5.py
+          services/fundamental_review_v5.py
+          services/fundamental_autoreview_v5.py
+          services/fundamental_history_v5.py
+          services/fundamental_trend_v5.py
+          services/fx_normalization_v5.py
+          services/fx_history_v5.py
+          services/ibc_history_v5.py
+          services/ibc_sources_v5.py
+          services/ibc_store_v5.py
+          services/ibc_backfill_v5.py
+          services/investment_vehicle_v5.py
           services/scoring_postprocess.py
           services/backtest_v3.py
           services/portafolio_legacy.py
           services/portafolio.py
           services/portfolio_v4.py
+          services/portfolio_v5.py
+          services/portfolio_benchmark_v5.py
+          services/portfolio_snapshot_v5.py
+          services/portfolio_performance_v5.py
           services/engine_router.py
           services/alertas_cierre.py
       - name: Validate Jinja templates
@@ -79,3 +109,17 @@ jobs:
           PY
       - name: Run unit and contract tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Smoke test benchmark V5 opt-in route
+        env:
+          PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "true"
+        run: |
+          python - <<'PY'
+          import services  # noqa: F401 - instala los bootstraps con el flag activo
+          from fastapi import FastAPI
+          from services.v5_routes_bootstrap import V5_BENCHMARK_PATH
+
+          app = FastAPI(title="benchmark-v5-smoke")
+          paths = [getattr(route, "path", "") for route in app.routes]
+          assert paths.count(V5_BENCHMARK_PATH) == 1, paths
+          print("benchmark V5 opt-in route ok")
+          PY
