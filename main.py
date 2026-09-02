@@ -38,6 +38,7 @@ from app.routers.alerts import register_alert_routes
 from app.routers.scoring import register_scoring_routes
 from app.routers.profile import register_profile_routes
 from app.routers.detail import register_detail_routes
+from app.routers.api_misc import register_misc_api_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -453,28 +454,7 @@ async def reset_alerta(
 
 
 # ── API endpoints ────────────────────────────────────────────────────────────────
-
-@app.get("/api/tasa")
-async def api_tasa():
-    """Devuelve la tasa BCV actual."""
-    tasa = await obtener_tasa_bcv()
-    return JSONResponse({"tasa": tasa, "fuente": "BCV" if tasa > 0 else "manual"})
-
-
-@app.get("/api/precio/{simbolo}")
-async def api_precio(simbolo: str, request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return JSONResponse({"error": "no autorizado"}, status_code=401)
-    datos = await obtener_datos_bvc()
-    activo = next((i for i in datos if i.get("COD_SIMB") == simbolo.upper()), None)
-    if not activo:
-        return JSONResponse({"error": "no encontrado"}, status_code=404)
-    return JSONResponse({
-        "precio":  _to_float(activo.get("PRECIO")),
-        "var_rel": _to_float(activo.get("VAR_REL")),
-        "var_abs": _to_float(activo.get("VAR_ABS")),
-    })
+register_misc_api_routes(app)
 
 
 # ── Recuperar contraseña ─────────────────────────────────────────────────────────
