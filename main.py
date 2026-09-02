@@ -44,6 +44,7 @@ from app.routers.portfolio import register_portfolio_routes
 from app.routers.watchlist import register_watchlist_routes
 from app.routers.admin import register_admin_routes
 from app.routers.pwa import register_pwa_routes
+from app.routers.portfolio_import import register_portfolio_import_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -485,79 +486,7 @@ register_watchlist_routes(app)
 
 
 # ── Importar portafolio ───────────────────────────────────────────────────────
-
-@app.get("/portafolio/importar", response_class=HTMLResponse)
-async def importar_page(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    return render("importar.html", {
-        "request": request, "usuario": usuario,
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-        "active": "", "error": None, "activos_preview": None, "activos_json": None,
-    })
-
-@app.post("/portafolio/importar", response_class=HTMLResponse)
-async def importar_post(request: Request, db: Session = Depends(get_db)):
-    import json as json_mod
-    from fastapi import UploadFile, File
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    form = await request.form()
-    archivo = form.get("archivo")
-    if not archivo or not archivo.filename:
-        return render("importar.html", {
-            "request": request, "usuario": usuario,
-            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-            "active": "", "error": "Selecciona un archivo", "activos_preview": None, "activos_json": None,
-        })
-    try:
-        contenido = await archivo.read()
-        activos = importar_archivo(contenido, archivo.filename)
-        if not activos:
-            raise ValueError("No se encontraron activos en el archivo")
-        return render("importar.html", {
-            "request": request, "usuario": usuario,
-            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-            "active": "", "error": None,
-            "activos_preview": activos,
-            "activos_json": json_mod.dumps(activos),
-        })
-    except Exception as e:
-        return render("importar.html", {
-            "request": request, "usuario": usuario,
-            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-            "active": "", "error": str(e), "activos_preview": None, "activos_json": None,
-        })
-
-@app.post("/portafolio/importar/confirmar")
-async def importar_confirmar(request: Request, datos: str = Form(...), db: Session = Depends(get_db)):
-    import json as json_mod
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    activos = json_mod.loads(datos)
-    for a in activos:
-        existente = db.query(ActivoPortafolio).filter(
-            ActivoPortafolio.usuario_id == usuario.id,
-            ActivoPortafolio.simbolo == a["simbolo"]
-        ).first()
-        if existente:
-            existente.cantidad = a["cantidad"]
-            existente.precio_promedio = a["precio_promedio"]
-        else:
-            db.add(ActivoPortafolio(
-                usuario_id=usuario.id,
-                simbolo=a["simbolo"],
-                cantidad=a["cantidad"],
-                precio_promedio=a["precio_promedio"],
-                comision=a.get("comision", 0),
-                registro=a.get("registro", 0),
-                iva=a.get("iva", 16),
-            ))
-    db.commit()
-    return RedirectResponse(url="/portafolio", status_code=303)
+register_portfolio_import_routes(app)
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
