@@ -3,12 +3,14 @@
 Acquisition, accounting validation and FX normalization are separate concerns.
 Production ingestion is fail-closed for VES: a report is not persisted as a
 usable V5 snapshot until its historical BCV close/period rate is resolved.
-Controlled fixtures may explicitly disable that network-dependent gate.
+Only documents certified by the issuer, BVC or SUNAVAL can enter production.
+Controlled fixtures may explicitly disable the network-dependent FX gate.
 """
 from __future__ import annotations
 
 from typing import Any
 
+from services.fundamental_certifier_policy_v5 import certify_fundamental_source
 from services.fundamental_sources_v5 import get_source, source_audit_summary
 from services.fundamental_store_v5 import save_snapshot, validate_snapshot
 from services.fx_history_v5 import attach_historical_bcv_fx
@@ -111,11 +113,24 @@ def ingest_normalized_report(
     hydrate_fx: bool = True,
     require_fx: bool = True,
 ) -> dict:
-    """Single write entry point for collectors and future admin imports.
+    """Single production write entry point for collectors/admin imports.
 
-    Defaults are production-safe: VES reports must resolve historical FX before
-    persistence. Tests/fixtures can opt out explicitly with both flags False.
+    A source must terminate in one of the three approved certifiers: issuer,
+    BVC or SUNAVAL. Secondary sites may aid discovery but cannot persist a
+    certified fundamental snapshot.
     """
+    certification = certify_fundamental_source(symbol, source_url)
+    if not certification.get("valid"):
+        return {
+            "accepted": False,
+            "coverage": coverage_report(symbol, record),
+            "validation": {"valid": False, "score": 0.0, "notes": ["fuente no certificada por emisor/BVC/SUNAVAL"]},
+            "fx": {"valid": False, "flags": ["not_evaluated_due_to_source_certifier_gate"]},
+            "certification": certification,
+            "persisted": False,
+            "error": "source_certifier_required",
+        }
+
     normalized = normalize_record(symbol, record)
     normalized, fx = _prepare_fx(
         normalized,
@@ -131,6 +146,7 @@ def ingest_normalized_report(
             "coverage": coverage_report(symbol, normalized),
             "validation": {"valid": False, "score": 0.0, "notes": ["FX histórico requerido"]},
             "fx": fx,
+            "certification": certification,
             "persisted": False,
             "error": "historical_fx_required",
         }
@@ -143,11 +159,15 @@ def ingest_normalized_report(
             "coverage": coverage,
             "validation": validation,
             "fx": fx,
+            "certification": certification,
             "persisted": False,
         }
 
     meta = dict(metadata or {})
     meta["fx_validation"] = fx
+    meta["source_certifier_v5"] = certification.get("certifier")
+    meta["source_certifier_route_v5"] = certification.get("route")
+    meta["source_certifier_policy_version_v5"] = certification.get("policy_version")
     persisted = save_snapshot(
         symbol,
         normalized,
@@ -164,6 +184,7 @@ def ingest_normalized_report(
         "coverage": coverage,
         "validation": validation,
         "fx": fx,
+        "certification": certification,
         "persisted": bool(persisted.get("saved")),
         "duplicate": bool(persisted.get("duplicate")),
         "document_id": persisted.get("document_id"),
