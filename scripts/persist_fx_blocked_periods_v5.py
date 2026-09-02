@@ -3,6 +3,9 @@
 Las cifras no se modifican ni se hardcodean aquí. Cada período vuelve a pasar por
 parser, auto-review, certificador (emisor/BVC/SUNAVAL), validación contable y
 normalización FX histórica antes de poder persistirse en Neon.
+
+GZL FY2023 permanece fuera de este lote: su estado es nominal y requiere además
+un promedio histórico del ejercicio fiscal completo, que no se aproximará.
 """
 from __future__ import annotations
 
@@ -14,7 +17,6 @@ TARGETS = (
     ("DOM", "FY2022"),
     ("ENV", "FY2022"),
     ("FNV", "FY2022"),
-    ("GZL", "FY2023"),
     ("PGR", "FY2022"),
 )
 
@@ -54,6 +56,7 @@ def main() -> int:
         "targets": len(TARGETS),
         "accepted": accepted,
         "all_accepted": accepted == len(TARGETS),
+        "deferred": [{"symbol": "GZL", "fiscal_period": "FY2023", "reason": "verified_fiscal_period_average_fx_required"}],
         "rows": rows,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
