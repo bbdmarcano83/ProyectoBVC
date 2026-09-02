@@ -66,6 +66,11 @@ PILOTS = {
 # convierten a VES multiplicando por 1.000. No se deriva Pasivo por diferencia.
 # Se marca audited=False porque la fuente de estas tres filas es la tabla oficial
 # de cifras del emisor, aunque los años también disponen de estados auditados.
+#
+# Para Sivensa cada año histórico usa SU PROPIO informe auditado y únicamente la
+# columna del ejercicio corriente de ese PDF. No se reutiliza la columna
+# comparativa del informe del año siguiente porque está reexpresada a moneda
+# constante de otra fecha de cierre.
 HISTORICAL_PILOTS = {
     "MVZ.A": [
         {
@@ -119,7 +124,63 @@ HISTORICAL_PILOTS = {
                 "as_of": "2022-12-31",
             },
         },
-    ]
+    ],
+    "SVS": [
+        {
+            "document_type": "annual_audited_financial_statements",
+            "fiscal_period": "FY2024",
+            "as_of": "2024-09-30",
+            "audited": True,
+            "source_url": "https://sivensa.com.ve/wp-content/uploads/2024/11/2024.11.18-SIVENSA-Informe-Auditores-PwC.pdf",
+            "evidence": "PwC Sivensa FY2024: estado consolidado primario; Activo 30.778.195.109, Pasivo 5.818.745.451, Patrimonio 24.959.449.658 y pérdida neta 3.942.518.486 Bs constantes al 30-09-2024.",
+            "data": {
+                "industry_type": "non_financial",
+                "total_assets": 30778195109.0,
+                "total_liabilities": 5818745451.0,
+                "equity": 24959449658.0,
+                "net_income": -3942518486.0,
+                "currency": "VES",
+                "monetary_basis": "constant_ves_end_period",
+                "as_of": "2024-09-30",
+            },
+        },
+        {
+            "document_type": "annual_audited_financial_statements",
+            "fiscal_period": "FY2023",
+            "as_of": "2023-09-30",
+            "audited": True,
+            "source_url": "https://sivensa.com.ve/wp-content/uploads/2023/11/2023.11.22-SIVENSA-Informe-Auditores-PwC-v2.pdf",
+            "evidence": "PwC Sivensa FY2023: estado consolidado primario; Activo 37.392.980.099, Pasivo 5.966.393.028, Patrimonio 31.426.587.071 y pérdida neta 39.268.305 Bs constantes al 30-09-2023.",
+            "data": {
+                "industry_type": "non_financial",
+                "total_assets": 37392980099.0,
+                "total_liabilities": 5966393028.0,
+                "equity": 31426587071.0,
+                "net_income": -39268305.0,
+                "currency": "VES",
+                "monetary_basis": "constant_ves_end_period",
+                "as_of": "2023-09-30",
+            },
+        },
+        {
+            "document_type": "annual_audited_financial_statements",
+            "fiscal_period": "FY2022",
+            "as_of": "2022-09-30",
+            "audited": True,
+            "source_url": "https://sivensa.com.ve/wp-content/uploads/2022/12/2022.12.29-SIVENSA-Informe-Auditores-PwC.pdf",
+            "evidence": "PwC Sivensa FY2022: estado consolidado primario; Activo 35.174.963.773, Pasivo 5.807.262.905, Patrimonio 29.367.700.868 y utilidad neta 1.626.124.749 Bs constantes al 30-09-2022.",
+            "data": {
+                "industry_type": "non_financial",
+                "total_assets": 35174963773.0,
+                "total_liabilities": 5807262905.0,
+                "equity": 29367700868.0,
+                "net_income": 1626124749.0,
+                "currency": "VES",
+                "monetary_basis": "constant_ves_end_period",
+                "as_of": "2022-09-30",
+            },
+        },
+    ],
 }
 
 
