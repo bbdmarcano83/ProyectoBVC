@@ -32,6 +32,23 @@ def _score(doc: dict) -> tuple[int, str]:
     return score, str(doc.get("url") or "")
 
 
+def _sample_candidates(candidates: dict) -> dict:
+    out = {}
+    for field, options in (candidates or {}).items():
+        rows = []
+        for option in (options or [])[:3]:
+            rows.append({
+                "value": option.get("value"),
+                "raw": option.get("raw"),
+                "page": option.get("page"),
+                "alias": option.get("alias"),
+                "column_index": option.get("column_index"),
+                "evidence": str(option.get("evidence") or "")[:260],
+            })
+        out[field] = {"count": len(options or []), "sample": rows}
+    return out
+
+
 async def _attempt_pdf(symbol: str, doc: dict, sem: asyncio.Semaphore) -> dict:
     url = str(doc.get("url") or "")
     async with sem:
@@ -46,6 +63,7 @@ async def _attempt_pdf(symbol: str, doc: dict, sem: asyncio.Semaphore) -> dict:
         "pages": meta.get("pages"),
     }
     if meta.get("valid"):
+        attempt["candidate_fields"] = _sample_candidates(candidates)
         review = build_review_package(
             symbol, candidates, source_url=url, as_of="candidate",
             source_document_sha256=meta.get("source_document_sha256"),
