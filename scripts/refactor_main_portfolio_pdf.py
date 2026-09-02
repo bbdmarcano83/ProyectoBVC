@@ -36,8 +36,11 @@ def main() -> int:
     missing = [item for item in required if item not in segment]
     if missing:
         raise SystemExit(f"refactor aborted: expected portfolio PDF fragments missing: {missing}")
-    text = text.replace(IMPORT_ANCHOR, IMPORT_ANCHOR + NEW_IMPORT, 1)
+
+    # Replace the route block before inserting imports so byte offsets cannot
+    # be invalidated by the new import line.
     text = text[:start] + REPLACEMENT + text[end:]
+    text = text.replace(IMPORT_ANCHOR, IMPORT_ANCHOR + NEW_IMPORT, 1)
     PATH.write_text(text, encoding="utf-8")
     print("portfolio pdf route extraction applied")
     return 0
