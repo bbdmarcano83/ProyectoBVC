@@ -27,6 +27,7 @@ import httpx as httpx_client
 from services.pdf_reporte import generar_reporte
 from services.pdf_reporte import generar_reporte
 from services.email import email_recuperar_password, email_bienvenida
+from app.startup import run_startup
 from database import ActivoPortafolio, Watchlist
 
 app = FastAPI(title="Caracas Bull")
@@ -34,97 +35,9 @@ app = FastAPI(title="Caracas Bull")
 # ── Init DB al arrancar ────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
-    init_db()
-    _migrar_db()
-    _crear_admin_si_no_existe()
-    # Arrancar worker de alertas en background
-    asyncio.create_task(loop_alertas())
-    # Registrar webhook de Telegram
-    await registrar_webhook_telegram()
-
-
-def _migrar_db():
-    """Agrega columnas nuevas a tablas existentes sin borrar datos."""
-    from sqlalchemy import text
-    migraciones = [
-        "ALTER TABLE usuarios ADD COLUMN telegram_chat_id VARCHAR(50)",
-        "ALTER TABLE usuarios ADD COLUMN telegram_codigo VARCHAR(10)",
-        "ALTER TABLE usuarios ADD COLUMN broker VARCHAR(50)",
-        "ALTER TABLE usuarios ADD COLUMN token_recuperacion VARCHAR(100)",
-        "ALTER TABLE usuarios ADD COLUMN token_expira DATETIME",
-        """CREATE TABLE IF NOT EXISTS transacciones (
-            id INTEGER PRIMARY KEY,
-            usuario_id INTEGER REFERENCES usuarios(id),
-            simbolo VARCHAR(20),
-            tipo VARCHAR(10),
-            cantidad FLOAT,
-            precio FLOAT,
-            comision FLOAT DEFAULT 0,
-            registro FLOAT DEFAULT 0,
-            iva FLOAT DEFAULT 16,
-            fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
-            notas VARCHAR(200)
-        )""",
-        "ALTER TABLE transacciones ADD COLUMN motivo VARCHAR(50)",
-        "ALTER TABLE transacciones ADD COLUMN tasa_bcv FLOAT",
-        "ALTER TABLE transacciones ADD COLUMN score INTEGER",
-        "ALTER TABLE transacciones ADD COLUMN fee_total FLOAT",
-        "ALTER TABLE transacciones ADD COLUMN neto FLOAT",
-    ]
-    with SessionLocal() as db:
-        for sql in migraciones:
-            try:
-                db.execute(text(sql))
-                db.commit()
-                print(f"[Migración] OK: {sql}")
-            except Exception:
-                pass  # La columna ya existe, ignorar
-
-
-def _crear_admin_si_no_existe():
-    """Crea la cuenta admin en producción si no existe. Lee credenciales de variables de entorno."""
-    import os
-    from datetime import datetime, timedelta
-    from services.auth import hash_password
-
-    email    = os.environ.get("ADMIN_EMAIL", "")
-    password = os.environ.get("ADMIN_PASSWORD", "")
-    nombre   = os.environ.get("ADMIN_NOMBRE", "Admin")
-
-    if not email or not password:
-        return  # No configurado, saltar
-
-    db = SessionLocal()
-    try:
-        from database import Usuario, Suscripcion
-        if db.query(Usuario).filter(Usuario.email == email).first():
-            return  # Ya existe
-
-        usuario = Usuario(
-            nombre=nombre,
-            email=email,
-            password_hash=hash_password(password),
-            es_admin=True,
-            activo=True,
-        )
-        db.add(usuario)
-        db.flush()
-
-        suscripcion = Suscripcion(
-            usuario_id=usuario.id,
-            plan="pro",
-            activa=True,
-            fecha_inicio=datetime.utcnow(),
-            fecha_vence=datetime.utcnow() + timedelta(days=365 * 100),
-        )
-        db.add(suscripcion)
-        db.commit()
-        print(f"[startup] Admin creado: {email}")
-    except Exception as e:
-        print(f"[startup] Error creando admin: {e}")
-        db.rollback()
-    finally:
-        db.close()
+    # `registrar_webhook_telegram` se resuelve al ejecutar startup, después de
+    # que el módulo completo haya terminado de importarse.
+    await run_startup(registrar_webhook_telegram)
 
 # ── Archivos estáticos ─────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="static"), name="static")
