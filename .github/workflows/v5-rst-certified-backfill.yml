@@ -5,6 +5,10 @@ on:
     branches:
       - feature/v5-certified-data-precedence
     paths:
+      - 'services/fundamental_certifier_policy_v5.py'
+      - 'services/fundamental_review_v5.py'
+      - 'services/fundamental_backfill_manifest_v5.py'
+      - 'tests/test_fundamental_review_v5.py'
       - 'scripts/persist_rst_fy2025_certified_v5.py'
       - '.github/workflows/v5-rst-certified-backfill.yml'
   workflow_dispatch:
@@ -30,6 +34,9 @@ jobs:
           sudo apt-get install -y tesseract-ocr
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Run certified precedence regression tests
+        run: |
+          python -m unittest tests.test_certifier_policy_v5 tests.test_fundamental_review_v5
       - name: Persist RST FY2025 from certified BVC evidence
         shell: bash
         run: |
