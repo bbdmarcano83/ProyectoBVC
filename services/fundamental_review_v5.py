@@ -7,10 +7,64 @@ parser dispone del SHA-256 del PDF, la huella se conserva en metadata auditable.
 """
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from typing import Any
 
 from services.fundamental_collector_v5 import ingest_normalized_report, coverage_report
 from services.fundamental_sources_v5 import get_source
+
+
+def _infer_preferred_column(fields: dict[str, list[dict]]) -> tuple[int | None, dict]:
+    """Infer the latest comparative column from the primary accounting page.
+
+    Notes later in a report may reverse year order, so global voting is unsafe.
+    We instead choose the earliest page containing explicit accounting rows for
+    at least two core statement fields, and accept its year order only when the
+    two leading years are adjacent and all usable rows on that page agree.
+    """
+    by_page: dict[int, list[dict]] = defaultdict(list)
+    core_fields = ("total_assets", "total_liabilities", "equity", "net_income", "revenue")
+    for field in core_fields:
+        for option in fields.get(field) or []:
+            if option.get("context_quality") not in {"accounting_row", "derived_accounting_total"}:
+                continue
+            try:
+                page = int(option.get("page"))
+            except (TypeError, ValueError):
+                continue
+            years = [int(y) for y in (option.get("page_years") or []) if str(y).isdigit()]
+            if len(years) < 2 or years[0] == years[1] or abs(years[0] - years[1]) != 1:
+                continue
+            preferred = 0 if years[0] > years[1] else 1
+            by_page[page].append({"field": field, "page": page, "years": years[:2], "preferred": preferred})
+
+    diagnostics = []
+    for page in sorted(by_page):
+        evidence = by_page[page]
+        distinct_fields = sorted({row["field"] for row in evidence})
+        counts = Counter(row["preferred"] for row in evidence)
+        diagnostics.append({"page": page, "fields": distinct_fields, "votes": dict(counts)})
+        if len(distinct_fields) < 2:
+            continue
+        winner, winner_count = counts.most_common(1)[0]
+        total = sum(counts.values())
+        if winner_count < 2 or winner_count / max(1, total) < 0.90:
+            continue
+        return winner, {
+            "valid": True,
+            "method": "primary_accounting_page_ordered_adjacent_year_headers",
+            "preferred_column": winner,
+            "primary_page": page,
+            "votes": dict(counts),
+            "fields": distinct_fields,
+            "evidence": evidence[:12],
+        }
+
+    return None, {
+        "valid": False,
+        "reason": "no_coherent_primary_accounting_period_header",
+        "pages_considered": diagnostics[:12],
+    }
 
 
 def build_review_package(
@@ -40,12 +94,16 @@ def build_review_package(
                 "evidence": option.get("evidence"),
                 "column_index": option.get("column_index"),
                 "occurrence": option.get("occurrence"),
+                "context_quality": option.get("context_quality"),
+                "page_years": option.get("page_years") or [],
+                "derived_from": option.get("derived_from") or [],
             })
         if clean:
             fields[field] = clean
     digest = str(source_document_sha256 or "").lower().strip()
     if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
         digest = ""
+    preferred_column, preferred_meta = _infer_preferred_column(fields)
     return {
         "valid": bool(fields),
         "symbol": symbol,
@@ -55,6 +113,8 @@ def build_review_package(
         "source_document_sha256": digest or None,
         "as_of": as_of,
         "fields": fields,
+        "preferred_column": preferred_column,
+        "preferred_column_evidence": preferred_meta,
         "requires_explicit_selection": True,
         "note": "Ningún candidato se persiste hasta seleccionar explícitamente campo e índice.",
     }
@@ -89,6 +149,9 @@ def select_candidates(review: dict, selections: dict[str, int], *, extra_fields:
             "evidence": choice.get("evidence"),
             "column_index": choice.get("column_index"),
             "occurrence": choice.get("occurrence"),
+            "context_quality": choice.get("context_quality"),
+            "page_years": choice.get("page_years") or [],
+            "derived_from": choice.get("derived_from") or [],
         }
     return selected, {
         "valid": not errors and bool(selected),
@@ -136,6 +199,7 @@ def accept_reviewed_snapshot(
         "review_gate": "explicit_candidate_selection",
         "selected_evidence": selected_meta.get("evidence", {}),
         "review_required": False,
+        "preferred_column_evidence": review.get("preferred_column_evidence"),
     }
     digest = str(review.get("source_document_sha256") or "").strip().lower()
     if len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest):

@@ -20,14 +20,18 @@ import hashlib
 from html.parser import HTMLParser
 import json
 import re
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 from urllib.parse import urljoin, urlparse
+
+import httpx
 
 
 BVC_HOSTS = {"bolsadecaracas.com", "www.bolsadecaracas.com", "market.bolsadecaracas.com"}
 _ALLOWED_EXTERNAL_SUFFIXES = ("sharepoint.com", "1drv.ms", "onedrive.live.com")
 _IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/tiff"}
 _PDF_CONTENT_TYPES = {"application/pdf", "application/x-pdf"}
+MAX_ARTIFACT_BYTES = 30 * 1024 * 1024
+WP_BASE = "https://www.bolsadecaracas.com/wp-json/wp/v2"
 
 
 def _hostname(url: str) -> str:
@@ -126,6 +130,76 @@ def parse_bvc_wp_notice(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _wp_detail_path(subtype: str, item_id: int) -> str | None:
+    subtype = str(subtype or "").strip().lower()
+    collection = {"post": "posts", "page": "pages"}.get(subtype)
+    if not collection or int(item_id) <= 0:
+        return None
+    return f"{WP_BASE}/{collection}/{int(item_id)}"
+
+
+async def discover_bvc_wp_notices(query: str, *, timeout: float = 15.0, per_page: int = 20) -> dict[str, Any]:
+    """Search the official BVC WordPress REST API and normalize matching notices.
+
+    The search endpoint is used only to discover post/page IDs. Each detail is
+    then fetched from the same official REST origin and validated again through
+    `parse_bvc_wp_notice` before being returned.
+    """
+    term = str(query or "").strip()
+    if not term:
+        return {"ok": False, "error": "empty_query", "query": term, "notices": []}
+    headers = {
+        "User-Agent": "CaracasBull-FundamentalAudit/1.0 (+bvc-wordpress-evidence)",
+        "Accept": "application/json",
+    }
+    notices: list[dict[str, Any]] = []
+    errors: list[str] = []
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, headers=headers) as client:
+            response = await client.get(
+                f"{WP_BASE}/search",
+                params={"search": term, "per_page": max(1, min(100, int(per_page))), "type": "post"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, list):
+                return {"ok": False, "error": "unexpected_search_payload", "query": term, "notices": []}
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    item_id = int(item.get("id") or 0)
+                except (TypeError, ValueError):
+                    continue
+                subtype = str(item.get("subtype") or "post")
+                detail_url = _wp_detail_path(subtype, item_id)
+                if not detail_url:
+                    continue
+                try:
+                    detail = await client.get(detail_url)
+                    detail.raise_for_status()
+                    normalized = parse_bvc_wp_notice(detail.json())
+                except Exception as exc:
+                    errors.append(f"{type(exc).__name__}:{item_id}")
+                    continue
+                if normalized.get("valid"):
+                    normalized["search_title"] = item.get("title")
+                    normalized["search_subtype"] = subtype
+                    notices.append(normalized)
+    except Exception as exc:
+        return {"ok": False, "error": type(exc).__name__, "query": term, "notices": [], "errors": errors[:10]}
+
+    notices.sort(key=lambda n: str(n.get("published_at") or ""), reverse=True)
+    return {
+        "ok": True,
+        "error": None,
+        "query": term,
+        "count": len(notices),
+        "notices": notices,
+        "errors": errors[:10],
+    }
+
+
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(bytes(data or b"")).hexdigest()
 
@@ -137,12 +211,6 @@ def _normalize_ocr_text(text: str) -> str:
 
 
 def build_ocr_evidence(page_texts: Iterable[str], *, engine: str, engine_version: str) -> dict[str, Any]:
-    """Build deterministic OCR evidence from ordered page text.
-
-    The OCR engine itself is injected by the caller/worker. This function makes
-    its output reproducible and auditable: page order, normalized text and both
-    per-page and aggregate hashes are persisted.
-    """
     pages: list[dict[str, Any]] = []
     for index, raw in enumerate(page_texts, start=1):
         normalized = _normalize_ocr_text(raw)
@@ -182,18 +250,58 @@ class DownloadedArtifact:
     data: bytes
 
 
+async def download_notice_artifacts(notice: dict[str, Any], *, timeout: float = 20.0) -> dict[str, Any]:
+    """Download only artifacts explicitly authorized by a normalized BVC notice."""
+    if not notice.get("valid") or not is_official_bvc_url(str(notice.get("notice_url") or "")):
+        return {"ok": False, "error": "invalid_notice", "artifacts": []}
+    urls = [str(u) for u in (notice.get("artifact_urls") or [])]
+    if not urls:
+        return {"ok": False, "error": "notice_has_no_artifacts", "artifacts": []}
+    headers = {
+        "User-Agent": "CaracasBull-FundamentalAudit/1.0 (+bvc-attachment-download)",
+        "Accept": "application/pdf,image/*,application/octet-stream;q=0.9,*/*;q=0.4",
+    }
+    out: list[DownloadedArtifact] = []
+    errors: list[str] = []
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
+        for url in urls:
+            if not (is_official_bvc_url(url) or _is_allowed_external_attachment(url)):
+                errors.append(f"untrusted_original:{url}")
+                continue
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+                data = response.content
+            except Exception as exc:
+                errors.append(f"{type(exc).__name__}:{url}")
+                continue
+            final_url = str(response.url)
+            if not (is_official_bvc_url(final_url) or _is_allowed_external_attachment(final_url)):
+                errors.append(f"untrusted_redirect:{final_url}")
+                continue
+            if not data or len(data) > MAX_ARTIFACT_BYTES:
+                errors.append(f"artifact_empty_or_too_large:{url}")
+                continue
+            out.append(DownloadedArtifact(
+                url=url,
+                final_url=final_url,
+                content_type=str(response.headers.get("content-type") or ""),
+                data=data,
+            ))
+    return {
+        "ok": bool(out),
+        "error": None if out else (errors[0].split(":", 1)[0] if errors else "download_failed"),
+        "artifacts": out,
+        "errors": errors[:10],
+    }
+
+
 def build_evidence_bundle(
     notice: dict[str, Any],
     artifacts: Iterable[DownloadedArtifact],
     *,
     ocr: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Validate and fingerprint the complete BVC evidence chain.
-
-    `artifacts` must be downloaded only from URLs explicitly extracted from the
-    BVC notice. Redirect targets are recorded but cannot expand the evidence
-    authority to arbitrary hosts.
-    """
     if not notice.get("valid") or not is_official_bvc_url(str(notice.get("notice_url") or "")):
         return {"valid": False, "error": "invalid_notice", "artifacts": []}
     if not notice.get("published_at"):
@@ -255,7 +363,6 @@ def build_evidence_bundle(
 
 
 def ingest_metadata_from_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
-    """Metadata ready to append to an existing V5 collector ingestion call."""
     if not bundle.get("valid"):
         return {"valid": False, "error": bundle.get("error") or "invalid_bundle"}
     return {
