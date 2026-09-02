@@ -16,16 +16,20 @@ def main() -> int:
     package = build_review("RST", "FY2025")
     review = package.get("review") or {}
     proposal = propose_fail_closed_selections(review)
-    candidates = review.get("candidates") or {}
+    fields = review.get("fields") or {}
 
     selected = {}
     for field, index in (proposal.get("selections") or {}).items():
-        rows = candidates.get(field) or []
+        rows = fields.get(field) or []
         try:
-            row = dict(rows[int(index)])
-        except (IndexError, TypeError, ValueError):
-            row = {"selection_error": True, "requested_index": index}
-        selected[field] = row
+            requested = int(index)
+        except (TypeError, ValueError):
+            requested = -1
+        choice = next((row for row in rows if int(row.get("index", -1)) == requested), None)
+        selected[field] = dict(choice) if isinstance(choice, dict) else {
+            "selection_error": True,
+            "requested_index": index,
+        }
 
     report = {
         "document": package.get("document"),
