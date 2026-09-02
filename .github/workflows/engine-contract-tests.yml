@@ -18,6 +18,7 @@ jobs:
       SCORING_ENGINE_V3_ENABLED: "true"
       SCORING_ENGINE_V5_ENABLED: "false"
       PORTFOLIO_ENGINE_V4_ENABLED: "true"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -108,3 +109,17 @@ jobs:
           PY
       - name: Run unit and contract tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Smoke test benchmark V5 opt-in route
+        env:
+          PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "true"
+        run: |
+          python - <<'PY'
+          import services  # noqa: F401 - instala los bootstraps con el flag activo
+          from fastapi import FastAPI
+          from services.v5_routes_bootstrap import V5_BENCHMARK_PATH
+
+          app = FastAPI(title="benchmark-v5-smoke")
+          paths = [getattr(route, "path", "") for route in app.routes]
+          assert paths.count(V5_BENCHMARK_PATH) == 1, paths
+          print("benchmark V5 opt-in route ok")
+          PY
