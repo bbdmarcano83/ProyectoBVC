@@ -1,0 +1,35 @@
+name: Refactor route contract
+
+on:
+  push:
+    branches: [refactor/main-modularization]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_ENV: development
+      SCORING_ENGINE_V3_ENABLED: "true"
+      SCORING_ENGINE_V5_ENABLED: "false"
+      PORTFOLIO_ENGINE_V4_ENABLED: "true"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
+      PYTHONPATH: "."
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile main and refactor helpers
+        run: python -m py_compile main.py scripts/route_inventory.py
+      - name: Print route inventory
+        run: python scripts/route_inventory.py
+      - name: Run existing contract suite
+        run: python -m unittest discover -s tests -p "test_*.py" -v
