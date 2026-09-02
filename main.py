@@ -47,6 +47,10 @@ from app.routers.pwa import register_pwa_routes
 from app.routers.portfolio_import import register_portfolio_import_routes
 from app.routers.portfolio_pdf import register_portfolio_pdf_routes
 from app.routers.report_pdf import register_report_pdf_routes
+from app.routers.history import register_history_routes
+from app.routers.comparator import register_comparator_routes
+from app.routers.islr import register_islr_routes
+from app.routers.index_market import register_index_market_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -560,164 +564,19 @@ register_report_pdf_routes(app)
 
 
 # ── Historial de transacciones ───────────────────────────────────────────────────
-
-@app.get("/historial", response_class=HTMLResponse)
-async def ver_historial(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    from datetime import datetime
-    txs = db.query(TransaccionHistorial).filter(
-        TransaccionHistorial.usuario_id == usuario.id
-    ).order_by(TransaccionHistorial.fecha.desc()).all()
-    datos_bolsa = await obtener_datos_bvc()
-    simbolos = sorted([i["COD_SIMB"] for i in datos_bolsa])
-    compras = sum(1 for t in txs if t.tipo == "compra")
-    ventas  = sum(1 for t in txs if t.tipo == "venta")
-    # Ganancia realizada = suma de ventas - suma de compras del mismo simbolo
-    ganancia_total = sum(
-        t.cantidad * t.precio if t.tipo == "venta" else -(t.cantidad * t.precio)
-        for t in txs
-    )
-    return render("historial.html", {
-        "request": request, "usuario": usuario,
-        "transacciones": txs, "simbolos": simbolos,
-        "compras": compras, "ventas": ventas,
-        "ganancia_total": ganancia_total,
-        "hoy": datetime.now().strftime("%Y-%m-%d"),
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
-    })
-
-@app.post("/historial/agregar")
-async def agregar_historial(
-    request: Request,
-    simbolo: str = Form(...), tipo: str = Form(...),
-    fecha: str = Form(...), cantidad: float = Form(...),
-    precio: float = Form(...), comision: float = Form(0),
-    notas: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    from datetime import datetime
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    fecha_dt = datetime.strptime(fecha, "%Y-%m-%d")
-    db.add(TransaccionHistorial(
-        usuario_id=usuario.id, simbolo=simbolo.upper(), tipo=tipo,
-        cantidad=cantidad, precio=precio, comision=comision,
-        notas=notas, fecha=fecha_dt,
-    ))
-    db.commit()
-    return RedirectResponse(url="/historial", status_code=303)
-
-@app.post("/historial/eliminar")
-async def eliminar_historial(request: Request, tx_id: int = Form(...), db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    tx = db.query(TransaccionHistorial).filter(
-        TransaccionHistorial.id == tx_id,
-        TransaccionHistorial.usuario_id == usuario.id
-    ).first()
-    if tx:
-        db.delete(tx)
-        db.commit()
-    return RedirectResponse(url="/historial", status_code=303)
+register_history_routes(app)
 
 
 # ── Comparador de acciones ────────────────────────────────────────────────────
-
-@app.get("/comparador", response_class=HTMLResponse)
-async def comparador(request: Request, s1: str = "", s2: str = "", s3: str = "", db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    datos_bolsa = await obtener_datos_bvc()
-    simbolos = sorted([i["COD_SIMB"] for i in datos_bolsa])
-    mapa = {i["COD_SIMB"]: i for i in datos_bolsa}
-    datos_comparacion = []
-    for s in [s1, s2, s3]:
-        if s and s in mapa:
-            item = mapa[s]
-            datos_comparacion.append({
-                "simbolo":     s,
-                "precio":      _to_float(item.get("PRECIO")),
-                "var_rel":     _to_float(item.get("VAR_REL")),
-                "vol_transado":_to_float(item.get("MONTO_EFECTIVO")),
-                "titulos":     item.get("VOLUMEN", "—"),
-                "p_compra":    _to_float(item.get("PRE_CMP_1")),
-                "p_venta":     _to_float(item.get("PRE_VTA_1")),
-            })
-    return render("comparador.html", {
-        "request": request, "usuario": usuario, "simbolos": simbolos,
-        "seleccionados": [s1, s2, s3],
-        "datos_comparacion": datos_comparacion if datos_comparacion else None,
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
-    })
+register_comparator_routes(app)
 
 
 # ── Calculadora ISLR ──────────────────────────────────────────────────────────
-
-@app.get("/islr", response_class=HTMLResponse)
-async def islr_page(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    # Calcular ganancia del portafolio actual para precargar
-    datos_bolsa = await obtener_datos_bvc()
-    from database import ActivoPortafolio as AP
-    activos = db.query(AP).filter(AP.usuario_id == usuario.id).all()
-    mapa = {i["COD_SIMB"]: _to_float(i.get("PRECIO")) for i in datos_bolsa}
-    ganancia = sum(
-        (mapa.get(a.simbolo, a.precio_promedio) - a.precio_promedio) * a.cantidad
-        for a in activos
-    )
-    return render("islr.html", {
-        "request": request, "usuario": usuario,
-        "ganancia_portafolio": max(0, ganancia),
-        "ut_actual": 9600,  # UT 2024 referencial
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
-    })
+register_islr_routes(app)
 
 
 # ── Índice vs Mercado ─────────────────────────────────────────────────────────
-
-@app.get("/indice", response_class=HTMLResponse)
-async def indice_mercado(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    datos_bolsa = await obtener_datos_bvc()
-    tasa_auto = await obtener_tasa_bcv()
-    config_tasa = tasa_auto if tasa_auto > 0 else 0
-    from database import ActivoPortafolio as AP
-    activos_db = db.query(AP).filter(AP.usuario_id == usuario.id).all()
-    portafolio = {a.simbolo: {"cantidad": a.cantidad, "precio_promedio": a.precio_promedio,
-                               "comision": a.comision, "registro": a.registro, "iva": a.iva}
-                  for a in activos_db}
-    mapa_precios = {i["COD_SIMB"]: _to_float(i.get("PRECIO")) for i in datos_bolsa}
-    vars_hoy     = {i["COD_SIMB"]: _to_float(i.get("VAR_REL")) for i in datos_bolsa}
-    total_mkt = sum(
-        _to_float(d["cantidad"]) * mapa_precios.get(s, _to_float(d["precio_promedio"]))
-        for s, d in portafolio.items()
-    )
-    filas = [
-        calcular_fila(s, d, mapa_precios.get(s, _to_float(d["precio_promedio"])), total_mkt, config_tasa)
-        for s, d in portafolio.items()
-    ]
-    # Rendimiento ponderado del portafolio
-    rend_port = sum(f["rend_pct"] * f["peso_pct"] / 100 for f in filas) if filas else 0
-    # Promedio del mercado (variación promedio de todas las acciones)
-    todas_vars = [_to_float(i.get("VAR_REL")) for i in datos_bolsa]
-    rend_mercado = sum(todas_vars) / len(todas_vars) if todas_vars else 0
-
-    return render("indice.html", {
-        "request": request, "usuario": usuario, "filas": filas,
-        "rend_port": rend_port, "rend_mercado": rend_mercado,
-        "vars_hoy": vars_hoy,
-        "vars_hoy_list": [vars_hoy.get(f["simb"], 0) for f in filas],
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
-    })
+register_index_market_routes(app)
 
 
 # ── Setup Telegram webhook ───────────────────────────────────────────────────────
