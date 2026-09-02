@@ -7,7 +7,7 @@ parser dispone del SHA-256 del PDF, la huella se conserva en metadata auditable.
 """
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Any
 
 from services.fundamental_collector_v5 import ingest_normalized_report, coverage_report
@@ -15,31 +15,56 @@ from services.fundamental_sources_v5 import get_source
 
 
 def _infer_preferred_column(fields: dict[str, list[dict]]) -> tuple[int | None, dict]:
-    """Infer latest comparative column only from explicit ordered year headers.
+    """Infer the latest comparative column from the primary accounting page.
 
-    A vote is accepted only when at least two accounting-row candidates agree on
-    the same mapping and there is no conflicting mapping. This avoids assuming
-    that the left column is always the newest when the PDF does not prove it.
+    Notes later in a report may reverse year order, so global voting is unsafe.
+    We instead choose the earliest page containing explicit accounting rows for
+    at least two core statement fields, and accept its year order only when the
+    two leading years are adjacent and all usable rows on that page agree.
     """
-    votes: list[int] = []
-    evidence: list[dict] = []
-    for field in ("total_assets", "total_liabilities", "equity", "net_income", "revenue"):
+    by_page: dict[int, list[dict]] = defaultdict(list)
+    core_fields = ("total_assets", "total_liabilities", "equity", "net_income", "revenue")
+    for field in core_fields:
         for option in fields.get(field) or []:
             if option.get("context_quality") not in {"accounting_row", "derived_accounting_total"}:
                 continue
+            try:
+                page = int(option.get("page"))
+            except (TypeError, ValueError):
+                continue
             years = [int(y) for y in (option.get("page_years") or []) if str(y).isdigit()]
-            if len(years) < 2 or years[0] == years[1]:
+            if len(years) < 2 or years[0] == years[1] or abs(years[0] - years[1]) != 1:
                 continue
             preferred = 0 if years[0] > years[1] else 1
-            votes.append(preferred)
-            evidence.append({"field": field, "page": option.get("page"), "years": years[:2], "preferred": preferred})
-    if len(votes) < 2:
-        return None, {"valid": False, "reason": "insufficient_explicit_period_headers", "evidence": evidence[:8]}
-    counts = Counter(votes)
-    if len(counts) != 1:
-        return None, {"valid": False, "reason": "conflicting_period_column_headers", "votes": dict(counts), "evidence": evidence[:8]}
-    preferred = votes[0]
-    return preferred, {"valid": True, "method": "ordered_year_headers", "preferred_column": preferred, "votes": len(votes), "evidence": evidence[:8]}
+            by_page[page].append({"field": field, "page": page, "years": years[:2], "preferred": preferred})
+
+    diagnostics = []
+    for page in sorted(by_page):
+        evidence = by_page[page]
+        distinct_fields = sorted({row["field"] for row in evidence})
+        counts = Counter(row["preferred"] for row in evidence)
+        diagnostics.append({"page": page, "fields": distinct_fields, "votes": dict(counts)})
+        if len(distinct_fields) < 2:
+            continue
+        winner, winner_count = counts.most_common(1)[0]
+        total = sum(counts.values())
+        if winner_count < 2 or winner_count / max(1, total) < 0.90:
+            continue
+        return winner, {
+            "valid": True,
+            "method": "primary_accounting_page_ordered_adjacent_year_headers",
+            "preferred_column": winner,
+            "primary_page": page,
+            "votes": dict(counts),
+            "fields": distinct_fields,
+            "evidence": evidence[:12],
+        }
+
+    return None, {
+        "valid": False,
+        "reason": "no_coherent_primary_accounting_period_header",
+        "pages_considered": diagnostics[:12],
+    }
 
 
 def build_review_package(
