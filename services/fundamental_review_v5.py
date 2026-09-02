@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from typing import Any
 from math import isfinite
 
+from services.fundamental_certifier_policy_v5 import certify_fundamental_source
 from services.fundamental_collector_v5 import ingest_normalized_report, coverage_report
 from services.fundamental_sources_v5 import get_source
 
@@ -203,7 +204,12 @@ def accept_reviewed_snapshot(
     value_multiplier: float = 1.0,
     document_metadata: dict[str, Any] | None = None,
 ) -> dict:
-    """Acepta sólo una selección explícita y la pasa por todos los gates V5."""
+    """Acepta sólo una selección explícita y la pasa por todos los gates V5.
+
+    La base monetaria detectada de forma uniforme en un documento certificado
+    prevalece sobre metadata declarativa del manifiesto. Si la evidencia
+    certificada se contradice entre folios/campos, el proceso falla cerrado.
+    """
     extras = dict(extra_fields or {})
     extras["currency"] = currency
     extras["monetary_basis"] = monetary_basis
@@ -216,21 +222,43 @@ def accept_reviewed_snapshot(
     if not selected_meta.get("valid"):
         return {"accepted": False, "persisted": False, "selection": selected_meta}
 
+    symbol = str(review.get("symbol") or "").upper()
+    source_url = str(review.get("source_url") or "")
     detected_bases = {
-        row.get("page_monetary_basis")
+        str(row.get("page_monetary_basis"))
         for row in (selected_meta.get("evidence") or {}).values()
         if row.get("page_monetary_basis")
     }
-    if detected_bases and monetary_basis not in detected_bases:
+    certified_basis_override = None
+    if len(detected_bases) > 1:
         return {
             "accepted": False,
             "persisted": False,
             "selection": selected_meta,
-            "error": "declared_monetary_basis_mismatch",
+            "error": "certified_monetary_basis_conflict",
             "detected_monetary_basis": sorted(detected_bases),
         }
+    if len(detected_bases) == 1:
+        detected_basis = next(iter(detected_bases))
+        if monetary_basis != detected_basis:
+            certification = certify_fundamental_source(symbol, source_url)
+            if not certification.get("valid"):
+                return {
+                    "accepted": False,
+                    "persisted": False,
+                    "selection": selected_meta,
+                    "error": "declared_monetary_basis_mismatch",
+                    "detected_monetary_basis": sorted(detected_bases),
+                    "certification": certification,
+                }
+            certified_basis_override = {
+                "declared_monetary_basis": monetary_basis,
+                "certified_monetary_basis": detected_basis,
+                "certifier": certification.get("certifier"),
+                "policy": "certified_document_evidence_precedes_manifest_metadata",
+            }
+            record["monetary_basis"] = detected_basis
 
-    symbol = str(review.get("symbol") or "").upper()
     coverage = coverage_report(symbol, record)
     if coverage.get("coverage_pct", 0) < 66.0:
         return {
@@ -248,6 +276,8 @@ def accept_reviewed_snapshot(
         "preferred_column_evidence": review.get("preferred_column_evidence"),
         "reported_value_multiplier": selected_meta.get("reported_value_multiplier", 1.0),
     }
+    if certified_basis_override:
+        metadata["certified_basis_override_v5"] = certified_basis_override
     if isinstance(document_metadata, dict):
         metadata.update({
             str(key): value for key, value in document_metadata.items()
@@ -260,7 +290,7 @@ def accept_reviewed_snapshot(
     return ingest_normalized_report(
         symbol,
         record,
-        source_url=str(review.get("source_url") or ""),
+        source_url=source_url,
         as_of=str(review.get("as_of") or ""),
         document_type=document_type,
         fiscal_period=fiscal_period,

@@ -1,0 +1,52 @@
+name: V5 RST certified diagnostic
+
+on:
+  push:
+    branches:
+      - feature/v5-certified-data-precedence
+    paths:
+      - 'services/fundamental_certifier_policy_v5.py'
+      - 'services/fundamental_pdf_parser_v5.py'
+      - 'services/fundamental_bvc_image_parser_v5.py'
+      - 'services/fundamental_autoreview_v5.py'
+      - 'services/fundamental_backfill_manifest_v5.py'
+      - 'scripts/fundamental_backfill_v5.py'
+      - 'scripts/diagnose_rst_fy2025_v5.py'
+      - '.github/workflows/v5-rst-certified-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies and OCR
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run read-only certified RST diagnostic
+        id: diagnostic
+        shell: bash
+        run: |
+          set +e
+          python -m scripts.diagnose_rst_fy2025_v5 > rst_fy2025_certified_diagnostic.json 2> rst_fy2025_certified_diagnostic.stderr
+          status=$?
+          if [ -s rst_fy2025_certified_diagnostic.json ]; then cat rst_fy2025_certified_diagnostic.json; fi
+          if [ -s rst_fy2025_certified_diagnostic.stderr ]; then cat rst_fy2025_certified_diagnostic.stderr >&2; fi
+          exit $status
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rst-fy2025-certified-diagnostic
+          path: |
+            rst_fy2025_certified_diagnostic.json
+            rst_fy2025_certified_diagnostic.stderr
+          if-no-files-found: error
+          retention-days: 7

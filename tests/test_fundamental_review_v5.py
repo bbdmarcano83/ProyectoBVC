@@ -81,6 +81,53 @@ class FundamentalReviewV5Tests(unittest.TestCase):
         self.assertEqual(record["equity"], 60)
         self.assertEqual(record["currency"], "VES")
 
+    def test_uniform_certified_page_basis_overrides_wrong_manifest_basis(self):
+        candidates = self._candidates()
+        for rows in candidates.values():
+            for row in rows:
+                row["page_monetary_basis"] = "constant_ves_end_period"
+        review = build_review_package(
+            "RST", candidates,
+            source_url="https://www.bolsadecaracas.com/rst-auditado/",
+            as_of="2025-06-30",
+        )
+        fake = {"accepted": True, "persisted": True}
+        with patch("services.fundamental_review_v5.ingest_normalized_report", return_value=fake) as ingest:
+            out = accept_reviewed_snapshot(
+                review,
+                {"total_assets": 0, "total_liabilities": 0, "equity": 0, "net_income": 0},
+                document_type="annual_audited", fiscal_period="FY2025", audited=True,
+                currency="VES", monetary_basis="nominal_ves",
+                hydrate_fx=False, require_fx=False,
+            )
+        self.assertTrue(out["accepted"])
+        record = ingest.call_args.args[1]
+        metadata = ingest.call_args.kwargs["metadata"]
+        self.assertEqual(record["monetary_basis"], "constant_ves_end_period")
+        self.assertEqual(metadata["certified_basis_override_v5"]["declared_monetary_basis"], "nominal_ves")
+        self.assertEqual(metadata["certified_basis_override_v5"]["certifier"], "bvc")
+
+    def test_conflicting_certified_page_bases_fail_closed(self):
+        candidates = self._candidates()
+        candidates["total_assets"][0]["page_monetary_basis"] = "constant_ves_end_period"
+        candidates["equity"][0]["page_monetary_basis"] = "nominal_ves"
+        review = build_review_package(
+            "RST", candidates,
+            source_url="https://www.bolsadecaracas.com/rst-auditado/",
+            as_of="2025-06-30",
+        )
+        with patch("services.fundamental_review_v5.ingest_normalized_report") as ingest:
+            out = accept_reviewed_snapshot(
+                review,
+                {"total_assets": 0, "total_liabilities": 0, "equity": 0, "net_income": 0},
+                document_type="annual_audited", fiscal_period="FY2025", audited=True,
+                currency="VES", monetary_basis="nominal_ves",
+                hydrate_fx=False, require_fx=False,
+            )
+        self.assertFalse(out["accepted"])
+        self.assertEqual(out["error"], "certified_monetary_basis_conflict")
+        ingest.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
