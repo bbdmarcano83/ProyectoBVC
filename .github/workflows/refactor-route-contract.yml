@@ -31,6 +31,8 @@ jobs:
         run: python -m py_compile main.py scripts/route_inventory.py
       - name: Print route inventory
         run: python scripts/route_inventory.py
+      - name: Print stable route digest
+        run: python scripts/route_inventory.py --hash
       - name: Initialize ephemeral database schema
         run: |
           rm -f /tmp/caracasbull.db
