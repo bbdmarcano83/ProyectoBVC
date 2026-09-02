@@ -41,7 +41,9 @@ jobs:
         run: |
           test -n "$DATABASE_URL" || (echo "DATABASE_URL missing" && exit 2)
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
       - name: Parser and BVC adapter regression tests
         run: |
           python -m unittest tests.test_fundamental_pdf_parser_v5 -v
