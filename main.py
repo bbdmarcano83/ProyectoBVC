@@ -47,6 +47,7 @@ from app.routers.pwa import register_pwa_routes
 from app.routers.portfolio_import import register_portfolio_import_routes
 from app.routers.portfolio_pdf import register_portfolio_pdf_routes
 from app.routers.report_pdf import register_report_pdf_routes
+from app.routers.chat import register_primary_chat_routes, register_secondary_chat_routes
 from app.routers.history import register_history_routes
 from app.routers.comparator import register_comparator_routes
 from app.routers.islr import register_islr_routes
@@ -109,97 +110,7 @@ register_recovery_routes(app)
 
 
 # ── Chat Asistente ───────────────────────────────────────────────────────────────
-
-SYSTEM_PROMPT = """Eres el asistente virtual de Caracas Bull, una plataforma de INFORMACION y ANALISIS del mercado bursatil de Caracas (BVC).
-
-IMPORTANTE:
-- NO somos broker, NO realizamos operaciones bursatiles
-- NO damos asesoria de inversion ni recomendaciones para comprar/vender
-- Solo proporcionamos informacion y herramientas de analisis
-
-Puedes ayudar con:
-- Como usar las funciones de la app (pizarra, portafolio, alertas, watchlist, comparador, ISLR, historial)
-- Informacion general sobre la BVC y como funciona
-- Problemas tecnicos con la plataforma
-- Dudas sobre pagos y suscripciones (planes: Basico 1.5 USDT/mes, Pro 2.99 USDT/mes lanzamiento)
-- Como vincular Telegram para alertas
-- Como importar portafolio desde Excel/CSV
-
-Si el usuario tiene un problema urgente de pago o tecnico grave, dile que escribe "soporte" para notificar al equipo.
-
-Responde siempre en español, de forma amigable y concisa. Maximo 3 parrafos."""
-
-
-@app.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    return render("chat.html", {
-        "request": request, "usuario": usuario,
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
-    })
-
-
-@app.post("/chat")
-async def chat_api(request: Request, db: Session = Depends(get_db)):
-    import os
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return JSONResponse({"error": "no autorizado"}, status_code=401)
-
-    body = await request.json()
-    messages = body.get("messages", [])
-    necesita_soporte = body.get("necesita_soporte", False)
-
-    respuesta = ""
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if api_key:
-        try:
-            # Construir historial en formato Gemini
-            gemini_messages = []
-            for m in messages[-10:]:
-                role = "user" if m["role"] == "user" else "model"
-                gemini_messages.append({"role": role, "parts": [{"text": m["content"]}]})
-
-            async with httpx_client.AsyncClient(timeout=30.0) as client:
-                r = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                        "contents": gemini_messages,
-                        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.7},
-                    }
-                )
-                if r.status_code == 200:
-                    respuesta = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                else:
-                    print(f"[Gemini] Error {r.status_code}: {r.text[:200]}")
-                    respuesta = "Lo siento, tuve un problema técnico. Intenta de nuevo en un momento."
-        except Exception as e:
-            print(f"[Chat] Error: {e}")
-            respuesta = "Lo siento, no puedo responder en este momento. Escribe 'soporte' para contactar al equipo."
-    else:
-        respuesta = "El asistente no está configurado. Por favor contacta al soporte en soporte@caracasbull.com"
-
-    # Notificar por Telegram si necesita soporte humano
-    soporte_notificado = False
-    if necesita_soporte and usuario.telegram_chat_id:
-        from services.telegram import enviar_mensaje, TELEGRAM_TOKEN
-        import os
-        # Notificar al admin
-        admin_chat = os.environ.get("ADMIN_TELEGRAM_CHAT_ID", "")
-        if admin_chat:
-            from services.telegram import enviar_mensaje
-            await enviar_mensaje(admin_chat,
-                f"🆘 <b>Soporte requerido</b>\n"
-                f"Usuario: <b>{usuario.nombre}</b> ({usuario.email})\n"
-                f"Mensaje: {messages[-1]['content'] if messages else 'N/A'}"
-            )
-            soporte_notificado = True
-
-    return JSONResponse({"respuesta": respuesta, "soporte_notificado": soporte_notificado})
+register_primary_chat_routes(app)
 
 
 # ── Reporte PDF ──────────────────────────────────────────────────────────────────
@@ -223,97 +134,7 @@ register_pwa_routes(app)
 
 
 # ── Chat Asistente ───────────────────────────────────────────────────────────────
-
-SYSTEM_PROMPT = """Eres el asistente virtual de Caracas Bull, una plataforma de INFORMACION y ANALISIS del mercado bursatil de Caracas (BVC).
-
-IMPORTANTE:
-- NO somos broker, NO realizamos operaciones bursatiles
-- NO damos asesoria de inversion ni recomendaciones para comprar/vender
-- Solo proporcionamos informacion y herramientas de analisis
-
-Puedes ayudar con:
-- Como usar las funciones de la app (pizarra, portafolio, alertas, watchlist, comparador, ISLR, historial)
-- Informacion general sobre la BVC y como funciona
-- Problemas tecnicos con la plataforma
-- Dudas sobre pagos y suscripciones (planes: Basico 1.5 USDT/mes, Pro 2.99 USDT/mes lanzamiento)
-- Como vincular Telegram para alertas
-- Como importar portafolio desde Excel/CSV
-
-Si el usuario tiene un problema urgente de pago o tecnico grave, dile que escribe "soporte" para notificar al equipo.
-
-Responde siempre en español, de forma amigable y concisa. Maximo 3 parrafos."""
-
-
-@app.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    return render("chat.html", {
-        "request": request, "usuario": usuario,
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
-    })
-
-
-@app.post("/chat")
-async def chat_api(request: Request, db: Session = Depends(get_db)):
-    import os
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return JSONResponse({"error": "no autorizado"}, status_code=401)
-
-    body = await request.json()
-    messages = body.get("messages", [])
-    necesita_soporte = body.get("necesita_soporte", False)
-
-    respuesta = ""
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if api_key:
-        try:
-            # Construir historial en formato Gemini
-            gemini_messages = []
-            for m in messages[-10:]:
-                role = "user" if m["role"] == "user" else "model"
-                gemini_messages.append({"role": role, "parts": [{"text": m["content"]}]})
-
-            async with httpx_client.AsyncClient(timeout=30.0) as client:
-                r = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                        "contents": gemini_messages,
-                        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.7},
-                    }
-                )
-                if r.status_code == 200:
-                    respuesta = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                else:
-                    print(f"[Gemini] Error {r.status_code}: {r.text[:200]}")
-                    respuesta = "Lo siento, tuve un problema técnico. Intenta de nuevo en un momento."
-        except Exception as e:
-            print(f"[Chat] Error: {e}")
-            respuesta = "Lo siento, no puedo responder en este momento. Escribe 'soporte' para contactar al equipo."
-    else:
-        respuesta = "El asistente no está configurado. Por favor contacta al soporte en soporte@caracasbull.com"
-
-    # Notificar por Telegram si necesita soporte humano
-    soporte_notificado = False
-    if necesita_soporte and usuario.telegram_chat_id:
-        from services.telegram import enviar_mensaje, TELEGRAM_TOKEN
-        import os
-        # Notificar al admin
-        admin_chat = os.environ.get("ADMIN_TELEGRAM_CHAT_ID", "")
-        if admin_chat:
-            from services.telegram import enviar_mensaje
-            await enviar_mensaje(admin_chat,
-                f"🆘 <b>Soporte requerido</b>\n"
-                f"Usuario: <b>{usuario.nombre}</b> ({usuario.email})\n"
-                f"Mensaje: {messages[-1]['content'] if messages else 'N/A'}"
-            )
-            soporte_notificado = True
-
-    return JSONResponse({"respuesta": respuesta, "soporte_notificado": soporte_notificado})
+register_secondary_chat_routes(app)
 
 
 # ── Reporte PDF ──────────────────────────────────────────────────────────────────
