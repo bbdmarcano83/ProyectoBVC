@@ -41,6 +41,9 @@ from app.routers.detail import register_detail_routes
 from app.routers.api_misc import register_misc_api_routes
 from app.routers.recovery import register_recovery_routes
 from app.routers.portfolio import register_portfolio_routes
+from app.routers.watchlist import register_watchlist_routes
+from app.routers.admin import register_admin_routes
+from app.routers.pwa import register_pwa_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -478,49 +481,7 @@ async def descargar_pdf(request: Request, db: Session = Depends(get_db)):
 
 
 # ── Watchlist ────────────────────────────────────────────────────────────────────
-
-@app.get("/watchlist", response_class=HTMLResponse)
-async def ver_watchlist(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    simbolos_wl = [w.simbolo for w in usuario.watchlist]
-    datos_bolsa = await obtener_datos_bvc()
-    items = [i for i in datos_bolsa if i.get("COD_SIMB") in simbolos_wl]
-    return render("watchlist.html", {
-        "request": request, "usuario": usuario,
-        "items": items, "dias": dias_restantes(usuario),
-        "mercado": mercado_abierto(), "active": "",
-    })
-
-@app.post("/watchlist/agregar")
-async def agregar_watchlist(request: Request, simbolo: str = Form(...), db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return JSONResponse({"ok": False}, status_code=401)
-    existe = db.query(Watchlist).filter(
-        Watchlist.usuario_id == usuario.id,
-        Watchlist.simbolo == simbolo.upper()
-    ).first()
-    if not existe:
-        db.add(Watchlist(usuario_id=usuario.id, simbolo=simbolo.upper()))
-        db.commit()
-    return JSONResponse({"ok": True})
-
-@app.post("/watchlist/eliminar")
-async def eliminar_watchlist(request: Request, simbolo: str = Form(...), db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    item = db.query(Watchlist).filter(
-        Watchlist.usuario_id == usuario.id,
-        Watchlist.simbolo == simbolo.upper()
-    ).first()
-    if item:
-        db.delete(item)
-        db.commit()
-    ref = request.headers.get("referer", "/watchlist")
-    return RedirectResponse(url=ref, status_code=303)
+register_watchlist_routes(app)
 
 
 # ── Importar portafolio ───────────────────────────────────────────────────────
@@ -600,86 +561,11 @@ async def importar_confirmar(request: Request, datos: str = Form(...), db: Sessi
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
-
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_panel(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario or not usuario.es_admin:
-        return RedirectResponse(url="/", status_code=302)
-    from database import Usuario as UsuarioModel, Suscripcion
-    usuarios = db.query(UsuarioModel).order_by(UsuarioModel.creado_en.desc()).all()
-    total = len(usuarios)
-    activas   = sum(1 for u in usuarios if u.suscripcion and u.suscripcion.activa)
-    plan_pro  = sum(1 for u in usuarios if u.suscripcion and u.suscripcion.plan == "pro")
-    plan_bas  = sum(1 for u in usuarios if u.suscripcion and u.suscripcion.plan == "basico")
-    trial     = sum(1 for u in usuarios if u.suscripcion and u.suscripcion.plan == "trial")
-    con_tg    = sum(1 for u in usuarios if u.telegram_chat_id)
-    return render("admin.html", {
-        "request": request, "usuario": usuario,
-        "usuarios": usuarios,
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(), "active": "",
-        "stats": {
-            "total_usuarios": total, "activas": activas,
-            "plan_pro": plan_pro, "plan_basico": plan_bas,
-            "trial": trial, "con_telegram": con_tg,
-        }
-    })
-
-@app.post("/admin/activar")
-async def admin_activar(
-    request: Request,
-    usuario_id: int = Form(...),
-    plan: str = Form("pro"),
-    db: Session = Depends(get_db),
-):
-    admin = get_usuario_actual(request, db)
-    if not admin or not admin.es_admin:
-        return RedirectResponse(url="/", status_code=302)
-    from database import Suscripcion
-    from datetime import datetime, timedelta
-    sus = db.query(Suscripcion).filter(Suscripcion.usuario_id == usuario_id).first()
-    if sus:
-        sus.plan = plan
-        sus.activa = True
-        sus.fecha_vence = datetime.utcnow() + timedelta(days=30)
-    db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
-
-@app.post("/admin/desactivar")
-async def admin_desactivar(request: Request, usuario_id: int = Form(...), db: Session = Depends(get_db)):
-    admin = get_usuario_actual(request, db)
-    if not admin or not admin.es_admin:
-        return RedirectResponse(url="/", status_code=302)
-    from database import Suscripcion
-    sus = db.query(Suscripcion).filter(Suscripcion.usuario_id == usuario_id).first()
-    if sus:
-        sus.activa = False
-        db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+register_admin_routes(app)
 
 
 # ── PWA ───────────────────────────────────────────────────────────────────────
-
-@app.get("/favicon.ico")
-async def favicon_ico():
-    from fastapi.responses import FileResponse
-    return FileResponse("static/logo.png", media_type="image/png")
-
-@app.get("/favicon.png")
-async def favicon_png():
-    from fastapi.responses import FileResponse
-    return FileResponse("static/logo.png", media_type="image/png")
-
-
-@app.get("/manifest.json")
-async def manifest():
-    from fastapi.responses import FileResponse
-    return FileResponse("static/manifest.json", media_type="application/manifest+json")
-
-@app.get("/sw.js")
-async def service_worker():
-    from fastapi.responses import FileResponse
-    return FileResponse("static/sw.js", media_type="application/javascript")
+register_pwa_routes(app)
 
 
 # ── Chat Asistente ───────────────────────────────────────────────────────────────
