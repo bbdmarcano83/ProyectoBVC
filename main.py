@@ -32,6 +32,7 @@ from app.factory import create_app
 from app.templating import render
 from app.routers.auth import register_auth_routes
 from app.routers.subscription import register_subscription_routes
+from app.routers.market import register_market_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -48,31 +49,8 @@ register_auth_routes(app)
 register_subscription_routes(app)
 
 
-# ── Pizarra ───────────────────────────────────────────────────────────────────
-
-@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
-async def index(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    return render("landing.html", {"request": request, "usuario": usuario})
-
-
-@app.get("/pizarra", response_class=HTMLResponse)
-async def pizarra(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/", status_code=302)
-    if not suscripcion_activa(usuario):
-        return RedirectResponse(url="/suscripcion", status_code=302)
-
-    datos = await obtener_datos_bvc()
-    return render("pizarra.html", {
-        "request": request,
-        "datos": datos,
-        "active": "pizarra",
-        "usuario": usuario,
-        "dias": dias_restantes(usuario),
-        "mercado": mercado_abierto(),
-    })
+# ── Inicio / Pizarra ───────────────────────────────────────────────────────────
+register_market_routes(app)
 
 
 # ── Scoring (Rotación Sectorial) ──────────────────────────────────────────────
