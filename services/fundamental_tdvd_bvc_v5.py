@@ -24,7 +24,16 @@ from services.fundamental_bvc_image_parser_v5 import (
 )
 
 TDVD_CERTIFIED_POST_ID = 32881
-_FAMILIES = ("gray2x", "bw2x", "gray3x")
+# Familias realmente distintas de preprocesamiento. El consenso exige al menos
+# dos familias, no dos pasadas del mismo bitmap.
+_FAMILIES = (
+    "gray2x",
+    "gray2x_soft",
+    "bw2x_160",
+    "bw2x_173",
+    "bw2x_190",
+    "gray3x",
+)
 _REQUIRED_FIELDS = ("total_assets", "total_liabilities", "equity", "net_income")
 
 
@@ -59,20 +68,15 @@ def _extract_current_integer(tail: str) -> int | None:
     """Extrae sólo el primer importe FY2025 con una forma OCR permitida.
 
     Los patrones están anclados al inicio y terminan antes de la columna
-    comparativa. Un grupo de cuatro dígitos (p.ej. ``831.044.0072``) queda
-    rechazado; nunca se busca una cifra posterior en la misma fila.
+    comparativa. Un grupo de cuatro dígitos queda rechazado; nunca se busca una
+    cifra posterior en la misma fila.
     """
     text = str(tail or "")
     patterns = (
-        # Cuatro grupos de miles: 227.463.132.627
         r"^\s*(\()?\s*(\d{1,3}(?:\s*[.,]\s*\d{3}){3})(\))?(?![.,\d])",
-        # Un único separador perdido al final: 23.483.735502
         r"^\s*(\()?\s*(\d{1,3}\s*[.,]\s*\d{3}\s*[.,]\s*\d{6})(\))?(?![.,\d])",
-        # OCR separó el primer grupo: 331 .044,072 o 331 044,072
         r"^\s*(\()?\s*(\d{1,3}\s+[.,]?\s*\d{3}\s*[.,]\s*\d{3})(\))?(?![.,\d])",
-        # Tres grupos normales: 331.044.072
         r"^\s*(\()?\s*(\d{1,3}(?:\s*[.,]\s*\d{3}){2})(\))?(?![.,\d])",
-        # Importe compacto sin separadores.
         r"^\s*(\()?\s*(\d{9,12})(\))?(?![.,\d])",
     )
     for pattern in patterns:
@@ -103,9 +107,14 @@ def _profile_image(data: bytes, family: str, path: Path) -> None:
             image = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
             image = ImageOps.autocontrast(image, cutoff=8)
             image = image.filter(ImageFilter.SHARPEN)
-        elif family == "bw2x":
+        elif family == "gray2x_soft":
             image = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
-            image = image.point(lambda p: 255 if p >= 173 else 0)
+            image = ImageOps.autocontrast(image, cutoff=3)
+        elif family.startswith("bw2x_"):
+            threshold = int(family.rsplit("_", 1)[1])
+            image = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
+            image = ImageOps.autocontrast(image, cutoff=5)
+            image = image.point(lambda p: 255 if p >= threshold else 0)
         elif family == "gray3x":
             image = image.resize((image.width * 3, image.height * 3), Image.Resampling.LANCZOS)
             image = ImageOps.autocontrast(image, cutoff=10)
@@ -255,7 +264,7 @@ def fetch_and_parse_tdvd_certified_bvc_post(post_id: int = TDVD_CERTIFIED_POST_I
         **base_meta,
         "valid": True,
         "reason": None,
-        "ocr_profile": "tdvd_psm4_multi_family_consensus_v1",
+        "ocr_profile": "tdvd_psm4_multi_family_consensus_v2",
         "ocr_consensus": consensus,
         "accounting_equation_error": 0,
     }
