@@ -53,7 +53,11 @@ VERIFIED_ANNUAL_FX_FALLBACK = {
 # publicación anterior. Se usan únicamente si la fuente primaria no cubre la
 # fecha solicitada; no se insertan como si fueran datos BCV oficiales.
 VERIFIED_POINT_FX_FALLBACK = {
+    "2022-08-31": {"close": 7.8922, "rate_date": "2022-08-31"},
     "2022-09-30": {"close": 8.2036, "rate_date": "2022-09-30"},
+    "2022-10-31": {"close": 8.5918, "rate_date": "2022-10-31"},
+    "2022-11-30": {"close": 11.079, "rate_date": "2022-11-30"},
+    "2023-02-28": {"close": 24.361, "rate_date": "2023-02-28"},
     "2023-09-30": {"close": 34.425, "rate_date": "2023-09-29"},
     "2024-09-30": {"close": 36.923, "rate_date": "2024-09-30"},
 }
