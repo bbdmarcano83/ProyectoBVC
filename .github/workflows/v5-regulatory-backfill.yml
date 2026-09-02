@@ -8,6 +8,7 @@ on:
       - "scripts/regulatory_backfill_v5.py"
       - "scripts/audit_fundamental_documents_v5.py"
       - "tests/test_regulatory_fundamental_sources_v5.py"
+      - "tests/test_regulatory_audit_union_v5.py"
       - ".github/workflows/v5-regulatory-backfill.yml"
   workflow_dispatch:
 
@@ -40,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Run regulatory source tests
-        run: python -m unittest tests.test_regulatory_fundamental_sources_v5
+        run: python -m unittest tests.test_regulatory_fundamental_sources_v5 tests.test_regulatory_audit_union_v5
       - name: Persist verified regulatory fundamentals
         run: python scripts/regulatory_backfill_v5.py
       - name: Audit combined certified fundamental universe
