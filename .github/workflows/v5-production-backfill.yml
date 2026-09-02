@@ -12,6 +12,7 @@ on:
       - "services/fundamental_autoreview_v5.py"
       - "services/fundamental_backfill_manifest_v5.py"
       - "services/fundamental_pilots_v5.py"
+      - "services/crecepymes_history_v5.py"
       - "services/fx_history_v5.py"
       - "services/fundamental_history_v5.py"
       - "services/fundamental_trend_v5.py"
@@ -120,10 +121,17 @@ jobs:
               "MVZ.A": {
                   "industry": "financial",
                   "dates": ["2022-12-31", "2023-12-31", "2024-12-31", "2025-12-31"],
+                  "min_periods": 4,
               },
               "SVS": {
                   "industry": "non_financial",
                   "dates": ["2022-09-30", "2023-09-30", "2024-09-30", "2025-09-30"],
+                  "min_periods": 4,
+              },
+              "ICP.B": {
+                  "industry": "investment_vehicle",
+                  "dates": ["2022-12-31", "2024-12-31", "2025-12-31"],
+                  "min_periods": 3,
               },
           }
 
@@ -131,21 +139,24 @@ jobs:
               row = fundamentals.get(symbol) if isinstance(fundamentals, dict) else None
               if row:
                   print(f"Fundamental snapshot available: {symbol} as_of={row.get('as_of')}")
-                  if symbol in expected_history:
-                      expected = expected_history[symbol]
-                      periods = int(row.get("history_periods_usd") or 0)
-                      dates = [str(x) for x in (row.get("history_dates_usd") or [])]
-                      print(f"{symbol} annual USD history periods: {periods}")
-                      print(f"{symbol} annual USD history dates: {dates}")
-                      trend = compute_fundamental_trend_from_series(row, expected["industry"])
-                      print(f"{symbol} Fundamental Trend: {trend}")
-                      if periods < 4:
-                          raise SystemExit(f"{symbol} expected >=4 annual USD periods, got {periods}")
-                      missing_dates = [day for day in expected["dates"] if day not in dates]
-                      if missing_dates:
-                          raise SystemExit(f"{symbol} missing annual USD dates: {missing_dates}")
-                      if symbol == "MVZ.A" and any(str(day).startswith("2026-06") for day in dates):
-                          raise SystemExit("Quarterly 2026-Q2 leaked into annual history")
+                  expected = expected_history[symbol]
+                  periods = int(row.get("history_periods_usd") or 0)
+                  dates = [str(x) for x in (row.get("history_dates_usd") or [])]
+                  print(f"{symbol} annual USD history periods: {periods}")
+                  print(f"{symbol} annual USD history dates: {dates}")
+                  trend = compute_fundamental_trend_from_series(row, expected["industry"])
+                  print(f"{symbol} Fundamental Trend: {trend}")
+                  if periods < expected["min_periods"]:
+                      raise SystemExit(
+                          f"{symbol} expected >={expected['min_periods']} annual USD periods, got {periods}"
+                      )
+                  missing_dates = [day for day in expected["dates"] if day not in dates]
+                  if missing_dates:
+                      raise SystemExit(f"{symbol} missing annual USD dates: {missing_dates}")
+                  if symbol == "MVZ.A" and any(str(day).startswith("2026-06") for day in dates):
+                      raise SystemExit("Quarterly 2026-Q2 leaked into annual history")
+                  if symbol == "ICP.B" and "2023-12-31" in dates:
+                      print("ICP.B FY2023 present from an independently persisted source; not required by verified-pilot gate")
               else:
                   missing.append(symbol)
                   print(f"Fundamental snapshot missing: {symbol}")
