@@ -116,20 +116,35 @@ jobs:
 
           fundamentals, fundamental_meta = load_latest_validated()
           missing = []
+          expected_history = {
+              "MVZ.A": {
+                  "industry": "financial",
+                  "dates": ["2022-12-31", "2023-12-31", "2024-12-31", "2025-12-31"],
+              },
+              "SVS": {
+                  "industry": "non_financial",
+                  "dates": ["2022-09-30", "2023-09-30", "2024-09-30", "2025-09-30"],
+              },
+          }
+
           for symbol in ("MVZ.A", "SVS", "ICP.B"):
               row = fundamentals.get(symbol) if isinstance(fundamentals, dict) else None
               if row:
                   print(f"Fundamental snapshot available: {symbol} as_of={row.get('as_of')}")
-                  if symbol == "MVZ.A":
+                  if symbol in expected_history:
+                      expected = expected_history[symbol]
                       periods = int(row.get("history_periods_usd") or 0)
-                      dates = row.get("history_dates_usd") or []
-                      print(f"MVZ.A annual USD history periods: {periods}")
-                      print(f"MVZ.A annual USD history dates: {dates}")
-                      trend = compute_fundamental_trend_from_series(row, "financial")
-                      print(f"MVZ.A Fundamental Trend: {trend}")
+                      dates = [str(x) for x in (row.get("history_dates_usd") or [])]
+                      print(f"{symbol} annual USD history periods: {periods}")
+                      print(f"{symbol} annual USD history dates: {dates}")
+                      trend = compute_fundamental_trend_from_series(row, expected["industry"])
+                      print(f"{symbol} Fundamental Trend: {trend}")
                       if periods < 4:
-                          raise SystemExit(f"MVZ.A expected >=4 annual USD periods, got {periods}")
-                      if any(str(day).startswith("2026-06") for day in dates):
+                          raise SystemExit(f"{symbol} expected >=4 annual USD periods, got {periods}")
+                      missing_dates = [day for day in expected["dates"] if day not in dates]
+                      if missing_dates:
+                          raise SystemExit(f"{symbol} missing annual USD dates: {missing_dates}")
+                      if symbol == "MVZ.A" and any(str(day).startswith("2026-06") for day in dates):
                           raise SystemExit("Quarterly 2026-Q2 leaked into annual history")
               else:
                   missing.append(symbol)
