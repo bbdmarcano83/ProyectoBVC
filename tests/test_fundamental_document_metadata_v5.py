@@ -1,6 +1,9 @@
 import unittest
 
-from services.fundamental_document_metadata_v5 import infer_document_metadata_from_pages
+from services.fundamental_document_metadata_v5 import (
+    _official_host_allowed,
+    infer_document_metadata_from_pages,
+)
 
 
 class FundamentalDocumentMetadataV5Tests(unittest.TestCase):
@@ -55,6 +58,14 @@ class FundamentalDocumentMetadataV5Tests(unittest.TestCase):
         ])
         self.assertNotIn("published_at", meta)
         self.assertIn("published_at", meta["note"])
+
+    def test_registered_issuer_document_cdn_is_allowed(self):
+        url = (
+            "https://d3q4nr72nuserl.cloudfront.net/docs/default-source/documents/"
+            "finalcial-reports/annual-reports/diciembre-2025.pdf"
+        )
+        self.assertTrue(_official_host_allowed("BNC", url))
+        self.assertFalse(_official_host_allowed("BPV", url))
 
 
 if __name__ == "__main__":

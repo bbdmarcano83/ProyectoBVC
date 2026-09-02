@@ -17,12 +17,11 @@ from io import BytesIO
 import re
 import unicodedata
 from typing import Any, Iterable
-from urllib.parse import urlparse
 
 import httpx
 from pypdf import PdfReader
 
-from services.fundamental_sources_v5 import get_source
+from services.fundamental_sources_v5 import source_url_allowed
 
 _MONTHS = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
@@ -240,14 +239,11 @@ def extract_document_metadata_from_pdf_bytes(data: bytes, max_pages: int = 12) -
 
 
 def _official_host_allowed(symbol: str, url: str) -> bool:
-    source = get_source(symbol)
-    if not source:
-        return False
-    target = (urlparse(str(url or "")).hostname or "").lower().strip(".")
-    registered = (urlparse(str(source.get("primary_url") or "")).hostname or "").lower().strip(".")
-    if not target or not registered:
-        return False
-    return target == registered or target.endswith("." + registered) or registered.endswith("." + target)
+    # Reuse the central allowlist so issuer-declared document CDNs are treated
+    # exactly like the primary host. The previous duplicate check ignored
+    # ``document_hosts`` and blocked certified BNC/Bancaribe/INVACA PDFs after
+    # the parser had already accepted those same URLs.
+    return source_url_allowed(symbol, url)
 
 
 def fetch_official_pdf_document_metadata(symbol: str, url: str, timeout: float = 20.0) -> dict[str, Any]:
