@@ -28,9 +28,11 @@ from services.pdf_reporte import generar_reporte
 from services.pdf_reporte import generar_reporte
 from services.email import email_recuperar_password, email_bienvenida
 from app.startup import run_startup
+from app.factory import create_app
+from app.templating import render
 from database import ActivoPortafolio, Watchlist
 
-app = FastAPI(title="Caracas Bull")
+app = create_app()
 
 # ── Init DB al arrancar ────────────────────────────────────────────────────────
 @app.on_event("startup")
@@ -38,25 +40,6 @@ async def startup():
     # `registrar_webhook_telegram` se resuelve al ejecutar startup, después de
     # que el módulo completo haya terminado de importarse.
     await run_startup(registrar_webhook_telegram)
-
-# ── Archivos estáticos ─────────────────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# ── Jinja2 ────────────────────────────────────────────────────────────────────
-env = Environment(
-    loader=FileSystemLoader("templates"),
-    autoescape=select_autoescape(["html"]),
-    auto_reload=True,
-    cache_size=0,
-)
-env.filters["format_bs"] = formatear_bs
-env.filters["format_entero"] = formatear_entero
-env.filters["format_millones"] = formatear_millones
-
-def render(template_name: str, context: dict) -> HTMLResponse:
-    t = env.get_template(template_name)
-    return HTMLResponse(t.render(**context))
-
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
