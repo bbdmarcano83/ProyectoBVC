@@ -56,26 +56,30 @@ def _tail_for_field(line: str, field: str) -> str | None:
 
 
 def _extract_current_integer(tail: str) -> int | None:
-    """Extrae sólo el primer importe corriente si el patrón es inequívoco.
+    """Extrae exclusivamente el primer importe tras la etiqueta.
 
-    Acepta agrupación correcta, compacto OCR, separación por espacio/puntuación y
-    un único separador perdido entre dos grupos de miles. Rechaza grupos de cuatro
-    dígitos como ``831.044.0072`` para no convertir errores OCR en cifras.
+    Si el primer importe está corrupto, la fila se rechaza; jamás se avanza a la
+    columna comparativa siguiente. Admite agrupación correcta, compacto OCR,
+    espacios/puntuación entre grupos y un separador perdido entre miles.
     """
     text = str(tail or "")
     patterns = (
-        r"(?<!\d)(\(?\s*\d{1,3}(?:[.,]\d{3}){3}\s*\)?)(?!\d)",
-        r"(?<!\d)(\(?\s*\d{1,3}[.,]\d{3}[.,]\d{6}\s*\)?)(?!\d)",
-        r"(?<!\d)(\(?\s*\d{1,3}\s*[.,]\s*\d{3}\s*[.,]\s*\d{3}\s*\)?)(?!\d)",
-        r"(?<!\d)(\(?\s*\d{1,3}\s+\d{3}[.,]\d{3}\s*\)?)(?!\d)",
-        r"(?<!\d)(\(?\s*\d{1,3}(?:[.,]\d{3}){2}\s*\)?)(?!\d)",
-        r"(?<!\d)(\(?\s*\d{9,12}\s*\)?)(?!\d)",
+        r"^\s*(\(?\s*\d{1,3}(?:[.,]\d{3}){3}\s*\)?)",
+        r"^\s*(\(?\s*\d{1,3}[.,]\d{3}[.,]\d{6}\s*\)?)",
+        r"^\s*(\(?\s*\d{1,3}\s*[.,]\s*\d{3}\s*[.,]\s*\d{3}\s*\)?)",
+        r"^\s*(\(?\s*\d{1,3}\s+\d{3}[.,]\d{3}\s*\)?)",
+        r"^\s*(\(?\s*\d{1,3}(?:[.,]\d{3}){2}\s*\)?)",
+        r"^\s*(\(?\s*\d{9,12}\s*\)?)",
     )
     for pattern in patterns:
-        match = re.search(pattern, text)
+        match = re.match(pattern, text)
         if not match:
             continue
         token = match.group(1)
+        # Evita aceptar un prefijo válido de un grupo OCR de cuatro dígitos.
+        remainder = text[match.end():]
+        if remainder and remainder[0].isdigit():
+            continue
         negative = "(" in token and ")" in token
         digits = re.sub(r"\D", "", token)
         if not (9 <= len(digits) <= 12):
