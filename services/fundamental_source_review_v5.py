@@ -6,6 +6,9 @@ ambigüedad del parser genérico usando estructura conocida del documento oficia
   balance principal primero y resultado neto en la sección inmediata.
 - CrecePymes: los estados primarios en bolívares constantes aparecen antes del
   Anexo 18 de estados nominales; se elige la primera ecuación contable coherente.
+- CANTV/TDV.D: el bundle BVC certificado divide balance entre dos páginas y el
+  resultado neto aparece en la tercera; sólo se acepta con aliases exactos,
+  columna vigente, páginas contiguas y ecuación contable exacta.
 
 Si el contexto sigue siendo ambiguo, se devuelve None y el registro permanece
 rechazado/fail-closed.
@@ -14,6 +17,8 @@ from __future__ import annotations
 
 from itertools import product
 from math import isfinite
+import re
+import unicodedata
 
 
 def _num(value):
@@ -29,6 +34,12 @@ def _idx(option: dict, fallback: int) -> int:
         return int(option.get("index", fallback))
     except (TypeError, ValueError):
         return fallback
+
+
+def _norm(value) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
 
 
 def _balance_matches(fields: dict, preferred_column: int | None, tolerance_pct: float = 1.0) -> list[dict]:
@@ -107,17 +118,85 @@ def _unique_income_near_balance(fields: dict, *, balance_page: int, preferred_co
     return first[0][1]
 
 
+def _tdvd_exact_option(fields: dict, field: str, aliases: set[str]) -> tuple[int, dict] | None:
+    matches = []
+    for fallback, option in enumerate(fields.get(field) or []):
+        if not isinstance(option, dict):
+            continue
+        if _norm(option.get("alias")) not in aliases:
+            continue
+        if option.get("column_index") != 0:
+            continue
+        if option.get("context_quality") != "accounting_row":
+            continue
+        value = _num(option.get("value"))
+        page = option.get("page")
+        if value is None or page is None:
+            continue
+        try:
+            page = int(page)
+        except (TypeError, ValueError):
+            continue
+        matches.append((_idx(option, fallback), {**option, "page": page, "value": value}))
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _propose_tdvd(review: dict, preferred: int | None) -> dict | None:
+    if preferred != 0:
+        return None
+    fields = review.get("fields") or {}
+    assets = _tdvd_exact_option(fields, "total_assets", {"total activo"})
+    liabilities = _tdvd_exact_option(fields, "total_liabilities", {"total pasivo"})
+    equity = _tdvd_exact_option(fields, "equity", {"total patrimonio"})
+    income = _tdvd_exact_option(fields, "net_income", {"utilidad perdida neta"})
+    if not all((assets, liabilities, equity, income)):
+        return None
+
+    ai, arow = assets; li, lrow = liabilities; ei, erow = equity; ni, nrow = income
+    if not (arow["page"] == erow["page"] and lrow["page"] == arow["page"] + 1 and nrow["page"] == lrow["page"] + 1):
+        return None
+    a, l, e = arow["value"], lrow["value"], erow["value"]
+    if abs(a) < 1e-12:
+        return None
+    error_pct = abs(a - (l + e)) / abs(a) * 100.0
+    if error_pct > 1e-9:
+        return None
+    selections = {
+        "total_assets": ai,
+        "total_liabilities": li,
+        "equity": ei,
+        "net_income": ni,
+    }
+    required = {"total_assets", "equity", "net_income"}
+    return {
+        "valid": True,
+        "selections": selections,
+        "required": sorted(required),
+        "missing_required": [],
+        "reason": None,
+        "method": "tdvd_bvc_adjacent_pages_consensus_ocr",
+        "preferred_column": preferred,
+        "balance_page": arow["page"],
+        "accounting_error_pct": round(float(error_pct), 12),
+    }
+
+
 def propose_issuer_specific(review: dict) -> dict | None:
     """Devuelve selecciones específicas sólo si el contexto queda inequívoco."""
     symbol = str(review.get("symbol") or "").upper().strip()
-    if symbol not in {"MVZ.A", "ICP.B"}:
-        return None
     fields = review.get("fields") or {}
     preferred = review.get("preferred_column")
     try:
         preferred = int(preferred) if preferred is not None else None
     except (TypeError, ValueError):
         preferred = None
+
+    if symbol == "TDV.D":
+        return _propose_tdvd(review, preferred)
+    if symbol not in {"MVZ.A", "ICP.B"}:
+        return None
 
     balance = _unique_on_earliest_page(_balance_matches(fields, preferred))
     if not balance:
