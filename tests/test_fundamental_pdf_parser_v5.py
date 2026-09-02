@@ -20,6 +20,24 @@ class FundamentalPdfParserV5Tests(unittest.TestCase):
         self.assertAlmostEqual(out["net_income"][0]["value"], 85400.50)
         self.assertTrue(out["equity"][0]["evidence"])
 
+    def test_comparative_columns_are_not_concatenated(self):
+        out = extract_candidates_from_pages([
+            "Total pasivo corriente 348.224.455 466.175.472\n"
+            "Total patrimonio de los accionistas 4.100.000.000 3.900.000.000"
+        ])
+        liabilities = out["total_liabilities"]
+        self.assertEqual(liabilities[0]["value"], 348224455.0)
+        self.assertEqual(liabilities[1]["value"], 466175472.0)
+        self.assertEqual(liabilities[0]["column_index"], 0)
+        self.assertEqual(liabilities[1]["column_index"], 1)
+        self.assertEqual(liabilities[0]["context_quality"], "accounting_row")
+        self.assertLess(liabilities[0]["value"], 1e12)
+
+    def test_ocr_space_after_thousands_dot_is_repaired(self):
+        out = extract_candidates_from_pages(["Resultado neto (404. 499.712) (346.028.278)"])
+        self.assertEqual(out["net_income"][0]["value"], -404499712.0)
+        self.assertEqual(out["net_income"][1]["value"], -346028278.0)
+
     def test_source_document_sha256_fingerprints_exact_bytes(self):
         raw = b"%PDF-1.4\nCaracasBull fixture\n"
         self.assertEqual(source_document_sha256(raw), hashlib.sha256(raw).hexdigest())
