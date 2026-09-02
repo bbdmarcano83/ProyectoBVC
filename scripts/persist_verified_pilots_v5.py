@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapshot, engine
+from services.crecepymes_history_v5 import CRECEPYMES_HISTORICAL_PILOTS
 from services.fundamental_collector_v5 import ingest_normalized_report
 from services.fundamental_pilots_v5 import HISTORICAL_PILOTS, PILOTS
 
@@ -48,6 +49,12 @@ def _ingest(symbol: str, pilot: dict, *, historical: bool) -> dict:
     )
 
 
+def _historical_series() -> dict[str, list[dict]]:
+    merged = {symbol: list(rows) for symbol, rows in HISTORICAL_PILOTS.items()}
+    merged.setdefault("ICP.B", []).extend(CRECEPYMES_HISTORICAL_PILOTS)
+    return merged
+
+
 def persist_verified_pilots() -> dict:
     if DB_PERSISTENCE_MODE != "external":
         raise RuntimeError("external_database_required_for_verified_pilots")
@@ -62,7 +69,7 @@ def persist_verified_pilots() -> dict:
             "result": _ingest(symbol, pilot, historical=False),
         })
 
-    for symbol, histories in HISTORICAL_PILOTS.items():
+    for symbol, histories in _historical_series().items():
         for pilot in histories:
             rows.append({
                 "symbol": symbol,
