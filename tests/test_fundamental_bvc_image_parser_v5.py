@@ -1,10 +1,25 @@
 import unittest
 from unittest.mock import patch
 
-from services.fundamental_bvc_image_parser_v5 import _bundle_sha256, _ocr_image, extract_media_ids
+from services.fundamental_bvc_image_parser_v5 import (
+    _bundle_sha256,
+    _is_certified_bvc_url,
+    _ocr_image,
+    extract_media_ids,
+)
 
 
 class FundamentalBvcImageParserV5Tests(unittest.TestCase):
+    def test_bvc_authority_does_not_require_issuer_host_registration(self):
+        self.assertTrue(_is_certified_bvc_url(
+            "EFE",
+            "https://www.bolsadecaracas.com/wp-json/wp/v2/posts/24445",
+        ))
+        self.assertFalse(_is_certified_bvc_url(
+            "EFE",
+            "https://empresaspolar.com/estado-financiero.jpg",
+        ))
+
     def test_extracts_stable_wordpress_media_ids(self):
         html = '''
         <img class="wp-image-29953 size-large" src="a.jpg">
