@@ -9,8 +9,8 @@ EXPECTED_ROUTE_DIGEST = "320f805508f4c2be6210ed8a40e77e610b1b2a5b1dfd5653c20226a
 
 class RouteSurfaceContractTests(unittest.TestCase):
     def test_refactor_preserves_exact_http_surface(self):
-        # Structural extraction may move handlers across modules, but the
-        # original public method/path/name surface must remain exact.
+        # Structural extraction, including Bitácora, may move handlers across
+        # modules; method/path/name must remain identical to the baseline.
         self.assertEqual(digest(main.app), EXPECTED_ROUTE_DIGEST)
 
 
