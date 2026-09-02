@@ -31,5 +31,14 @@ jobs:
         run: python -m py_compile main.py scripts/route_inventory.py
       - name: Print route inventory
         run: python scripts/route_inventory.py
+      - name: Initialize ephemeral database schema
+        run: |
+          rm -f /tmp/caracasbull.db
+          python - <<'PY'
+          from database import init_db, DB_PERSISTENCE_MODE
+          init_db()
+          assert DB_PERSISTENCE_MODE == "ephemeral"
+          print("ephemeral DB schema ok")
+          PY
       - name: Run existing contract suite
         run: python -m unittest discover -s tests -p "test_*.py" -v
