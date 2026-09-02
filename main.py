@@ -30,6 +30,8 @@ from services.email import email_recuperar_password, email_bienvenida
 from app.startup import run_startup
 from app.factory import create_app
 from app.templating import render
+from app.routers.auth import router as auth_router
+from app.routers.subscription import router as subscription_router
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -41,139 +43,9 @@ async def startup():
     # que el módulo completo haya terminado de importarse.
     await run_startup(registrar_webhook_telegram)
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
-
-@app.get("/landing", response_class=HTMLResponse)
-async def landing_page(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    return render("landing.html", {"request": request, "usuario": usuario})
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if usuario:
-        return RedirectResponse(url="/", status_code=302)
-    return render("login.html", {"request": request, "error": None})
-
-@app.post("/login", response_class=HTMLResponse)
-async def login_post(
-    request: Request,
-    email: str = Form(...),
-    password: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    usuario = autenticar_usuario(db, email, password)
-    if not usuario:
-        return render("login.html", {"request": request, "error": "Email o contraseña incorrectos"})
-    
-    token = crear_token({"sub": str(usuario.id)})
-    response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie("access_token", token, httponly=True, max_age=60*60*24*7, samesite="lax")
-    return response
-
-@app.get("/registro", response_class=HTMLResponse)
-async def registro_page(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if usuario:
-        return RedirectResponse(url="/", status_code=302)
-    return render("registro.html", {"request": request, "error": None})
-
-@app.post("/registro", response_class=HTMLResponse)
-async def registro_post(
-    request: Request,
-    nombre: str = Form(...),
-    email: str = Form(...),
-    password: str = Form(...),
-    password2: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    if password != password2:
-        return render("registro.html", {"request": request, "error": "Las contraseñas no coinciden"})
-    if len(password) < 8:
-        return render("registro.html", {"request": request, "error": "La contraseña debe tener al menos 8 caracteres"})
-    try:
-        usuario = crear_usuario(db, nombre, email, password)
-    except ValueError as e:
-        return render("registro.html", {"request": request, "error": str(e)})
-    
-    token = crear_token({"sub": str(usuario.id)})
-    response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie("access_token", token, httponly=True, max_age=60*60*24*7, samesite="lax")
-    return response
-
-@app.get("/logout")
-async def logout():
-    response = RedirectResponse(url="/", status_code=302)
-    response.delete_cookie("access_token")
-    return response
-
-
-# ── Suscripción ───────────────────────────────────────────────────────────────
-
-@app.get("/suscripcion", response_class=HTMLResponse)
-async def suscripcion_page(request: Request, mensaje: str = None, db: Session = Depends(get_db)):
-    usuario = require_usuario(request, db)
-    if isinstance(usuario, RedirectResponse):
-        return usuario
-    return render("suscripcion.html", {
-        "request": request,
-        "usuario": usuario,
-        "activa": suscripcion_activa(usuario),
-        "dias": dias_restantes(usuario),
-        "pago": None,
-        "mensaje": mensaje,
-        "active": "",
-        "mercado": mercado_abierto(),
-    })
-
-@app.post("/suscripcion/pagar")
-async def suscripcion_pagar(
-    request: Request,
-    plan: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-
-    pago = await crear_pago(usuario.id, plan, usuario.email)
-    mensaje_error = None
-
-    if not pago:
-        mensaje_error = "Error al conectar con el sistema de pagos. Verifica que NOWPAYMENTS_API_KEY esté configurada en Render."
-
-    return render("suscripcion.html", {
-        "request": request,
-        "usuario": usuario,
-        "activa": suscripcion_activa(usuario),
-        "dias": dias_restantes(usuario),
-        "pago": pago,
-        "mensaje": mensaje_error,
-        "active": "",
-        "mercado": mercado_abierto(),
-    })
-
-@app.get("/suscripcion/estado/{payment_id}")
-async def estado_pago(payment_id: str):
-    datos = await verificar_estado_pago(payment_id)
-    if datos:
-        return JSONResponse({"status": datos.get("payment_status", "waiting")})
-    return JSONResponse({"status": "waiting"})
-
-@app.get("/suscripcion/exitosa", response_class=HTMLResponse)
-async def suscripcion_exitosa(request: Request, db: Session = Depends(get_db)):
-    return RedirectResponse(url="/suscripcion?mensaje=¡Pago recibido! Tu suscripción será activada en minutos.", status_code=302)
-
-@app.post("/webhook/nowpayments")
-async def webhook_nowpayments(request: Request, db: Session = Depends(get_db)):
-    body = await request.body()
-    firma = request.headers.get("x-nowpayments-sig", "")
-    if not verificar_firma_ipn(body, firma):
-        return JSONResponse({"error": "firma inválida"}, status_code=400)
-    datos = json.loads(body)
-    procesar_webhook(db, datos)
-    return JSONResponse({"ok": True})
+# ── Auth / Suscripción ─────────────────────────────────────────────────────────
+app.include_router(auth_router)
+app.include_router(subscription_router)
 
 
 # ── Pizarra ───────────────────────────────────────────────────────────────────
