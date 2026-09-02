@@ -31,8 +31,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Run read-only certified RST diagnostic
+        shell: bash
         run: |
-          python scripts/diagnose_rst_fy2025_v5.py | tee rst_fy2025_certified_diagnostic.json
+          set -euo pipefail
+          python scripts/diagnose_rst_fy2025_v5.py > rst_fy2025_certified_diagnostic.json
+          test -s rst_fy2025_certified_diagnostic.json
+          cat rst_fy2025_certified_diagnostic.json
       - name: Upload diagnostic
         uses: actions/upload-artifact@v4
         with:
