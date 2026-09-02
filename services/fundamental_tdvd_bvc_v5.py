@@ -58,13 +58,14 @@ def _tail_for_field(line: str, field: str) -> str | None:
 def _extract_current_integer(tail: str) -> int | None:
     """Valida un único importe corriente inmediatamente después de la etiqueta.
 
-    Nunca busca una segunda cifra en la fila. Soporta agrupación normal, OCR
-    compacto, espacios alrededor de separadores y exactamente un separador de
-    miles perdido (último grupo de seis dígitos). Cualquier otra forma falla.
+    Nunca busca una segunda cifra en la fila. Un espacio sólo puede funcionar
+    como separador de miles si introduce exactamente un grupo de tres dígitos;
+    así el siguiente valor comparativo no puede ser absorbido por el token FY2025.
     """
     text = str(tail or "")
+    separator = r"(?:\s*[.,]\s*|\s+(?=\d{3}(?:[.,\s]|$)))"
     match = re.match(
-        r"^\s*(\()?\s*(\d+(?:(?:\s*[.,]\s*|\s+)\d+)*)(\))?",
+        rf"^\s*(\()?\s*(\d+(?:{separator}\d+)*)(\))?",
         text,
     )
     if not match:
@@ -72,7 +73,6 @@ def _extract_current_integer(tail: str) -> int | None:
     token = match.group(2).strip()
     negative = bool(match.group(1) and match.group(3))
 
-    # No aceptar un prefijo cuando el OCR dejó más dígitos pegados.
     remainder = text[match.end():]
     if remainder and remainder[0].isdigit():
         return None
@@ -95,7 +95,6 @@ def _extract_current_integer(tail: str) -> int | None:
             and all(len(group) == 3 for group in groups[1:-1])
             and len(groups[-1]) == 6
         ):
-            # OCR perdió exactamente un separador entre dos grupos finales.
             digits = "".join(groups[:-1]) + groups[-1][:3] + groups[-1][3:]
         else:
             return None
