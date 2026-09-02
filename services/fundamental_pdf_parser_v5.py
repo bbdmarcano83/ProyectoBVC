@@ -67,13 +67,20 @@ _COMPONENT_LABELS = {
     ),
 }
 
-# Deliberadamente NO acepta espacios como separador de miles. En PDFs comparativos
-# un espacio normalmente separa columnas ("348.224.455 466.175.472"). Permitirlo
-# convertía las dos columnas en un único número gigantesco. Espacios OCR del tipo
-# "404. 499.712" se corrigen antes de aplicar la expresión regular.
-_NUMBER_BODY = r"(?:\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[\.,]\d+)?)"
+# No se aceptan espacios como separador de miles: en PDFs comparativos separan
+# columnas. Se soportan explícitamente ambos locales contables:
+#   1.234.567,89 / 1.234.567  (EU/Venezuela)
+#   1,234,567.89 / 1,234,567  (US)
+# y decimales simples como 270.07 o 270,07. Una agrupación exacta de tres dígitos
+# (931.194 / 931,194) se interpreta como miles, no como decimal.
+_EU_GROUPED = r"\d{1,3}(?:\.\d{3})+(?:,\d+)?"
+_US_GROUPED = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+_SIMPLE = r"\d+(?:[\.,]\d+)?"
+_NUMBER_BODY = rf"(?:{_EU_GROUPED}|{_US_GROUPED}|{_SIMPLE})"
 NUMBER_RE = re.compile(rf"(?<!\w)(?:Bs\.?\s*)?(?:\(-?{_NUMBER_BODY}\)|-?{_NUMBER_BODY})")
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
+_EU_GROUPED_FULL = re.compile(r"^\d{1,3}(?:\.\d{3})+(?:,\d+)?$")
+_US_GROUPED_FULL = re.compile(r"^\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
 
 _ALL_ALIASES = tuple(sorted({a for aliases in FIELD_ALIASES.values() for a in aliases}, key=len, reverse=True))
 
@@ -88,16 +95,30 @@ def _normalize_number(raw: str) -> float | None:
     s = str(raw or "").strip().lower().replace("bs.", "").replace("bs", "").replace(" ", "")
     negative = s.startswith("(") and s.endswith(")")
     s = s.strip("()")
+    if s.startswith("-"):
+        negative = True
+        s = s[1:]
     if not s:
         return None
     try:
-        if "," in s and "." in s:
-            s = s.replace(".", "").replace(",", ".")
+        if _EU_GROUPED_FULL.fullmatch(s):
+            # 1.234.567,89 or 931.194
+            normalized = s.replace(".", "").replace(",", ".")
+        elif _US_GROUPED_FULL.fullmatch(s):
+            # 1,234,567.89 or 931,194
+            normalized = s.replace(",", "")
+        elif "," in s and "." in s:
+            # Fail-safe for an unusual mixed token: the rightmost separator is
+            # decimal; the other one is grouping.
+            if s.rfind(",") > s.rfind("."):
+                normalized = s.replace(".", "").replace(",", ".")
+            else:
+                normalized = s.replace(",", "")
         elif "," in s:
-            s = s.replace(".", "").replace(",", ".")
-        elif s.count(".") > 1:
-            s = s.replace(".", "")
-        value = float(s)
+            normalized = s.replace(",", ".")
+        else:
+            normalized = s
+        value = float(normalized)
         return -abs(value) if negative else value
     except ValueError:
         return None
@@ -129,11 +150,7 @@ def _clean_row(raw: str) -> str:
 
 
 def _page_years(rows: list[str]) -> list[int]:
-    """Return ordered distinct years visible near the statement header.
-
-    We intentionally inspect only the first part of the page so dates embedded in
-    notes do not decide comparative-column order.
-    """
+    """Return ordered distinct years visible near the statement header."""
     found: list[int] = []
     for row in rows[:24]:
         for raw in _YEAR_RE.findall(row):
@@ -215,7 +232,6 @@ def _derive_total_candidates(candidates: dict[str, list[dict]], components: dict
                 if a.get("column_index") != b.get("column_index"):
                     continue
                 value = float(a["value"]) + float(b["value"])
-                # Avoid duplicating an already extracted exact total with same page/column/value.
                 duplicate = any(
                     x.get("page") == page_no
                     and x.get("column_index") == a.get("column_index")
