@@ -1,0 +1,48 @@
+name: V5 regulatory fundamental backfill
+
+on:
+  push:
+    branches: [feature/v5-bvc-sunaval-authority]
+    paths:
+      - "services/fundamental_regulatory_manifest_v5.py"
+      - "scripts/regulatory_backfill_v5.py"
+      - "scripts/audit_fundamental_documents_v5.py"
+      - "tests/test_regulatory_fundamental_sources_v5.py"
+      - "tests/test_regulatory_audit_union_v5.py"
+      - ".github/workflows/v5-regulatory-backfill.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regulatory-backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: "."
+      SCORING_ENGINE_V5_ENABLED: "false"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Require external Neon secret
+        shell: bash
+        run: |
+          case "$DATABASE_URL" in
+            postgres://*|postgresql://*|postgresql+psycopg://*) ;;
+            *) echo "DATABASE_URL must point to PostgreSQL/Neon"; exit 2 ;;
+          esac
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run regulatory source tests
+        run: python -m unittest tests.test_regulatory_fundamental_sources_v5 tests.test_regulatory_audit_union_v5
+      - name: Persist verified regulatory fundamentals
+        run: python scripts/regulatory_backfill_v5.py
+      - name: Audit combined certified fundamental universe
+        run: python scripts/audit_fundamental_documents_v5.py --strict --require-any-sha
