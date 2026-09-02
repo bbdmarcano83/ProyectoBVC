@@ -1,6 +1,6 @@
 """Runtime facade for ProyectoBVC scoring.
 
-V3 remains the production baseline. V5 is an opt-in overlay that adds the
+V3 remains the technical baseline. V5 is the active production overlay that adds the
 Caracas Bull unified philosophy (Greenblatt + Graham + Buffett + market
 confirmation) without destroying V3 fields.
 

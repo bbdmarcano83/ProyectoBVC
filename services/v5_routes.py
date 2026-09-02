@@ -2,7 +2,7 @@
 
 El handler se expone a nivel de módulo para que el bootstrap pueda registrarlo
 directamente con ``add_api_route``. ``get_v5_router`` se conserva para
-compatibilidad, pero respeta el mismo feature flag opt-in.
+compatibilidad, pero respeta el mismo feature flag de rollback.
 """
 from __future__ import annotations
 
@@ -96,8 +96,8 @@ def snapshot_capture_policy(*, valuation_day: date, ibc_day: date | None, market
 
 
 async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)):
-    # Defensa adicional: aunque el handler sea invocado directamente, el feature
-    # sigue siendo opt-in y no debe generar snapshots con el flag apagado.
+    # Defensa adicional: aunque el handler sea invocado directamente, un rollback
+    # explícito no debe generar snapshots con el flag apagado.
     if not portfolio_ibc_benchmark_v5_enabled():
         return JSONResponse({"error": "Benchmark V5 deshabilitado"}, status_code=404)
 

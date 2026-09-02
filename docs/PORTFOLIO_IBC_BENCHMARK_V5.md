@@ -6,7 +6,7 @@ Comparar el rendimiento económico del portafolio abierto contra el Índice Burs
 
 ## Feature flag
 
-El benchmark es opt-in y permanece apagado por defecto:
+El benchmark está activo por defecto y conserva rollback explícito:
 
 ```text
 PORTFOLIO_IBC_BENCHMARK_V5_ENABLED=true

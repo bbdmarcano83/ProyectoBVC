@@ -112,7 +112,7 @@ jobs:
           PY
       - name: Run unit and contract tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
-      - name: Smoke test benchmark V5 opt-in route
+      - name: Smoke test benchmark V5 active route
         env:
           PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "true"
         run: |
@@ -124,5 +124,5 @@ jobs:
           app = FastAPI(title="benchmark-v5-smoke")
           paths = [getattr(route, "path", "") for route in app.routes]
           assert paths.count(V5_BENCHMARK_PATH) == 1, paths
-          print("benchmark V5 opt-in route ok")
+          print("benchmark V5 active route ok")
           PY
