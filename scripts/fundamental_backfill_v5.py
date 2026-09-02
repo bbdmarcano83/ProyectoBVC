@@ -18,6 +18,7 @@ from services.fundamental_backfill_manifest_v5 import FUNDAMENTAL_BACKFILL_V5
 from services.fundamental_bvc_image_parser_v5 import fetch_and_parse_bvc_post
 from services.fundamental_pdf_parser_v5 import fetch_and_parse_official_pdf
 from services.fundamental_review_v5 import build_review_package, accept_reviewed_snapshot
+from services.fundamental_tdvd_bvc_v5 import fetch_and_parse_tdvd_certified_bvc_post
 
 
 def _require_external_db() -> None:
@@ -60,7 +61,9 @@ def _monetary_basis(symbol: str) -> str:
 
 def build_review(symbol: str, period: str) -> dict:
     doc = _document(symbol, period)
-    if doc.get("bvc_post_id"):
+    if symbol == "TDV.D" and doc.get("bvc_post_id"):
+        candidates, parse_meta = fetch_and_parse_tdvd_certified_bvc_post(int(doc["bvc_post_id"]))
+    elif doc.get("bvc_post_id"):
         candidates, parse_meta = fetch_and_parse_bvc_post(symbol, int(doc["bvc_post_id"]))
     else:
         candidates, parse_meta = fetch_and_parse_official_pdf(symbol, doc["url"])
@@ -84,6 +87,7 @@ def _persist_review(package: dict, payload: dict) -> dict:
         return {"accepted": False, "error": "selections_required"}
     extra_fields = payload.get("extra_fields", {}) if isinstance(payload, dict) else {}
     doc = package["document"]
+    parse_meta = package.get("parse") or {}
     result = accept_reviewed_snapshot(
         review,
         selections,
@@ -93,7 +97,7 @@ def _persist_review(package: dict, payload: dict) -> dict:
         currency=str(payload.get("currency") or doc.get("currency") or "VES"),
         monetary_basis=str(payload.get("monetary_basis") or doc.get("monetary_basis") or _monetary_basis(review.get("symbol"))),
         period_start=payload.get("period_start"),
-        published_at=payload.get("published_at") or doc.get("published_at") or package["parse"].get("published_at"),
+        published_at=payload.get("published_at") or doc.get("published_at") or parse_meta.get("published_at"),
         extra_fields=extra_fields,
         hydrate_fx=True,
         require_fx=True,
@@ -102,11 +106,14 @@ def _persist_review(package: dict, payload: dict) -> dict:
             "audit_opinion": doc.get("audit_opinion"),
             "validation_notes": doc.get("validation_notes"),
             "statement_unit_evidence": doc.get("statement_unit_evidence"),
-            "source_document_kind": package["parse"].get("source_document_kind", "pdf"),
-            "source_media_urls": package["parse"].get("media_urls"),
+            "source_document_kind": parse_meta.get("source_document_kind", "pdf"),
+            "source_media_urls": parse_meta.get("media_urls"),
+            "ocr_profile": parse_meta.get("ocr_profile"),
+            "ocr_consensus": parse_meta.get("ocr_consensus"),
+            "accounting_equation_error": parse_meta.get("accounting_equation_error"),
         },
     )
-    return {"document": doc, "parse": package["parse"], "result": result}
+    return {"document": doc, "parse": parse_meta, "result": result}
 
 
 def accept(symbol: str, period: str, selections_path: str) -> dict:
@@ -179,7 +186,7 @@ def main() -> int:
     parser.add_argument("--symbol")
     parser.add_argument("--period")
     parser.add_argument("--accept", help="JSON con selections explícitas")
-    parser.add_argument("--all", action="store_true", help="Procesa los 12 documentos piloto con auto-revisión fail-closed")
+    parser.add_argument("--all", action="store_true", help="Procesa los documentos del manifiesto con auto-revisión fail-closed")
     args = parser.parse_args()
 
     if args.all:
