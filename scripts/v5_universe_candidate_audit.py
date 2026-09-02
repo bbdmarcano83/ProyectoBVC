@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 
 from services.fundamental_autoreview_v5 import propose_fail_closed_selections
 from services.fundamental_discovery_v5 import discover_documents
@@ -33,49 +32,55 @@ def _score(doc: dict) -> tuple[int, str]:
     return score, str(doc.get("url") or "")
 
 
+async def _attempt_pdf(symbol: str, doc: dict, sem: asyncio.Semaphore) -> dict:
+    url = str(doc.get("url") or "")
+    async with sem:
+        candidates, meta = await asyncio.to_thread(fetch_and_parse_official_pdf, symbol, url, 15.0)
+    attempt = {
+        "url": url,
+        "text": doc.get("text"),
+        "parse_valid": bool(meta.get("valid")),
+        "reason": meta.get("reason"),
+        "fields_with_candidates": int(meta.get("fields_with_candidates") or 0),
+        "sha256": meta.get("source_document_sha256"),
+        "pages": meta.get("pages"),
+    }
+    if meta.get("valid"):
+        review = build_review_package(
+            symbol, candidates, source_url=url, as_of="candidate",
+            source_document_sha256=meta.get("source_document_sha256"),
+        )
+        proposal = propose_fail_closed_selections(review)
+        attempt["autoreview_valid"] = bool(proposal.get("valid"))
+        attempt["missing_required"] = proposal.get("missing_required") or []
+        attempt["selected_fields"] = sorted((proposal.get("selections") or {}).keys())
+    return attempt
+
+
+async def _one_symbol(symbol: str, validated: set[str], sem: asyncio.Semaphore) -> dict:
+    if symbol in validated:
+        return {"symbol": symbol, "skipped": "already_validated"}
+    disc = await discover_documents(symbol, timeout=12.0)
+    docs = sorted((disc.get("documents") or []), key=_score, reverse=True)
+    pdfs = [d for d in docs if d.get("kind") == "pdf"][:2]
+    attempts = await asyncio.gather(*(_attempt_pdf(symbol, doc, sem) for doc in pdfs)) if pdfs else []
+    return {
+        "symbol": symbol,
+        "discovery_ok": bool(disc.get("ok")),
+        "discovery_error": disc.get("error"),
+        "discovered": int(disc.get("count") or 0),
+        "ranked_pdf_candidates": len(pdfs),
+        "parse_valid_candidates": sum(1 for a in attempts if a.get("parse_valid")),
+        "autoreview_ready_candidates": sum(1 for a in attempts if a.get("autoreview_valid")),
+        "attempts": attempts,
+    }
+
+
 async def main_async() -> dict:
     latest, _ = load_latest_validated()
-    rows = []
-    for symbol in sorted(SOURCE_REGISTRY):
-        if symbol in (latest or {}):
-            rows.append({"symbol": symbol, "skipped": "already_validated"})
-            continue
-        disc = await discover_documents(symbol, timeout=15.0)
-        docs = sorted((disc.get("documents") or []), key=_score, reverse=True)
-        pdfs = [d for d in docs if d.get("kind") == "pdf"][:4]
-        attempts = []
-        for doc in pdfs:
-            url = str(doc.get("url") or "")
-            candidates, meta = fetch_and_parse_official_pdf(symbol, url, timeout=20.0)
-            attempt = {
-                "url": url,
-                "text": doc.get("text"),
-                "parse_valid": bool(meta.get("valid")),
-                "reason": meta.get("reason"),
-                "fields_with_candidates": int(meta.get("fields_with_candidates") or 0),
-                "sha256": meta.get("source_document_sha256"),
-                "pages": meta.get("pages"),
-            }
-            if meta.get("valid"):
-                review = build_review_package(
-                    symbol, candidates, source_url=url, as_of="candidate",
-                    source_document_sha256=meta.get("source_document_sha256"),
-                )
-                proposal = propose_fail_closed_selections(review)
-                attempt["autoreview_valid"] = bool(proposal.get("valid"))
-                attempt["missing_required"] = proposal.get("missing_required") or []
-                attempt["selected_fields"] = sorted((proposal.get("selections") or {}).keys())
-            attempts.append(attempt)
-        rows.append({
-            "symbol": symbol,
-            "discovery_ok": bool(disc.get("ok")),
-            "discovery_error": disc.get("error"),
-            "discovered": int(disc.get("count") or 0),
-            "ranked_pdf_candidates": len(pdfs),
-            "parse_valid_candidates": sum(1 for a in attempts if a.get("parse_valid")),
-            "autoreview_ready_candidates": sum(1 for a in attempts if a.get("autoreview_valid")),
-            "attempts": attempts,
-        })
+    validated = set((latest or {}).keys())
+    sem = asyncio.Semaphore(6)
+    rows = await asyncio.gather(*(_one_symbol(s, validated, sem) for s in sorted(SOURCE_REGISTRY)))
     return {
         "symbols": len(SOURCE_REGISTRY),
         "already_validated": sum(1 for r in rows if r.get("skipped")),
