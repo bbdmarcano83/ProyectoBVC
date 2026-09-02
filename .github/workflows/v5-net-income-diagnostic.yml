@@ -1,0 +1,42 @@
+name: V5 net income diagnostic
+
+on:
+  push:
+    branches: [feature/v5-net-income-diagnostic]
+    paths:
+      - "scripts/diagnose_net_income_candidates_v5.py"
+      - ".github/workflows/v5-net-income-diagnostic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: "."
+      SCORING_ENGINE_V5_ENABLED: "false"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Inspect certified net-income candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.diagnose_net_income_candidates_v5 | tee net_income_candidates.json
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: v5-net-income-diagnostic
+          path: net_income_candidates.json
+          retention-days: 14
