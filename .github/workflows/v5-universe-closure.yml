@@ -7,10 +7,12 @@ on:
       - ".github/workflows/v5-universe-closure.yml"
       - "scripts/v5_universe_closure.py"
       - "scripts/v5_universe_candidate_audit.py"
+      - "scripts/v5_bvc_attachment_audit.py"
       - "services/fundamental_*.py"
       - "services/fx_*.py"
       - "services/bvc_attachment_adapter_v5.py"
       - "tests/test_fundamental_pdf_parser_v5.py"
+      - "tests/test_bvc_attachment_adapter_v5.py"
   workflow_dispatch:
 
 permissions:
@@ -40,12 +42,16 @@ jobs:
           test -n "$DATABASE_URL" || (echo "DATABASE_URL missing" && exit 2)
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
-      - name: Parser regression tests
-        run: python -m unittest tests.test_fundamental_pdf_parser_v5 -v
+      - name: Parser and BVC adapter regression tests
+        run: |
+          python -m unittest tests.test_fundamental_pdf_parser_v5 -v
+          python -m pytest tests/test_bvc_attachment_adapter_v5.py -q
       - name: Audit all registered V5 symbols against Neon and live discovery
         run: python scripts/v5_universe_closure.py --discover --output v5_universe_closure.json
       - name: Audit parseable official PDF candidates
         run: python scripts/v5_universe_candidate_audit.py
+      - name: Audit BVC WordPress and SharePoint evidence routes
+        run: python scripts/v5_bvc_attachment_audit.py
       - name: Print unresolved symbols
         run: |
           python - <<'PY'
@@ -61,4 +67,5 @@ jobs:
           path: |
             v5_universe_closure.json
             v5_universe_candidates.json
+            v5_bvc_attachment_audit.json
           retention-days: 14
