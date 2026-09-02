@@ -1,0 +1,41 @@
+name: Refactor apply portfolio import
+
+on:
+  push:
+    branches: [refactor/main-modularization]
+    paths:
+      - ".github/workflows/refactor-apply-portfolio-import.yml"
+      - "scripts/refactor_main_portfolio_import.py"
+      - "app/routers/portfolio_import.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply exact portfolio import codemod
+        run: python scripts/refactor_main_portfolio_import.py
+      - name: Compile transformed files
+        run: python -m py_compile main.py app/routers/portfolio_import.py
+      - name: Commit transformed main if needed
+        shell: bash
+        run: |
+          if git diff --quiet -- main.py; then
+            echo "No main.py changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main.py
+          git commit -m "refactor: extract portfolio import routes"
+          git push origin HEAD:refactor/main-modularization
