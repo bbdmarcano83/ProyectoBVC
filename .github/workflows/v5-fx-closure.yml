@@ -44,9 +44,15 @@ jobs:
       - name: Run FX regression tests
         run: python -m unittest tests.test_fx_history_v5
       - name: Persist certified periods previously blocked only by FX
-        run: python -m scripts.persist_fx_blocked_periods_v5 | tee fx_closure_backfill.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.persist_fx_blocked_periods_v5 | tee fx_closure_backfill.json
       - name: Reaudit certified universe
-        run: python -m scripts.audit_fundamental_documents_v5 --strict --require-any-sha | tee fx_closure_audit.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.audit_fundamental_documents_v5 --strict --require-any-sha | tee fx_closure_audit.json
       - name: Upload closure evidence
         if: always()
         uses: actions/upload-artifact@v4
