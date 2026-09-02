@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [audit/v3-v4-engine, feature/v5-philosophy-engine]
+    branches: [main, audit/v3-v4-engine, feature/v5-philosophy-engine]
 
 permissions:
   contents: read
@@ -30,6 +30,9 @@ jobs:
       - name: Compile runtime modules
         run: >-
           python -m py_compile
+          main.py
+          app/*.py
+          app/routers/*.py
           database.py
           services/__init__.py
           services/auth.py
