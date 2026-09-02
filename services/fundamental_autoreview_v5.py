@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from itertools import product
 from math import isfinite
+import re
+import unicodedata
 
 from services.fundamental_source_review_v5 import propose_issuer_specific
 
@@ -20,11 +22,46 @@ def _num(v):
         return None
 
 
+def _norm(value) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+
 def _option_index(option: dict, fallback: int) -> int:
     try:
         return int(option.get("index", fallback))
     except (TypeError, ValueError):
         return fallback
+
+
+def _misclassified_component(field: str, option: dict) -> bool:
+    if option.get("context_quality") == "derived_accounting_total":
+        return False
+    evidence = _norm(option.get("evidence"))
+    if field == "total_assets":
+        return any(phrase in evidence for phrase in (
+            "total activo corriente", "total activos corrientes",
+            "total activo no corriente", "total activos no corrientes",
+            "total activo no circulante", "total activos no circulantes",
+        ))
+    if field == "total_liabilities":
+        return any(phrase in evidence for phrase in (
+            "total pasivo corriente", "total pasivos corrientes",
+            "total pasivo no corriente", "total pasivos no corrientes",
+            "total pasivo no circulante", "total pasivos no circulantes",
+            "total pasivo a largo plazo", "total pasivos a largo plazo",
+        ))
+    return False
+
+
+def _filtered_field(fields: dict[str, list[dict]], field: str) -> list[dict]:
+    options = [o for o in (fields.get(field) or []) if isinstance(o, dict) and not _misclassified_component(field, o)]
+    if field == "equity":
+        exact = [o for o in options if _norm(o.get("alias")).startswith("total patrimonio") or _norm(o.get("alias")) == "patrimonio total"]
+        if exact:
+            return exact
+    return options
 
 
 def _filter_column(options: list[dict], preferred_column: int | None) -> list[tuple[int, dict]]:
@@ -67,19 +104,28 @@ def _same_context(a: dict, l: dict, e: dict, preferred_column: int | None) -> bo
 
 def _candidate_quality(option: dict) -> int:
     quality = str(option.get("context_quality") or "")
-    return {"derived_accounting_total": 4, "accounting_row": 3, "page_fallback": 1}.get(quality, 0)
+    score = {"derived_accounting_total": 6, "accounting_row": 4, "page_fallback": 1}.get(quality, 0)
+    alias = _norm(option.get("alias"))
+    if alias.startswith("total del ") or alias.startswith("total patrimonio") or alias in {"total activo", "total activos", "total pasivo", "total pasivos", "patrimonio total"}:
+        score += 3
+    if alias == "patrimonio":
+        score -= 2
+    return score
+
+
+def _triplet_values(assets: list[dict], liabilities: list[dict], equity: list[dict], match: tuple) -> tuple[float | None, float | None, float | None]:
+    ai, li, ei = match[3], match[4], match[5]
+    return _num(assets[ai].get("value")), _num(liabilities[li].get("value")), _num(equity[ei].get("value"))
 
 
 def _balance_selection(fields: dict[str, list[dict]], tolerance_pct: float = 1.0,
                        preferred_column: int | None = None) -> tuple[dict[str, int] | None, int | None]:
-    assets = fields.get("total_assets") or []
-    liabilities = fields.get("total_liabilities") or []
-    equity = fields.get("equity") or []
+    assets = _filtered_field(fields, "total_assets")
+    liabilities = _filtered_field(fields, "total_liabilities")
+    equity = _filtered_field(fields, "equity")
     matches = []
     for ai, li, ei in product(range(len(assets)), range(len(liabilities)), range(len(equity))):
         arow, lrow, erow = assets[ai], liabilities[li], equity[ei]
-        if not all(isinstance(x, dict) for x in (arow, lrow, erow)):
-            continue
         if not _same_context(arow, lrow, erow, preferred_column):
             continue
         a = _num(arow.get("value")); l = _num(lrow.get("value")); e = _num(erow.get("value"))
@@ -94,9 +140,10 @@ def _balance_selection(fields: dict[str, list[dict]], tolerance_pct: float = 1.0
         return None, None
     matches.sort()
     best = matches[0]
-    # Equal-error/equal-quality alternatives remain ambiguous unless they are exact duplicates.
     if len(matches) > 1 and abs(matches[1][0] - best[0]) <= 0.05 and matches[1][1:3] == best[1:3]:
-        if matches[1][3:] != best[3:]:
+        first_values = _triplet_values(assets, liabilities, equity, best)
+        second_values = _triplet_values(assets, liabilities, equity, matches[1])
+        if first_values != second_values:
             return None, None
     ai, li, ei = best[3], best[4], best[5]
     page = int(best[2]) if best[2] < 10**9 else None
@@ -108,15 +155,12 @@ def _balance_selection(fields: dict[str, list[dict]], tolerance_pct: float = 1.0
 
 
 _INCOME_ALIAS_PRIORITY = {
-    "resultado neto del año": 100,
+    "resultado neto del ano": 100,
     "resultado neto del ejercicio": 100,
-    "utilidad (pérdida) neta": 95,
-    "utilidad (perdida) neta": 95,
-    "ganancia (pérdida) neta": 95,
-    "ganancia (perdida) neta": 95,
+    "utilidad perdida neta": 95,
+    "ganancia perdida neta": 95,
     "utilidad neta": 90,
     "ganancia neta": 90,
-    "pérdida neta": 90,
     "perdida neta": 90,
     "resultado neto": 70,
 }
@@ -138,9 +182,9 @@ def _income_near_balance(fields: dict[str, list[dict]], *, balance_page: int | N
             continue
         if not (balance_page <= page <= balance_page + max_pages_after):
             continue
-        if option.get("context_quality") not in {"accounting_row", "derived_accounting_total"}:
+        if option.get("context_quality") != "accounting_row":
             continue
-        alias = str(option.get("alias") or "").lower()
+        alias = _norm(option.get("alias"))
         priority = _INCOME_ALIAS_PRIORITY.get(alias, 50)
         candidates.append((page, -priority, _option_index(option, fallback), value))
     if not candidates:
@@ -183,7 +227,8 @@ def propose_fail_closed_selections(review: dict) -> dict:
     for field, options in fields.items():
         if field in selections:
             continue
-        idx = _unique_value_index(options, preferred_column=preferred_column)
+        clean_options = _filtered_field(fields, field) if field in {"total_assets", "total_liabilities", "equity"} else options
+        idx = _unique_value_index(clean_options, preferred_column=preferred_column)
         if idx is not None:
             selections[field] = idx
 
@@ -199,7 +244,7 @@ def propose_fail_closed_selections(review: dict) -> dict:
         "required": sorted(required),
         "missing_required": missing,
         "reason": None if not missing else "ambiguous_or_missing_required_fields",
-        "method": "period_header+accounting_equation+primary_income_near_balance+unique_values",
+        "method": "primary_period_header+filtered_accounting_equation+primary_income_near_balance+unique_values",
         "preferred_column": preferred_column,
         "balance_page": balance_page,
         "preferred_column_evidence": review.get("preferred_column_evidence"),
