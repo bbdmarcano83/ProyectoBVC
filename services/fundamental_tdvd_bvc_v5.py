@@ -24,16 +24,8 @@ from services.fundamental_bvc_image_parser_v5 import (
 )
 
 TDVD_CERTIFIED_POST_ID = 32881
-# Familias realmente distintas de preprocesamiento. El consenso exige al menos
-# dos familias, no dos pasadas del mismo bitmap.
-_FAMILIES = (
-    "gray2x",
-    "gray2x_soft",
-    "bw2x_160",
-    "bw2x_173",
-    "bw2x_190",
-    "gray3x",
-)
+_FAMILIES = ("gray2x", "gray2x_soft", "bw2x_160", "bw2x_173", "bw2x_190", "gray3x")
+_PSMS = (4, 6, 11)
 _REQUIRED_FIELDS = ("total_assets", "total_liabilities", "equity", "net_income")
 
 
@@ -65,12 +57,6 @@ def _tail_for_field(line: str, field: str) -> str | None:
 
 
 def _extract_current_integer(tail: str) -> int | None:
-    """Extrae sólo el primer importe FY2025 con una forma OCR permitida.
-
-    Los patrones están anclados al inicio y terminan antes de la columna
-    comparativa. Un grupo de cuatro dígitos queda rechazado; nunca se busca una
-    cifra posterior en la misma fila.
-    """
     text = str(tail or "")
     patterns = (
         r"^\s*(\()?\s*(\d{1,3}(?:\s*[.,]\s*\d{3}){3})(\))?(?![.,\d])",
@@ -84,19 +70,17 @@ def _extract_current_integer(tail: str) -> int | None:
         if not match:
             continue
         digits = re.sub(r"\D", "", match.group(2))
-        if not (9 <= len(digits) <= 12):
-            continue
-        value = int(digits)
-        return -value if bool(match.group(1) and match.group(3)) else value
+        if 9 <= len(digits) <= 12:
+            value = int(digits)
+            return -value if bool(match.group(1) and match.group(3)) else value
     return None
 
 
 def _line_field(line: str) -> tuple[str | None, int | None]:
     for field in _REQUIRED_FIELDS:
         tail = _tail_for_field(line, field)
-        if tail is None:
-            continue
-        return field, _extract_current_integer(tail)
+        if tail is not None:
+            return field, _extract_current_integer(tail)
     return None, None
 
 
@@ -105,8 +89,7 @@ def _profile_image(data: bytes, family: str, path: Path) -> None:
         image = image.convert("L")
         if family == "gray2x":
             image = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
-            image = ImageOps.autocontrast(image, cutoff=8)
-            image = image.filter(ImageFilter.SHARPEN)
+            image = ImageOps.autocontrast(image, cutoff=8).filter(ImageFilter.SHARPEN)
         elif family == "gray2x_soft":
             image = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
             image = ImageOps.autocontrast(image, cutoff=3)
@@ -117,24 +100,17 @@ def _profile_image(data: bytes, family: str, path: Path) -> None:
             image = image.point(lambda p: 255 if p >= threshold else 0)
         elif family == "gray3x":
             image = image.resize((image.width * 3, image.height * 3), Image.Resampling.LANCZOS)
-            image = ImageOps.autocontrast(image, cutoff=10)
-            image = image.filter(ImageFilter.SHARPEN)
+            image = ImageOps.autocontrast(image, cutoff=10).filter(ImageFilter.SHARPEN)
         else:
             raise ValueError("unknown_ocr_family")
         image.save(path, format="PNG")
 
 
-def _ocr_psm4(path: Path) -> str:
+def _ocr(path: Path, psm: int) -> str:
     executable = shutil.which("tesseract")
     if not executable:
         return ""
-    proc = subprocess.run(
-        [executable, str(path), "stdout", "-l", "eng", "--psm", "4"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    proc = subprocess.run([executable, str(path), "stdout", "-l", "eng", "--psm", str(psm)], check=False, capture_output=True, text=True, timeout=60)
     return proc.stdout if proc.returncode == 0 else ""
 
 
@@ -144,29 +120,19 @@ def _consensus(observations: list[dict]) -> dict:
         value = row.get("value")
         if isinstance(value, int):
             by_value[value].append(row)
-    ranked = sorted(
-        by_value.items(),
-        key=lambda item: (-len({r.get("family") for r in item[1]}), -len(item[1]), abs(item[0])),
-    )
+    ranked = sorted(by_value.items(), key=lambda item: (-len({r.get("family") for r in item[1]}), -len({r.get("psm") for r in item[1]}), -len(item[1]), abs(item[0])))
     if not ranked:
         return {"valid": False, "reason": "no_numeric_observations"}
     best_value, best_rows = ranked[0]
     best_families = {r.get("family") for r in best_rows}
-    if len(best_families) < 2:
-        return {"valid": False, "reason": "insufficient_independent_ocr_families", "observations": observations}
+    best_psms = {r.get("psm") for r in best_rows}
+    if len(best_families) < 2 or len(best_rows) < 3:
+        return {"valid": False, "reason": "insufficient_independent_ocr_consensus", "observations": observations}
     if len(ranked) > 1:
-        second_families = {r.get("family") for r in ranked[1][1]}
-        if len(second_families) == len(best_families):
+        second_rows = ranked[1][1]
+        if len({r.get("family") for r in second_rows}) >= len(best_families) and len(second_rows) >= len(best_rows):
             return {"valid": False, "reason": "ocr_consensus_tie", "observations": observations}
-    return {
-        "valid": True,
-        "value": best_value,
-        "families": sorted(best_families),
-        "votes": len(best_rows),
-        "page": best_rows[0].get("page"),
-        "evidence": [r.get("line") for r in best_rows],
-        "observations": observations,
-    }
+    return {"valid": True, "value": best_value, "families": sorted(best_families), "psms": sorted(best_psms), "votes": len(best_rows), "page": best_rows[0].get("page"), "evidence": [r.get("line") for r in best_rows], "observations": observations}
 
 
 def fetch_and_parse_tdvd_certified_bvc_post(post_id: int = TDVD_CERTIFIED_POST_ID, timeout: float = 30.0) -> tuple[dict, dict]:
@@ -202,69 +168,30 @@ def fetch_and_parse_tdvd_certified_bvc_post(post_id: int = TDVD_CERTIFIED_POST_I
                 for family in _FAMILIES:
                     out = tmpdir / f"p{page_no}-{family}.png"
                     _profile_image(data, family, out)
-                    text = _ocr_psm4(out)
-                    for line in text.splitlines():
-                        field, value = _line_field(line)
-                        if field and value is not None:
-                            observations[field].append({
-                                "family": family,
-                                "page": page_no,
-                                "value": value,
-                                "line": line.strip(),
-                            })
+                    for psm in _PSMS:
+                        text = _ocr(out, psm)
+                        for line in text.splitlines():
+                            field, value = _line_field(line)
+                            if field and value is not None:
+                                observations[field].append({"family": family, "psm": psm, "page": page_no, "value": value, "line": line.strip()})
     except Exception as exc:
         return {}, {**base_meta, "valid": False, "reason": f"tdvd_consensus_ocr_error:{type(exc).__name__}"}
 
     consensus = {field: _consensus(observations.get(field, [])) for field in _REQUIRED_FIELDS}
     invalid = [field for field, result in consensus.items() if not result.get("valid")]
     if invalid:
-        return {}, {
-            **base_meta,
-            "valid": False,
-            "reason": "tdvd_ocr_consensus_incomplete",
-            "missing_consensus": invalid,
-            "ocr_consensus": consensus,
-        }
+        return {}, {**base_meta, "valid": False, "reason": "tdvd_ocr_consensus_incomplete", "missing_consensus": invalid, "ocr_consensus": consensus}
 
     assets = int(consensus["total_assets"]["value"])
     liabilities = int(consensus["total_liabilities"]["value"])
     equity = int(consensus["equity"]["value"])
     if assets != liabilities + equity:
-        return {}, {
-            **base_meta,
-            "valid": False,
-            "reason": "tdvd_accounting_equation_mismatch",
-            "ocr_consensus": consensus,
-            "equation": {"assets": assets, "liabilities": liabilities, "equity": equity},
-        }
+        return {}, {**base_meta, "valid": False, "reason": "tdvd_accounting_equation_mismatch", "ocr_consensus": consensus, "equation": {"assets": assets, "liabilities": liabilities, "equity": equity}}
 
-    aliases = {
-        "total_assets": "total activo",
-        "total_liabilities": "total pasivo",
-        "equity": "total patrimonio",
-        "net_income": "utilidad (pérdida) neta",
-    }
+    aliases = {"total_assets": "total activo", "total_liabilities": "total pasivo", "equity": "total patrimonio", "net_income": "utilidad (pérdida) neta"}
     candidates = {}
     for field in _REQUIRED_FIELDS:
         row = consensus[field]
-        candidates[field] = [{
-            "value": float(row["value"]),
-            "raw": row["evidence"][0],
-            "page": row["page"],
-            "alias": aliases[field],
-            "evidence": " | ".join(row["evidence"]),
-            "column_index": 0,
-            "occurrence": 0,
-            "context_quality": "accounting_row",
-            "page_years": [],
-            "derived_from": [],
-        }]
+        candidates[field] = [{"value": float(row["value"]), "raw": row["evidence"][0], "page": row["page"], "alias": aliases[field], "evidence": " | ".join(row["evidence"]), "column_index": 0, "occurrence": 0, "context_quality": "accounting_row", "page_years": [], "derived_from": []}]
 
-    return candidates, {
-        **base_meta,
-        "valid": True,
-        "reason": None,
-        "ocr_profile": "tdvd_psm4_multi_family_consensus_v2",
-        "ocr_consensus": consensus,
-        "accounting_equation_error": 0,
-    }
+    return candidates, {**base_meta, "valid": True, "reason": None, "ocr_profile": "tdvd_multi_preprocess_multi_psm_consensus_v3", "ocr_consensus": consensus, "accounting_equation_error": 0}
