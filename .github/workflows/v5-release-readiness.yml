@@ -2,15 +2,7 @@ name: V5 release readiness
 
 on:
   push:
-    branches: [feature/v5-philosophy-engine]
-    paths:
-      - ".github/workflows/v5-release-readiness.yml"
-      - "scripts/v5_release_readiness.py"
-      - "services/fundamental_pilots_v5.py"
-      - "services/fundamental_history_v5.py"
-      - "services/fundamental_trend_v5.py"
-      - "services/fx_history_v5.py"
-      - "services/ibc_store_v5.py"
+    branches: [main, feature/v5-philosophy-engine]
   workflow_dispatch:
 
 permissions:
