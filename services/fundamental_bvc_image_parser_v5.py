@@ -16,12 +16,20 @@ import tempfile
 
 import httpx
 
+from services.fundamental_certifier_policy_v5 import certify_fundamental_source
 from services.fundamental_pdf_parser_v5 import extract_candidates_from_pages
-from services.fundamental_sources_v5 import get_source, source_url_allowed
+from services.fundamental_sources_v5 import get_source
 
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_POST_IMAGES = 12
 BVC_API_ROOT = "https://www.bolsadecaracas.com/wp-json/wp/v2"
+
+
+def _is_certified_bvc_url(symbol: str, url: str) -> bool:
+    """Acepta BVC para cualquier emisor, pero sólo dentro de esta ruta BVC."""
+    certification = certify_fundamental_source(symbol, url)
+    return bool(certification.get("valid") and certification.get("certifier") == "bvc")
+
 
 
 class _MediaIdParser(HTMLParser):
@@ -95,18 +103,18 @@ def fetch_and_parse_bvc_post(symbol: str, post_id: int, timeout: float = 30.0) -
         return {}, {"valid": False, "reason": "invalid_bvc_post_id"}
 
     post_url = f"{BVC_API_ROOT}/posts/{post_id}"
-    if not source_url_allowed(symbol, post_url):
-        return {}, {"valid": False, "reason": "bvc_host_not_registered_for_issuer"}
+    if not _is_certified_bvc_url(symbol, post_url):
+        return {}, {"valid": False, "reason": "bvc_authority_not_certified"}
     headers = {"User-Agent": "CaracasBull-FundamentalAudit/1.0", "Accept": "application/json"}
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
             post_response = client.get(post_url)
             post_response.raise_for_status()
-            if not source_url_allowed(symbol, str(post_response.url)):
+            if not _is_certified_bvc_url(symbol, str(post_response.url)):
                 return {}, {"valid": False, "reason": "bvc_post_redirect_host_rejected"}
             post = post_response.json()
             source_url = str(post.get("link") or "")
-            if not source_url_allowed(symbol, source_url):
+            if not _is_certified_bvc_url(symbol, source_url):
                 return {}, {"valid": False, "reason": "bvc_post_link_host_rejected"}
             media_ids = extract_media_ids((post.get("content") or {}).get("rendered") or "")
             if not media_ids:
@@ -121,12 +129,12 @@ def fetch_and_parse_bvc_post(symbol: str, post_id: int, timeout: float = 30.0) -
                 media_response.raise_for_status()
                 media = media_response.json()
                 image_url = str(media.get("source_url") or "")
-                if not source_url_allowed(symbol, image_url):
+                if not _is_certified_bvc_url(symbol, image_url):
                     return {}, {"valid": False, "reason": "bvc_media_host_rejected", "media_id": media_id}
                 image_response = client.get(image_url)
                 image_response.raise_for_status()
                 final_url = str(image_response.url)
-                if not source_url_allowed(symbol, final_url):
+                if not _is_certified_bvc_url(symbol, final_url):
                     return {}, {"valid": False, "reason": "bvc_media_redirect_host_rejected", "media_id": media_id}
                 data = image_response.content
                 if not data or len(data) > MAX_IMAGE_BYTES:
