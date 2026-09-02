@@ -1,7 +1,8 @@
-"""Feature flags centralizados para despliegues progresivos.
+"""Feature flags centralizados para despliegues y rollback operacional.
 
-Todos los flags son opt-in y por defecto están desactivados para preservar
-el comportamiento actual de producción.
+Los motores de análisis validados están activos por defecto. Un valor explícito
+``false`` conserva un rollback inmediato sin modificar ni redesplegar código.
+Los flags de shadow y seguridad continúan opt-in.
 """
 
 import os
@@ -17,7 +18,11 @@ def flag_enabled(name: str, default: bool = False) -> bool:
 
 
 def scoring_v3_enabled() -> bool:
-    return flag_enabled("SCORING_ENGINE_V3_ENABLED")
+    return flag_enabled("SCORING_ENGINE_V3_ENABLED", default=True)
+
+
+def scoring_v5_enabled() -> bool:
+    return flag_enabled("SCORING_ENGINE_V5_ENABLED", default=True)
 
 
 def scoring_v3_shadow_enabled() -> bool:
@@ -25,7 +30,7 @@ def scoring_v3_shadow_enabled() -> bool:
 
 
 def portfolio_v4_enabled() -> bool:
-    return flag_enabled("PORTFOLIO_ENGINE_V4_ENABLED")
+    return flag_enabled("PORTFOLIO_ENGINE_V4_ENABLED", default=True)
 
 
 def portfolio_v4_shadow_enabled() -> bool:
@@ -33,8 +38,8 @@ def portfolio_v4_shadow_enabled() -> bool:
 
 
 def portfolio_ibc_benchmark_v5_enabled() -> bool:
-    """Benchmark Portafolio vs IBC V5; opt-in y apagado por defecto."""
-    return flag_enabled("PORTFOLIO_IBC_BENCHMARK_V5_ENABLED")
+    """Benchmark Portafolio vs IBC V5, activo con rollback explícito."""
+    return flag_enabled("PORTFOLIO_IBC_BENCHMARK_V5_ENABLED", default=True)
 
 
 def security_hardening_v1_enabled() -> bool:
@@ -43,6 +48,7 @@ def security_hardening_v1_enabled() -> bool:
 
 # Aliases temporales para compatibilidad con la primera rama V3/V4.
 SCORING_ENGINE_V3_ENABLED = scoring_v3_enabled
+SCORING_ENGINE_V5_ENABLED = scoring_v5_enabled
 PORTFOLIO_ENGINE_V4_ENABLED = portfolio_v4_enabled
 PORTFOLIO_IBC_BENCHMARK_V5_ENABLED = portfolio_ibc_benchmark_v5_enabled
 SECURITY_HARDENING_V1_ENABLED = security_hardening_v1_enabled

@@ -45,6 +45,7 @@ SOURCE_REGISTRY: dict[str, dict] = {
     "MTC.B": {"issuer":"Montesco Fondo Agroindustrial, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://montescoagro.com/","source_type":"issuer_official","confidence":100,"coverage":"fund_information+audited_statements+market_disclosures","latest_verified":"2026","status":"verified_primary"},
     "CCP.B": {"issuer":"Clabe Capital, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://clabecapital.com/","source_type":"issuer_official","confidence":100,"coverage":"fund_information+SUNAVAL_registration+market_disclosures","latest_verified":"2026","status":"verified_primary"},
     "PCP.B": {"issuer":"Fondo Petrolia, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://fondopetrolia.com/","source_type":"issuer_official","confidence":100,"coverage":"fund_information+market_disclosures","latest_verified":"2026","status":"verified_primary"},
+    "VNA.B": {"issuer":"Venealternative, S.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://www.bolsadecaracas.com/bolsa-de-valores-de-caracas-informacion-al-mercado-venealternative-s-a-c-a-simbolos-vna-b/","source_type":"bvc_primary_fallback","confidence":90,"coverage":"market_alternative_listing+prospectus+capital_increase_disclosures","latest_verified":"2026-07","status":"verified_manual_route"},
 }
 
 

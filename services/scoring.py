@@ -5,7 +5,7 @@ Caracas Bull unified philosophy (Greenblatt + Graham + Buffett + market
 confirmation) without destroying V3 fields.
 
 Rollback:
-- SCORING_ENGINE_V5_ENABLED=false -> V3
+- SCORING_ENGINE_V5_ENABLED=false -> V3 (V5 is active by default)
 - SCORING_ENGINE_V3_ENABLED=false -> V2
 """
 from __future__ import annotations
@@ -26,8 +26,9 @@ def _v3_enabled() -> bool:
 
 
 def _v5_enabled() -> bool:
-    # Deliberately opt-in until fundamental-source coverage is validated.
-    return _flag("SCORING_ENGINE_V5_ENABLED", "false")
+    # V5 completed its release gates. The explicit false value remains the
+    # immediate operational rollback without requiring a code deployment.
+    return _flag("SCORING_ENGINE_V5_ENABLED", "true")
 
 
 async def calcular_scoring_completo(devaluacion_pct: float | None = None):

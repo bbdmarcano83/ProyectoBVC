@@ -16,8 +16,8 @@ jobs:
       APP_ENV: production
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       PYTHONPATH: "."
-      SCORING_ENGINE_V5_ENABLED: "false"
-      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
+      SCORING_ENGINE_V5_ENABLED: "true"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
 
