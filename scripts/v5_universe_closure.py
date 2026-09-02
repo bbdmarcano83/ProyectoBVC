@@ -16,6 +16,7 @@ from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapsh
 from services.fundamental_discovery_v5 import discover_documents
 from services.fundamental_sources_v5 import SOURCE_REGISTRY
 from services.fundamental_store_v5 import load_latest_validated
+from services.fx_normalization_v5 import validate_fx_metadata
 
 
 def _json(value: Any) -> dict:
@@ -38,11 +39,7 @@ def _fx_valid(row: dict) -> bool:
         return False
     if row.get("fx_valid_v5") is not None:
         return bool(row.get("fx_valid_v5"))
-    currency = str(row.get("currency") or "").upper().strip()
-    if currency in {"USD", "US$"}:
-        return True
-    meta = row.get("fx_validation") or row.get("fx") or {}
-    return bool(meta.get("valid")) if isinstance(meta, dict) else False
+    return bool(validate_fx_metadata(row).get("valid"))
 
 
 async def _discover(symbols: list[str]) -> dict[str, dict]:
