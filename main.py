@@ -40,6 +40,7 @@ from app.routers.profile import register_profile_routes
 from app.routers.detail import register_detail_routes
 from app.routers.api_misc import register_misc_api_routes
 from app.routers.recovery import register_recovery_routes
+from app.routers.portfolio import register_portfolio_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -73,129 +74,7 @@ register_bitacora_routes(app)
 
 
 # ── Portafolio ────────────────────────────────────────────────────────────────
-
-@app.get("/portafolio", response_class=HTMLResponse)
-async def ver_portafolio(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    if not suscripcion_activa(usuario):
-        return RedirectResponse(url="/suscripcion", status_code=302)
-
-    datos_bolsa = await obtener_datos_bvc()
-    # Tasa BCV automática con fallback a la configurada manualmente
-    tasa_auto = await obtener_tasa_bcv()
-    config_tasa = tasa_auto if tasa_auto > 0 else float(os.environ.get("TASA_BCV", "0"))
-
-    activos_db = db.query(ActivoPortafolio).filter(ActivoPortafolio.usuario_id == usuario.id).all()
-    portafolio = {
-        a.simbolo: {
-            "cantidad": a.cantidad,
-            "precio_promedio": a.precio_promedio,
-            "comision": a.comision,
-            "registro": a.registro,
-            "iva": a.iva,
-        }
-        for a in activos_db
-    }
-
-    mapa_precios = {item["COD_SIMB"]: _to_float(item.get("PRECIO") or 0) for item in datos_bolsa}
-    total_mkt = sum(
-        _to_float(d.get("cantidad")) * mapa_precios.get(simb, _to_float(d.get("precio_promedio")))
-        for simb, d in portafolio.items()
-    )
-
-    filas = [
-        calcular_fila(simb, d, mapa_precios.get(simb, _to_float(d.get("precio_promedio"))), total_mkt, config_tasa)
-        for simb, d in portafolio.items()
-    ]
-    resumen = resumen_portafolio(portafolio, datos_bolsa, config_tasa)
-
-    return render("portafolio.html", {
-        "request": request,
-        "filas": filas,
-        "resumen": resumen,
-        "tasa": config_tasa,
-        "labels": [f["simb"] for f in filas],
-        "valores": [round(f["val_mkt"], 2) for f in filas],
-        "ganancias": [round(f["ganancia"], 2) for f in filas],
-        "active": "portafolio",
-        "usuario": usuario,
-        "dias": dias_restantes(usuario),
-        "mercado": mercado_abierto(),
-    })
-
-@app.post("/configurar")
-async def configurar(tasa: float = Form(...), request: Request = None, db: Session = Depends(get_db)):
-    os.environ["TASA_BCV"] = str(tasa)
-    return RedirectResponse(url="/portafolio", status_code=303)
-
-@app.post("/agregar")
-async def agregar(
-    request: Request,
-    simb: str = Form(...), cant: float = Form(...), precio: float = Form(...),
-    com: float = Form(0), reg: float = Form(0), iva: float = Form(16),
-    db: Session = Depends(get_db),
-):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    existente = db.query(ActivoPortafolio).filter(
-        ActivoPortafolio.usuario_id == usuario.id,
-        ActivoPortafolio.simbolo == simb.upper()
-    ).first()
-    if existente:
-        # Promediar precio y sumar cantidades automaticamente
-        cant_total = existente.cantidad + cant
-        precio_prom = ((existente.precio_promedio * existente.cantidad) + (precio * cant)) / cant_total
-        existente.cantidad = cant_total
-        existente.precio_promedio = round(precio_prom, 2)
-        existente.comision = existente.comision + com
-        existente.registro = existente.registro + reg
-    else:
-        db.add(ActivoPortafolio(
-            usuario_id=usuario.id, simbolo=simb.upper(),
-            cantidad=cant, precio_promedio=precio, comision=com, registro=reg, iva=iva
-        ))
-    db.commit()
-    return RedirectResponse(url="/portafolio", status_code=303)
-
-@app.post("/editar")
-async def editar(
-    request: Request,
-    simb: str = Form(...), cant: float = Form(...), precio: float = Form(...),
-    com: float = Form(0), reg: float = Form(0), iva: float = Form(16),
-    db: Session = Depends(get_db),
-):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    activo = db.query(ActivoPortafolio).filter(
-        ActivoPortafolio.usuario_id == usuario.id,
-        ActivoPortafolio.simbolo == simb.upper()
-    ).first()
-    if activo:
-        activo.cantidad = cant
-        activo.precio_promedio = precio
-        activo.comision = com
-        activo.registro = reg
-        activo.iva = iva
-        db.commit()
-    return RedirectResponse(url="/portafolio", status_code=303)
-
-@app.post("/eliminar")
-async def eliminar(request: Request, simb: str = Form(...), db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    activo = db.query(ActivoPortafolio).filter(
-        ActivoPortafolio.usuario_id == usuario.id,
-        ActivoPortafolio.simbolo == simb.upper()
-    ).first()
-    if activo:
-        db.delete(activo)
-        db.commit()
-    return RedirectResponse(url="/portafolio", status_code=303)
+register_portfolio_routes(app)
 
 
 # ── Detalle ───────────────────────────────────────────────────────────────────
