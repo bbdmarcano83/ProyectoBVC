@@ -1,8 +1,9 @@
 """Read-only audit of automatically discoverable PDF candidates for V5 issuers.
 
 No figures are persisted. The script ranks official PDF links, parses evidence,
-and reports whether the existing fail-closed auto-review can resolve the required
-accounting fields. Missing period/currency/basis metadata remains a hard blocker.
+checks fail-closed accounting auto-review, and independently resolves fiscal /
+monetary metadata from visible PDF text. Metadata remains a hard blocker until
+all required pieces are explicit.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import json
 
 from services.fundamental_autoreview_v5 import propose_fail_closed_selections
 from services.fundamental_discovery_v5 import discover_documents
+from services.fundamental_document_metadata_v5 import fetch_official_pdf_document_metadata
 from services.fundamental_pdf_parser_v5 import fetch_and_parse_official_pdf
 from services.fundamental_review_v5 import build_review_package
 from services.fundamental_sources_v5 import SOURCE_REGISTRY
@@ -38,8 +40,6 @@ def _score(doc: dict) -> tuple[int, str]:
             score += points
     if str(doc.get("kind")) == "pdf":
         score += 20
-    # Prefer documents discovered deeper in explicitly financial routes only mildly;
-    # freshness/financial semantics still dominate the ranking.
     score += min(2, int(doc.get("discovery_depth") or 0))
     return score, str(doc.get("url") or "")
 
@@ -67,7 +67,9 @@ def _sample_candidates(candidates: dict) -> dict:
 async def _attempt_pdf(symbol: str, doc: dict, sem: asyncio.Semaphore) -> dict:
     url = str(doc.get("url") or "")
     async with sem:
-        candidates, meta = await asyncio.to_thread(fetch_and_parse_official_pdf, symbol, url, 15.0)
+        parsed_task = asyncio.to_thread(fetch_and_parse_official_pdf, symbol, url, 15.0)
+        metadata_task = asyncio.to_thread(fetch_official_pdf_document_metadata, symbol, url, 15.0)
+        (candidates, meta), document_meta = await asyncio.gather(parsed_task, metadata_task)
     attempt = {
         "url": url,
         "text": doc.get("text"),
@@ -79,11 +81,15 @@ async def _attempt_pdf(symbol: str, doc: dict, sem: asyncio.Semaphore) -> dict:
         "derived_accounting_candidates": int(meta.get("derived_accounting_candidates") or 0),
         "sha256": meta.get("source_document_sha256"),
         "pages": meta.get("pages"),
+        "document_metadata": document_meta,
+        "metadata_resolved": bool(document_meta.get("resolved")),
+        "metadata_unresolved": document_meta.get("unresolved") or [],
     }
     if meta.get("valid"):
         attempt["candidate_fields"] = _sample_candidates(candidates)
         review = build_review_package(
-            symbol, candidates, source_url=url, as_of="candidate",
+            symbol, candidates, source_url=url,
+            as_of=str(document_meta.get("as_of") or "candidate"),
             source_document_sha256=meta.get("source_document_sha256"),
         )
         proposal = propose_fail_closed_selections(review)
@@ -94,6 +100,9 @@ async def _attempt_pdf(symbol: str, doc: dict, sem: asyncio.Semaphore) -> dict:
         attempt["balance_page"] = proposal.get("balance_page")
         attempt["missing_required"] = proposal.get("missing_required") or []
         attempt["selected_fields"] = sorted((proposal.get("selections") or {}).keys())
+        attempt["analysis_ingest_ready"] = bool(proposal.get("valid") and document_meta.get("resolved"))
+        attempt["backtest_ingest_ready"] = False
+        attempt["backtest_blocker"] = "published_at_required_from_official_publication_chain"
     return attempt
 
 
@@ -113,6 +122,8 @@ async def _one_symbol(symbol: str, validated: set[str], sem: asyncio.Semaphore) 
         "ranked_pdf_candidates": len(pdfs),
         "parse_valid_candidates": sum(1 for a in attempts if a.get("parse_valid")),
         "autoreview_ready_candidates": sum(1 for a in attempts if a.get("autoreview_valid")),
+        "metadata_ready_candidates": sum(1 for a in attempts if a.get("metadata_resolved")),
+        "analysis_ingest_ready_candidates": sum(1 for a in attempts if a.get("analysis_ingest_ready")),
         "attempts": attempts,
     }
 
@@ -128,6 +139,8 @@ async def main_async() -> dict:
         "symbols_with_pdf_candidates": sum(1 for r in rows if r.get("ranked_pdf_candidates", 0) > 0),
         "symbols_with_parseable_pdf": sum(1 for r in rows if r.get("parse_valid_candidates", 0) > 0),
         "symbols_with_autoreview_candidate": sum(1 for r in rows if r.get("autoreview_ready_candidates", 0) > 0),
+        "symbols_with_metadata_candidate": sum(1 for r in rows if r.get("metadata_ready_candidates", 0) > 0),
+        "symbols_analysis_ingest_ready": sum(1 for r in rows if r.get("analysis_ingest_ready_candidates", 0) > 0),
         "rows": rows,
     }
 
