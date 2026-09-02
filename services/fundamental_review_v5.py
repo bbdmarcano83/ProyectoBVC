@@ -7,10 +7,39 @@ parser dispone del SHA-256 del PDF, la huella se conserva en metadata auditable.
 """
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from services.fundamental_collector_v5 import ingest_normalized_report, coverage_report
 from services.fundamental_sources_v5 import get_source
+
+
+def _infer_preferred_column(fields: dict[str, list[dict]]) -> tuple[int | None, dict]:
+    """Infer latest comparative column only from explicit ordered year headers.
+
+    A vote is accepted only when at least two accounting-row candidates agree on
+    the same mapping and there is no conflicting mapping. This avoids assuming
+    that the left column is always the newest when the PDF does not prove it.
+    """
+    votes: list[int] = []
+    evidence: list[dict] = []
+    for field in ("total_assets", "total_liabilities", "equity", "net_income", "revenue"):
+        for option in fields.get(field) or []:
+            if option.get("context_quality") not in {"accounting_row", "derived_accounting_total"}:
+                continue
+            years = [int(y) for y in (option.get("page_years") or []) if str(y).isdigit()]
+            if len(years) < 2 or years[0] == years[1]:
+                continue
+            preferred = 0 if years[0] > years[1] else 1
+            votes.append(preferred)
+            evidence.append({"field": field, "page": option.get("page"), "years": years[:2], "preferred": preferred})
+    if len(votes) < 2:
+        return None, {"valid": False, "reason": "insufficient_explicit_period_headers", "evidence": evidence[:8]}
+    counts = Counter(votes)
+    if len(counts) != 1:
+        return None, {"valid": False, "reason": "conflicting_period_column_headers", "votes": dict(counts), "evidence": evidence[:8]}
+    preferred = votes[0]
+    return preferred, {"valid": True, "method": "ordered_year_headers", "preferred_column": preferred, "votes": len(votes), "evidence": evidence[:8]}
 
 
 def build_review_package(
@@ -40,12 +69,16 @@ def build_review_package(
                 "evidence": option.get("evidence"),
                 "column_index": option.get("column_index"),
                 "occurrence": option.get("occurrence"),
+                "context_quality": option.get("context_quality"),
+                "page_years": option.get("page_years") or [],
+                "derived_from": option.get("derived_from") or [],
             })
         if clean:
             fields[field] = clean
     digest = str(source_document_sha256 or "").lower().strip()
     if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
         digest = ""
+    preferred_column, preferred_meta = _infer_preferred_column(fields)
     return {
         "valid": bool(fields),
         "symbol": symbol,
@@ -55,6 +88,8 @@ def build_review_package(
         "source_document_sha256": digest or None,
         "as_of": as_of,
         "fields": fields,
+        "preferred_column": preferred_column,
+        "preferred_column_evidence": preferred_meta,
         "requires_explicit_selection": True,
         "note": "Ningún candidato se persiste hasta seleccionar explícitamente campo e índice.",
     }
@@ -89,6 +124,9 @@ def select_candidates(review: dict, selections: dict[str, int], *, extra_fields:
             "evidence": choice.get("evidence"),
             "column_index": choice.get("column_index"),
             "occurrence": choice.get("occurrence"),
+            "context_quality": choice.get("context_quality"),
+            "page_years": choice.get("page_years") or [],
+            "derived_from": choice.get("derived_from") or [],
         }
     return selected, {
         "valid": not errors and bool(selected),
@@ -136,6 +174,7 @@ def accept_reviewed_snapshot(
         "review_gate": "explicit_candidate_selection",
         "selected_evidence": selected_meta.get("evidence", {}),
         "review_required": False,
+        "preferred_column_evidence": review.get("preferred_column_evidence"),
     }
     digest = str(review.get("source_document_sha256") or "").strip().lower()
     if len(digest) == 64 and all(ch in "0123456789abcdef" for ch in digest):
