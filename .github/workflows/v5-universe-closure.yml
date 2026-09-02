@@ -8,6 +8,7 @@ on:
       - "scripts/v5_universe_closure.py"
       - "scripts/v5_universe_candidate_audit.py"
       - "scripts/v5_bvc_attachment_audit.py"
+      - "scripts/v5_ingest_tpg_safe.py"
       - "services/fundamental_*.py"
       - "services/fx_*.py"
       - "services/bvc_attachment_adapter_v5.py"
@@ -51,11 +52,15 @@ jobs:
           python -m unittest tests.test_fundamental_pdf_parser_v5 tests.test_fundamental_document_metadata_v5 -v
           python -m pytest tests/test_fundamental_autoreview_closure_v5.py tests/test_bvc_attachment_adapter_v5.py -q
       - name: Audit all registered V5 symbols against Neon and live discovery
-        run: python scripts/v5_universe_closure.py --discover --output v5_universe_closure.json
+        run: python scripts/v5_universe_closure.py --discover --output v5_universe_closure_before_ingest.json
       - name: Audit parseable official PDF candidates
         run: python scripts/v5_universe_candidate_audit.py
       - name: Audit BVC WordPress and SharePoint evidence routes
         run: python scripts/v5_bvc_attachment_audit.py
+      - name: Persist bounded TPG audited snapshots
+        run: python scripts/v5_ingest_tpg_safe.py
+      - name: Re-audit Neon after bounded ingestion
+        run: python scripts/v5_universe_closure.py --discover --output v5_universe_closure.json
       - name: Print unresolved symbols
         run: |
           python - <<'PY'
@@ -69,7 +74,9 @@ jobs:
         with:
           name: v5-universe-closure
           path: |
+            v5_universe_closure_before_ingest.json
             v5_universe_closure.json
             v5_universe_candidates.json
             v5_bvc_attachment_audit.json
+            v5_tpg_ingest.json
           retention-days: 14
