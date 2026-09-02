@@ -3,6 +3,7 @@
 Used only as a refactor guardrail. It imports the application without running
 startup events and records user-defined HTTP routes (static mount included).
 The frozen digest is intentionally verified after every structural extraction.
+Runtime extraction checkpoint: app factory + templating are externalized.
 """
 from __future__ import annotations
 
@@ -19,7 +20,6 @@ def inventory(app) -> list[dict]:
         path = str(getattr(route, "path", ""))
         name = str(getattr(route, "name", ""))
         methods = sorted(str(x) for x in (getattr(route, "methods", None) or []))
-        # Ignore FastAPI-generated docs/OpenAPI routes; they are framework surface.
         if path in {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}:
             continue
         rows.append({"path": path, "methods": methods, "name": name})
