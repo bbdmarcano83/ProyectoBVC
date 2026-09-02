@@ -196,6 +196,15 @@ VERIFIED_BACKFILL_V5 = {
             {"fiscal_period": "FY2025", "as_of": "2025-12-31", "audited": True, "document_type": "annual_audited_bvc_image_bundle", "currency": "VES", "monetary_basis": "nominal_ves", "value_multiplier": 1, "statement_unit_evidence": "Expresados en bolívares", "bvc_post_id": 32881, "url": "https://www.bolsadecaracas.com/c-a-nacional-telefonos-de-venezuela-cantv-informacion-financiera-diciembre-2025-2024-auditado-dictamen-de-los-contadores-publicos-mcr-asociados/"},
         ],
     },
+    "EFE": {
+        "issuer": "Productos EFE, S.A.",
+        "industry_type": "non_financial",
+        "discovery_url": "https://www.bolsadecaracas.com/wp-json/wp/v2/posts/24445",
+        "documents": [
+            {"fiscal_period": "FY2024", "as_of": "2024-09-30", "audited": True, "document_type": "annual_audited_bvc_image_bundle", "currency": "VES", "monetary_basis": "constant_ves_end_period", "value_multiplier": 1000000, "statement_unit_evidence": "En millones de bolívares constantes", "bvc_post_id": 24445, "url": "https://www.bolsadecaracas.com/productos-efe-s-a-y-subsidiaria-estados-financieros-auditados-septiembre-2024-2023/"},
+            {"fiscal_period": "FY2023", "as_of": "2023-09-30", "audited": True, "document_type": "comparative_in_2024_audit", "currency": "VES", "monetary_basis": "constant_ves_end_period", "value_multiplier": 1000000, "statement_unit_evidence": "En millones de bolívares constantes", "bvc_post_id": 24445, "url": "https://www.bolsadecaracas.com/productos-efe-s-a-y-subsidiaria-estados-financieros-auditados-septiembre-2024-2023/"},
+        ],
+    },
     "BPV": {
         "issuer": "Banco Provincial, S.A. Banco Universal",
         "industry_type": "financial",
