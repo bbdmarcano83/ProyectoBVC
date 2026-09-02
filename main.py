@@ -39,6 +39,7 @@ from app.routers.scoring import register_scoring_routes
 from app.routers.profile import register_profile_routes
 from app.routers.detail import register_detail_routes
 from app.routers.api_misc import register_misc_api_routes
+from app.routers.recovery import register_recovery_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -458,60 +459,7 @@ register_misc_api_routes(app)
 
 
 # ── Recuperar contraseña ─────────────────────────────────────────────────────────
-
-@app.get("/recuperar", response_class=HTMLResponse)
-async def recuperar_page(request: Request):
-    return render("recuperar.html", {"request": request, "modo": "solicitar", "error": None, "mensaje": None, "token": None})
-
-@app.post("/recuperar", response_class=HTMLResponse)
-async def recuperar_post(request: Request, email: str = Form(...), db: Session = Depends(get_db)):
-    import secrets
-    from datetime import datetime, timedelta
-    from database import Usuario as UsuarioModel
-    usuario = db.query(UsuarioModel).filter(UsuarioModel.email == email.lower().strip()).first()
-    if usuario:
-        token = secrets.token_urlsafe(32)
-        usuario.token_recuperacion = token
-        usuario.token_expira = datetime.utcnow() + timedelta(minutes=30)
-        db.commit()
-        app_url = os.environ.get("APP_URL", "https://caracasbull.com")
-        import asyncio
-        asyncio.create_task(asyncio.to_thread(email_recuperar_password, usuario.email, usuario.nombre, token, app_url))
-    return render("recuperar.html", {
-        "request": request, "modo": "solicitar", "error": None,
-        "mensaje": "Si el email existe, recibirás un enlace en minutos.", "token": None
-    })
-
-@app.get("/recuperar/{token}", response_class=HTMLResponse)
-async def recuperar_token_page(request: Request, token: str, db: Session = Depends(get_db)):
-    from datetime import datetime
-    from database import Usuario as UsuarioModel
-    usuario = db.query(UsuarioModel).filter(UsuarioModel.token_recuperacion == token).first()
-    if not usuario or not usuario.token_expira or datetime.utcnow() > usuario.token_expira:
-        return render("recuperar.html", {"request": request, "modo": "expirado", "error": None, "mensaje": None, "token": None})
-    return render("recuperar.html", {"request": request, "modo": "nueva", "error": None, "mensaje": None, "token": token})
-
-@app.post("/recuperar/{token}", response_class=HTMLResponse)
-async def recuperar_token_post(
-    request: Request, token: str,
-    password: str = Form(...), password2: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    from datetime import datetime
-    from database import Usuario as UsuarioModel
-    from services.auth import hash_password
-    usuario = db.query(UsuarioModel).filter(UsuarioModel.token_recuperacion == token).first()
-    if not usuario or not usuario.token_expira or datetime.utcnow() > usuario.token_expira:
-        return render("recuperar.html", {"request": request, "modo": "expirado", "error": None, "mensaje": None, "token": None})
-    if password != password2:
-        return render("recuperar.html", {"request": request, "modo": "nueva", "error": "Las contraseñas no coinciden", "mensaje": None, "token": token})
-    if len(password) < 8:
-        return render("recuperar.html", {"request": request, "modo": "nueva", "error": "Mínimo 8 caracteres", "mensaje": None, "token": token})
-    usuario.password_hash = hash_password(password)
-    usuario.token_recuperacion = None
-    usuario.token_expira = None
-    db.commit()
-    return render("recuperar.html", {"request": request, "modo": "ok", "error": None, "mensaje": None, "token": None})
+register_recovery_routes(app)
 
 
 # ── Chat Asistente ───────────────────────────────────────────────────────────────
