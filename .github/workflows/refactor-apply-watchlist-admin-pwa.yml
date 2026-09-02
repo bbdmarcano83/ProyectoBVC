@@ -1,0 +1,43 @@
+name: Refactor apply watchlist admin pwa
+
+on:
+  push:
+    branches: [refactor/main-modularization]
+    paths:
+      - ".github/workflows/refactor-apply-watchlist-admin-pwa.yml"
+      - "scripts/refactor_main_watchlist_admin_pwa.py"
+      - "app/routers/watchlist.py"
+      - "app/routers/admin.py"
+      - "app/routers/pwa.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply exact grouped codemod
+        run: python scripts/refactor_main_watchlist_admin_pwa.py
+      - name: Compile transformed files
+        run: python -m py_compile main.py app/routers/watchlist.py app/routers/admin.py app/routers/pwa.py
+      - name: Commit transformed main if needed
+        shell: bash
+        run: |
+          if git diff --quiet -- main.py; then
+            echo "No main.py changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add main.py
+          git commit -m "refactor: extract watchlist admin and pwa routes"
+          git push origin HEAD:refactor/main-modularization
