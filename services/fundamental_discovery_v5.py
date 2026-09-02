@@ -13,7 +13,7 @@ from urllib.parse import urljoin, urlparse, urldefrag
 
 import httpx
 
-from services.fundamental_sources_v5 import get_source
+from services.fundamental_sources_v5 import get_source, source_url_allowed
 
 KEYWORDS = (
     "estado", "financ", "audit", "informe", "gestion", "gestión", "trimes",
@@ -62,7 +62,9 @@ def _host_allowed(candidate_url: str, registered_url: str) -> bool:
         return False
     if not c or not r:
         return False
-    return c == r or c.endswith("." + r) or r.endswith("." + c)
+    c = c.removeprefix("www.")
+    r = r.removeprefix("www.")
+    return c == r or c.endswith("." + r)
 
 
 def _is_candidate(url: str, text: str) -> bool:
@@ -84,7 +86,13 @@ def _is_crawl_page(url: str, text: str) -> bool:
     return any(seg.isdigit() and len(seg) == 4 and 2020 <= int(seg) <= 2035 for seg in segments)
 
 
-def _parsed_links(html: str, base_url: str, registered_url: str) -> list[tuple[str, str]]:
+def _parsed_links(
+    html: str,
+    base_url: str,
+    registered_url: str,
+    *,
+    symbol: str | None = None,
+) -> list[tuple[str, str]]:
     parser = _LinkParser()
     parser.feed(html or "")
     out: list[tuple[str, str]] = []
@@ -93,16 +101,25 @@ def _parsed_links(html: str, base_url: str, registered_url: str) -> list[tuple[s
         absolute = urldefrag(urljoin(base_url, href))[0]
         if absolute in seen or not absolute.startswith("https://"):
             continue
-        if not _host_allowed(absolute, registered_url):
+        allowed = source_url_allowed(symbol, absolute) if symbol else _host_allowed(absolute, registered_url)
+        if not allowed:
             continue
         seen.add(absolute)
         out.append((absolute, text[:300]))
     return out
 
 
-def parse_candidate_links(html: str, base_url: str, registered_url: str) -> list[dict]:
+def parse_candidate_links(
+    html: str,
+    base_url: str,
+    registered_url: str,
+    *,
+    symbol: str | None = None,
+) -> list[dict]:
     out: list[dict] = []
-    for absolute, text in _parsed_links(html, base_url, registered_url):
+    for absolute, text in _parsed_links(
+        html, base_url, registered_url, symbol=symbol,
+    ):
         if not _is_candidate(absolute, text):
             continue
         path = urlparse(absolute).path.lower()
@@ -145,12 +162,12 @@ async def discover_documents(symbol: str, timeout: float = 12.0, *, max_pages: i
                 errors.append(f"{type(exc).__name__}:{page_url}")
                 continue
             resolved = str(response.url)
-            if not _host_allowed(resolved, start_url):
+            if not source_url_allowed(symbol, resolved):
                 errors.append(f"redirect_outside_registered_host:{page_url}")
                 continue
             if depth == 0:
                 final_url = resolved
-            links = _parsed_links(response.text, resolved, start_url)
+            links = _parsed_links(response.text, resolved, start_url, symbol=symbol)
             for absolute, text in links:
                 if _is_candidate(absolute, text) and absolute not in doc_seen:
                     path = urlparse(absolute).path.lower()

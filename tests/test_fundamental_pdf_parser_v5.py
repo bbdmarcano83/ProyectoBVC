@@ -1,7 +1,7 @@
 import hashlib
 import unittest
 
-from services.fundamental_pdf_parser_v5 import extract_candidates_from_pages, source_document_sha256
+from services.fundamental_pdf_parser_v5 import _official_host_allowed, extract_candidates_from_pages, source_document_sha256
 
 
 class FundamentalPdfParserV5Tests(unittest.TestCase):
@@ -76,6 +76,30 @@ class FundamentalPdfParserV5Tests(unittest.TestCase):
         self.assertEqual(out["net_income"][0]["value"], -404499712.0)
         self.assertEqual(out["net_income"][1]["value"], -346028278.0)
 
+    def test_ocr_note_reference_before_columns_is_not_a_value(self):
+        out = extract_candidates_from_pages([
+            "Efectivo en caja y bancos 13 9.929.899 2.453.517\n"
+            "Resultado neto 7 54.780.803 61.757.064"
+        ])
+        self.assertEqual([x["value"] for x in out["cash"][:2]], [9929899.0, 2453517.0])
+        self.assertEqual([x["column_index"] for x in out["cash"][:2]], [0, 1])
+        self.assertEqual([x["value"] for x in out["net_income"][:2]], [54780803.0, 61757064.0])
+
+    def test_per_share_result_does_not_replace_net_income(self):
+        out = extract_candidates_from_pages([
+            "Utilidad (pérdida) neta integral por acción 15 1,39 0,58\n"
+            "Utilidad (pérdida) neta 48.500.000 31.200.000"
+        ])
+        self.assertEqual([x["value"] for x in out["net_income"][:2]], [48500000.0, 31200000.0])
+
+    def test_ocr_comma_in_net_income_label_is_supported(self):
+        out = extract_candidates_from_pages([
+            "Total patrimonio neto 310.898.831 138.464.333\n"
+            "Utilidad, neta 85.201.971 196.946.156"
+        ])
+        self.assertEqual(out["equity"][0]["value"], 310898831.0)
+        self.assertEqual(out["net_income"][0]["value"], 85201971.0)
+
     def test_source_document_sha256_fingerprints_exact_bytes(self):
         raw = b"%PDF-1.4\nCaracasBull fixture\n"
         self.assertEqual(source_document_sha256(raw), hashlib.sha256(raw).hexdigest())
@@ -88,6 +112,23 @@ class FundamentalPdfParserV5Tests(unittest.TestCase):
     def test_parentheses_are_negative(self):
         out = extract_candidates_from_pages(["Pérdida neta (1.250,75)"])
         self.assertLess(out["net_income"][0]["value"], 0)
+
+    def test_single_spanish_thousands_separator_is_not_decimal(self):
+        out = extract_candidates_from_pages(["Total activo 1.250"])
+        self.assertEqual(out["total_assets"][0]["value"], 1250)
+
+    def test_detects_statement_scale_on_candidate_page(self):
+        out = extract_candidates_from_pages([
+            "Estados financieros en miles de bolívares constantes Total activo 1.250 Total pasivo 500 Total patrimonio 750"
+        ])
+        self.assertEqual(out["total_assets"][0]["page_value_multiplier"], 1000)
+        self.assertEqual(out["total_assets"][0]["page_monetary_basis"], "constant_ves_end_period")
+
+    def test_registered_primary_and_cdn_hosts_only(self):
+        self.assertTrue(_official_host_allowed("BNC", "https://www.bncenlinea.com/report.pdf"))
+        self.assertTrue(_official_host_allowed("BNC", "https://d3q4nr72nuserl.cloudfront.net/report.pdf"))
+        self.assertFalse(_official_host_allowed("BNC", "https://evil.example/report.pdf"))
+        self.assertFalse(_official_host_allowed("BNC", "https://com/report.pdf"))
 
 
 if __name__ == "__main__":

@@ -17,32 +17,36 @@ from __future__ import annotations
 from io import BytesIO
 import hashlib
 import re
-from urllib.parse import urlparse
 from typing import Iterable
 
 import httpx
 from pypdf import PdfReader
 
-from services.fundamental_sources_v5 import get_source
+from services.fundamental_sources_v5 import get_source, source_url_allowed
 
-MAX_PDF_BYTES = 25 * 1024 * 1024
+# Algunos informes oficiales ilustrados (p. ej. memorias bancarias) superan
+# 25 MiB. El límite sigue siendo estricto para acotar memoria, pero no excluye
+# documentos oficiales ya observados de ~29 MiB.
+MAX_PDF_BYTES = 40 * 1024 * 1024
 
 FIELD_ALIASES = {
     "total_assets": (
-        "total del activo", "total activo", "total activos", "activos totales",
+        "total del activo", "total activo", "activo total", "total activos", "activos totales",
     ),
     "total_liabilities": (
-        "total del pasivo", "total pasivo", "total pasivos", "pasivos totales",
+        "total del pasivo", "total pasivo", "pasivo total", "total pasivos", "pasivos totales",
     ),
     "equity": (
         "total patrimonio de los accionistas", "total patrimonio de accionistas",
-        "total del patrimonio", "total patrimonio", "patrimonio total", "patrimonio",
+        "total patrimonio neto", "total del patrimonio", "total patrimonio",
+        "patrimonio total", "patrimonio neto", "patrimonio",
     ),
     "net_income": (
         "utilidad (pérdida) neta", "utilidad (perdida) neta",
         "ganancia (pérdida) neta", "ganancia (perdida) neta",
         "resultado neto del año", "resultado neto del ejercicio",
-        "resultado neto", "utilidad neta", "ganancia neta",
+        "resultado neto", "utilidad, neta", "utilidad neta",
+        "ganancia, neta", "ganancia neta",
         "pérdida neta", "perdida neta",
     ),
     "revenue": ("ingresos totales", "ingresos", "ventas netas", "ventas"),
@@ -85,6 +89,35 @@ _US_GROUPED_FULL = re.compile(r"^\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
 _ALL_ALIASES = tuple(sorted({a for aliases in FIELD_ALIASES.values() for a in aliases}, key=len, reverse=True))
 
 
+def _page_statement_context(text: str) -> dict:
+    """Detecta unidad/base sólo cuando el propio folio las declara."""
+    lower = " ".join(str(text or "").lower().split())
+    if re.search(r"(?:miles|millares)\s+de\s+bol[ií]vares", lower):
+        multiplier = 1000.0
+        unit = "thousands_ves"
+    elif re.search(r"millones\s+de\s+(?:bol[ií]vares|bs\.?)", lower):
+        multiplier = 1_000_000.0
+        unit = "millions_ves"
+    elif re.search(r"(?:expresad[oa]s?\s+)?en\s+bol[ií]vares", lower):
+        multiplier = 1.0
+        unit = "ves"
+    else:
+        multiplier = None
+        unit = None
+
+    if "bolívares constantes" in lower or "bolivares constantes" in lower:
+        basis = "constant_ves_end_period"
+    elif multiplier is not None:
+        basis = "nominal_ves"
+    else:
+        basis = None
+    return {
+        "page_value_multiplier": multiplier,
+        "page_statement_unit": unit,
+        "page_monetary_basis": basis,
+    }
+
+
 def source_document_sha256(data: bytes) -> str | None:
     if not isinstance(data, (bytes, bytearray)) or not data:
         return None
@@ -125,23 +158,7 @@ def _normalize_number(raw: str) -> float | None:
 
 
 def _official_host_allowed(symbol: str, url: str) -> bool:
-    src = get_source(symbol)
-    if not src:
-        return False
-    target = (urlparse(url).hostname or "").lower()
-    if not target:
-        return False
-    registered = []
-    for key in ("primary_url", "url", "source_url", "discovery_url"):
-        value = src.get(key)
-        if value:
-            registered.append((urlparse(str(value)).hostname or "").lower())
-    for value in src.get("urls", []) if isinstance(src.get("urls"), list) else []:
-        registered.append((urlparse(str(value)).hostname or "").lower())
-    registered = [h for h in registered if h]
-    if not registered:
-        return True
-    return any(target == h or target.endswith("." + h) or h.endswith("." + target) for h in registered)
+    return source_url_allowed(symbol, url)
 
 
 def _clean_row(raw: str) -> str:
@@ -175,11 +192,25 @@ def _append_matches(
     bucket: list[dict], *, page_no: int, alias: str, occurrence: int,
     evidence: str, scan_text: str, context_quality: str,
     page_years: list[int] | None = None,
+    statement_context: dict | None = None,
 ) -> int:
     added = 0
     matches = NUMBER_RE.findall(scan_text)
-    for column_index, token in enumerate(matches[:3]):
-        value = _normalize_number(token)
+    parsed = [(token, _normalize_number(token)) for token in matches[:4]]
+    # OCR suele conservar el número de nota entre la etiqueta y la primera
+    # columna ("Efectivo 13 9.929.899 2.453.517"). No puede convertirse en la
+    # cifra corriente: sólo se elimina cuando es un entero pequeño seguido por
+    # al menos dos importes materiales, dejando intactas filas de un solo valor.
+    if (
+        len(parsed) >= 3
+        and parsed[0][1] is not None
+        and float(parsed[0][1]).is_integer()
+        and abs(float(parsed[0][1])) <= 99
+        and parsed[1][1] is not None
+        and abs(float(parsed[1][1])) >= 100
+    ):
+        parsed = parsed[1:]
+    for column_index, (token, value) in enumerate(parsed[:3]):
         if value is None:
             continue
         bucket.append({
@@ -192,12 +223,15 @@ def _append_matches(
             "occurrence": occurrence,
             "context_quality": context_quality,
             "page_years": list(page_years or []),
+            **dict(statement_context or {}),
         })
         added += 1
     return added
 
 
-def _component_rows(rows: list[str], page_no: int, years: list[int]) -> dict[str, list[dict]]:
+def _component_rows(
+    rows: list[str], page_no: int, years: list[int], statement_context: dict,
+) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {key: [] for key in _COMPONENT_LABELS}
     for row in rows:
         lower = row.lower()
@@ -215,6 +249,7 @@ def _component_rows(rows: list[str], page_no: int, years: list[int]) -> dict[str
                     "value": value, "raw": token, "page": page_no,
                     "column_index": col, "evidence": row[:500],
                     "page_years": list(years),
+                    **statement_context,
                 })
     return out
 
@@ -251,6 +286,9 @@ def _derive_total_candidates(candidates: dict[str, list[dict]], components: dict
                     "context_quality": "derived_accounting_total",
                     "page_years": list(a.get("page_years") or b.get("page_years") or []),
                     "derived_from": [left_key, right_key],
+                    "page_value_multiplier": a.get("page_value_multiplier"),
+                    "page_statement_unit": a.get("page_statement_unit"),
+                    "page_monetary_basis": a.get("page_monetary_basis"),
                 })
 
 
@@ -261,11 +299,13 @@ def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
         rows = [_clean_row(line) for line in raw_page.splitlines() if _clean_row(line)]
         years = _page_years(rows)
         row_hits: dict[str, int] = {field: 0 for field in FIELD_ALIASES}
-
+        statement_context = _page_statement_context(raw_page)
         for field, aliases in FIELD_ALIASES.items():
             occurrence = 0
             for row in rows:
                 lower = row.lower()
+                if field == "net_income" and "por acci" in lower:
+                    continue
                 for alias in aliases:
                     start = 0
                     while True:
@@ -277,12 +317,13 @@ def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
                             candidates[field], page_no=page_no, alias=alias,
                             occurrence=occurrence, evidence=row[:500], scan_text=scan,
                             context_quality="accounting_row", page_years=years,
+                            statement_context=statement_context,
                         )
                         row_hits[field] += added
                         occurrence += 1
                         start = idx + len(alias)
 
-        components = _component_rows(rows, page_no, years)
+        components = _component_rows(rows, page_no, years, statement_context)
         _derive_total_candidates(candidates, components, page_no)
 
         flat = _clean_row(raw_page)
@@ -303,6 +344,7 @@ def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
                         candidates[field], page_no=page_no, alias=alias,
                         occurrence=occurrence, evidence=window, scan_text=after,
                         context_quality="page_fallback", page_years=years,
+                        statement_context=statement_context,
                     )
                     occurrence += 1
                     start = idx + len(alias)
@@ -355,6 +397,14 @@ def fetch_and_parse_official_pdf(symbol: str, url: str, timeout: float = 20.0) -
         with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
             response = client.get(url)
             response.raise_for_status()
+            final_url = str(response.url)
+            if not _official_host_allowed(symbol, final_url):
+                return {}, {
+                    "valid": False,
+                    "reason": "redirect_host_not_registered_for_issuer",
+                    "source_url": url,
+                    "final_url": final_url,
+                }
             data = response.content
             content_type = str(response.headers.get("content-type") or "").lower()
     except Exception as exc:
@@ -368,7 +418,11 @@ def fetch_and_parse_official_pdf(symbol: str, url: str, timeout: float = 20.0) -
         }
     candidates, meta = parse_pdf_bytes(data)
     meta.update({
-        "symbol": symbol, "source_url": url, "bytes": len(data),
-        "content_type": content_type, "source_document_sha256": digest,
+        "symbol": symbol,
+        "source_url": url,
+        "final_url": final_url,
+        "bytes": len(data),
+        "content_type": content_type,
+        "source_document_sha256": digest,
     })
     return candidates, meta

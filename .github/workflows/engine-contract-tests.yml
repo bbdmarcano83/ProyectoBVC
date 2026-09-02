@@ -58,6 +58,7 @@ jobs:
           services/fundamental_pilots_v5.py
           services/fundamental_backfill_manifest_v5.py
           services/fundamental_pdf_parser_v5.py
+          services/fundamental_bvc_image_parser_v5.py
           services/fundamental_review_v5.py
           services/fundamental_autoreview_v5.py
           services/fundamental_history_v5.py
@@ -125,4 +126,51 @@ jobs:
           paths = [getattr(route, "path", "") for route in app.routes]
           assert paths.count(V5_BENCHMARK_PATH) == 1, paths
           print("benchmark V5 active route ok")
+          PY
+
+  verified-fundamental-backfill:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/full-fundamentals-v5'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      APP_ENV: production
+      SCORING_ENGINE_V5_ENABLED: "false"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: "."
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Require external Neon secret
+        run: |
+          python - <<'PY'
+          import os
+          value = os.environ.get("DATABASE_URL", "")
+          if not value.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+              raise SystemExit("DATABASE_URL must be external PostgreSQL/Neon")
+          assert os.environ.get("SCORING_ENGINE_V5_ENABLED") == "false"
+          print("Neon detected; V5 remains disabled during backfill")
+          PY
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Install reproducible OCR runtime
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr
+      - name: Ingest verified official documents
+        run: python scripts/fundamental_backfill_v5.py --all
+      - name: Report persisted verified coverage
+        run: |
+          python - <<'PY'
+          from services.fundamental_backfill_manifest_v5 import FUNDAMENTAL_BACKFILL_V5
+          from services.fundamental_store_v5 import load_latest_validated
+          rows, meta = load_latest_validated()
+          covered = sorted(symbol for symbol in FUNDAMENTAL_BACKFILL_V5 if (rows or {}).get(symbol))
+          missing = sorted(set(FUNDAMENTAL_BACKFILL_V5) - set(covered))
+          print(f"verified manifest issuers={len(FUNDAMENTAL_BACKFILL_V5)}")
+          print(f"persisted issuers={len(covered)}: {covered}")
+          print(f"not yet persisted={len(missing)}: {missing}")
+          print(f"history_meta={meta.get('history', {})}")
           PY

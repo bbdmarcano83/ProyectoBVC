@@ -35,6 +35,34 @@ class FundamentalReviewV5Tests(unittest.TestCase):
         self.assertFalse(meta["valid"])
         self.assertIn("net_income:indice_fuera_de_rango", meta["errors"])
 
+    def test_declared_statement_scale_is_applied_and_audited(self):
+        review = build_review_package("SVS", self._candidates(), source_url="https://sivensa.com.ve/report.pdf", as_of="2025-09-30")
+        record, meta = select_candidates(
+            review,
+            {"total_assets": 0, "equity": 0},
+            value_multiplier=1000,
+        )
+        self.assertTrue(meta["valid"])
+        self.assertEqual(record["total_assets"], 100000)
+        self.assertEqual(record["equity"], 60000)
+        self.assertEqual(meta["evidence"]["total_assets"]["reported_value_multiplier"], 1000)
+
+    def test_invalid_statement_scale_fails_closed(self):
+        review = build_review_package("SVS", self._candidates(), source_url="https://sivensa.com.ve/report.pdf", as_of="2025-09-30")
+        record, meta = select_candidates(review, {"total_assets": 0}, value_multiplier=0)
+        self.assertEqual(record, {})
+        self.assertFalse(meta["valid"])
+        self.assertEqual(meta["reason"], "invalid_value_multiplier")
+
+    def test_detected_page_scale_mismatch_fails_closed(self):
+        candidates = self._candidates()
+        candidates["total_assets"][0]["page_value_multiplier"] = 1000
+        review = build_review_package("SVS", candidates, source_url="https://sivensa.com.ve/report.pdf", as_of="2025-09-30")
+        record, meta = select_candidates(review, {"total_assets": 0}, value_multiplier=1)
+        self.assertEqual(record, {})
+        self.assertFalse(meta["valid"])
+        self.assertIn("total_assets:escala_declarada_no_coincide_con_folio", meta["errors"])
+
     def test_accept_calls_collector_only_after_explicit_selection(self):
         review = build_review_package("SVS", self._candidates(), source_url="https://sivensa.com.ve/report.pdf", as_of="2025-09-30")
         fake = {"accepted": True, "persisted": True}
