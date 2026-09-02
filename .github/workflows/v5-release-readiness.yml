@@ -1,6 +1,8 @@
 name: V5 release readiness
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main, feature/v5-philosophy-engine]
   workflow_dispatch:
