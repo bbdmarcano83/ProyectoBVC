@@ -1,14 +1,9 @@
 """Bounded production ingestion for TPG annual audited statements.
 
 This is intentionally NOT a generic auto-ingester. It only permits C.A. Telares
-de Palo Grande (TPG), periods 2024-12-31 and 2025-12-31, when all of these gates
-are simultaneously true:
-- document is discovered from the registered official issuer site;
-- official link text explicitly states that the financial statements are audited;
-- exact PDF SHA-256 is available and duplicate files are collapsed;
-- PDF metadata resolves as_of, VES and constant-VES end-period basis;
-- accounting auto-review is unambiguous;
-- historical FX resolves and snapshot validation passes.
+de Palo Grande (TPG), periods 2024-12-31 and 2025-12-31, when all gates pass.
+Already validated allowlisted periods are frozen and never re-ingested by this
+script, protecting production snapshots from future parser changes.
 
 published_at remains None unless a separate official publication chain supplies it,
 so these snapshots may support current analysis but not point-in-time backtests.
@@ -18,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from database import FundamentalSnapshot, SessionLocal
 from services.fundamental_autoreview_v5 import propose_fail_closed_selections
 from services.fundamental_collector_v5 import coverage_report, ingest_normalized_report
 from services.fundamental_discovery_v5 import discover_documents
@@ -35,7 +31,30 @@ def _audited_link(text: str) -> bool:
     return "estado" in low and "financier" in low and "audit" in low
 
 
+def _existing_validated_periods() -> set[str]:
+    with SessionLocal() as db:
+        rows = db.query(FundamentalSnapshot.as_of).filter(
+            FundamentalSnapshot.simbolo == SYMBOL,
+            FundamentalSnapshot.validated.is_(True),
+            FundamentalSnapshot.as_of.in_(sorted(ALLOWED_AS_OF)),
+        ).all()
+        return {str(row[0]) for row in rows if row and row[0]}
+
+
 async def main_async() -> dict:
+    existing = _existing_validated_periods()
+    if existing == ALLOWED_AS_OF:
+        return {
+            "ok": True,
+            "symbol": SYMBOL,
+            "allowlisted_periods": sorted(ALLOWED_AS_OF),
+            "accepted_periods": sorted(existing),
+            "accepted_count": len(existing),
+            "skipped": "all_allowlisted_periods_already_validated_and_frozen",
+            "rows": [],
+        }
+
+    missing_periods = ALLOWED_AS_OF - existing
     discovery = await discover_documents(SYMBOL, timeout=15.0)
     if not discovery.get("ok"):
         return {"ok": False, "error": "discovery_failed", "discovery": discovery, "rows": []}
@@ -65,6 +84,11 @@ async def main_async() -> dict:
         if as_of not in ALLOWED_AS_OF:
             rows.append({"url": url, "sha256": digest, "accepted": False, "error": "period_not_allowlisted", "as_of": as_of})
             continue
+        if as_of in existing:
+            rows.append({"url": url, "sha256": digest, "as_of": as_of, "accepted": True, "frozen_existing": True})
+            continue
+        if as_of not in missing_periods:
+            continue
         if doc_meta.get("currency") != "VES" or doc_meta.get("monetary_basis") != "constant_ves_end_period":
             rows.append({
                 "url": url, "sha256": digest, "accepted": False,
@@ -75,10 +99,7 @@ async def main_async() -> dict:
             continue
 
         review = build_review_package(
-            SYMBOL,
-            candidates,
-            source_url=url,
-            as_of=as_of,
+            SYMBOL, candidates, source_url=url, as_of=as_of,
             source_document_sha256=digest,
         )
         proposal = propose_fail_closed_selections(review)
@@ -123,41 +144,29 @@ async def main_async() -> dict:
             "backtest_blocker": "published_at_required_from_official_publication_chain",
         }
         result = ingest_normalized_report(
-            SYMBOL,
-            record,
-            source_url=url,
-            as_of=as_of,
-            document_type="annual_audited",
-            fiscal_period=f"FY{year}",
-            audited=True,
-            published_at=None,
-            metadata=metadata,
-            period_start=f"{year}-01-01",
-            hydrate_fx=True,
-            require_fx=True,
+            SYMBOL, record, source_url=url, as_of=as_of,
+            document_type="annual_audited", fiscal_period=f"FY{year}",
+            audited=True, published_at=None, metadata=metadata,
+            period_start=f"{year}-01-01", hydrate_fx=True, require_fx=True,
         )
         rows.append({
-            "url": url,
-            "sha256": digest,
-            "as_of": as_of,
+            "url": url, "sha256": digest, "as_of": as_of,
             "accepted": bool(result.get("accepted")),
             "persisted": bool(result.get("persisted")),
             "duplicate": bool(result.get("duplicate")),
-            "coverage": result.get("coverage"),
-            "validation": result.get("validation"),
-            "fx": result.get("fx"),
-            "document_id": result.get("document_id"),
-            "snapshot_id": result.get("snapshot_id"),
-            "error": result.get("error"),
+            "coverage": result.get("coverage"), "validation": result.get("validation"),
+            "fx": result.get("fx"), "document_id": result.get("document_id"),
+            "snapshot_id": result.get("snapshot_id"), "error": result.get("error"),
         })
 
-    accepted_periods = sorted({r.get("as_of") for r in rows if r.get("accepted") and r.get("as_of")})
+    final_periods = _existing_validated_periods()
     return {
-        "ok": len(accepted_periods) == EXPECTED_PERIODS and set(accepted_periods) == ALLOWED_AS_OF,
+        "ok": final_periods == ALLOWED_AS_OF,
         "symbol": SYMBOL,
         "allowlisted_periods": sorted(ALLOWED_AS_OF),
-        "accepted_periods": accepted_periods,
-        "accepted_count": len(accepted_periods),
+        "accepted_periods": sorted(final_periods),
+        "accepted_count": len(final_periods),
+        "frozen_existing_at_start": sorted(existing),
         "rows": rows,
     }
 
