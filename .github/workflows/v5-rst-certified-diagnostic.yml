@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python scripts/diagnose_rst_fy2025_v5.py > rst_fy2025_certified_diagnostic.json 2> rst_fy2025_certified_diagnostic.stderr
+          python -m scripts.diagnose_rst_fy2025_v5 > rst_fy2025_certified_diagnostic.json 2> rst_fy2025_certified_diagnostic.stderr
           status=$?
           if [ -s rst_fy2025_certified_diagnostic.json ]; then cat rst_fy2025_certified_diagnostic.json; fi
           if [ -s rst_fy2025_certified_diagnostic.stderr ]; then cat rst_fy2025_certified_diagnostic.stderr >&2; fi
