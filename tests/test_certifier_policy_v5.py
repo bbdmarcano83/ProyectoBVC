@@ -4,6 +4,7 @@ from services.fundamental_certifier_policy_v5 import (
     CERTIFIERS,
     CERTIFIER_POLICY_VERSION,
     certify_fundamental_source,
+    resolve_certified_evidence,
 )
 from services.fundamental_collector_v5 import ingest_normalized_report
 
@@ -71,6 +72,43 @@ class CertifierPolicyV5Tests(unittest.TestCase):
         self.assertFalse(result["persisted"])
         self.assertEqual(result["error"], "source_certifier_required")
         self.assertEqual(result["fx"]["flags"], ["not_evaluated_due_to_source_certifier_gate"])
+
+    def test_certified_value_beats_uncertified_candidate(self):
+        result = resolve_certified_evidence("PIV.B", [
+            {"value": 100, "source_url": "https://example.com/scraped.pdf"},
+            {"value": 125, "source_url": "https://pivca.com/wp-content/uploads/auditado.pdf"},
+        ])
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["value"], 125)
+        self.assertEqual(result["certifiers"], ["issuer"])
+        self.assertEqual(len(result["rejected"]), 1)
+
+    def test_uncertified_candidate_cannot_fill_missing_certified_evidence(self):
+        result = resolve_certified_evidence("PIV.B", [
+            {"value": 999, "source_url": "https://example.com/scraped.pdf"},
+        ])
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["value"])
+        self.assertEqual(result["reason"], "no_certified_evidence")
+
+    def test_conflicting_certified_authorities_fail_closed(self):
+        result = resolve_certified_evidence("PIV.B", [
+            {"value": 125, "source_url": "https://pivca.com/wp-content/uploads/auditado.pdf"},
+            {"value": 126, "source_url": "https://www.sunaval.gob.ve/documentos/auditado.pdf"},
+        ])
+        self.assertFalse(result["valid"])
+        self.assertIsNone(result["value"])
+        self.assertEqual(result["reason"], "certified_authority_conflict")
+        self.assertEqual(len(result["certified"]), 2)
+
+    def test_matching_certified_authorities_are_joint_provenance(self):
+        result = resolve_certified_evidence("PIV.B", [
+            {"value": 125, "source_url": "https://pivca.com/wp-content/uploads/auditado.pdf"},
+            {"value": 125, "source_url": "https://www.bolsadecaracas.com/pivca-auditado/"},
+        ])
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["value"], 125)
+        self.assertEqual(result["certifiers"], ["bvc", "issuer"])
 
 
 if __name__ == "__main__":
