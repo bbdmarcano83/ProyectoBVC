@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 import httpx
@@ -31,6 +32,27 @@ def _score(text: str) -> tuple[int, int]:
     return keywords, numeric
 
 
+def _accounting_lines(text: str) -> list[str]:
+    return [
+        line.strip() for line in text.splitlines()
+        if any(key in line.lower() for key in KEYWORDS)
+    ]
+
+
+def _digits_after_label(line: str, label: str) -> str | None:
+    low = line.lower()
+    pos = low.find(label)
+    if pos < 0:
+        return None
+    tail = line[pos + len(label):]
+    groups = re.findall(r"\d+", tail)
+    if not groups:
+        return None
+    # Primer valor de la columna vigente: conservamos sólo dígitos observados.
+    # No corregimos, truncamos ni agregamos cifras en este diagnóstico.
+    return "".join(groups[:4])
+
+
 def main() -> int:
     headers = {"User-Agent": "CaracasBull-TDVD-OCR-Audit/1.0"}
     with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as client:
@@ -38,6 +60,7 @@ def main() -> int:
         ids = extract_media_ids((post.get("content") or {}).get("rendered") or "")
         pages = []
         profile_rows = []
+        net_income_observations = []
         with tempfile.TemporaryDirectory(prefix="tdvd-ocr-") as tmp:
             tmpdir = Path(tmp)
             for page_no, media_id in enumerate(ids, start=1):
@@ -58,24 +81,49 @@ def main() -> int:
                         continue
                     for psm in (4, 6, 11):
                         text = _ocr(out, psm)
-                        variants.append({"profile": f"{name}-psm{psm}", "text": text, "score": _score(text)})
+                        profile = f"{name}-psm{psm}"
+                        lines = _accounting_lines(text)
+                        variants.append({"profile": profile, "text": text, "score": _score(text), "lines": lines})
+                        for line in lines:
+                            if "utilidad (pérdida) neta" in line.lower() or "utilidad (perdida) neta" in line.lower():
+                                digits = _digits_after_label(line, "neta")
+                                if digits:
+                                    net_income_observations.append({
+                                        "profile": profile,
+                                        "page": page_no,
+                                        "digits": digits,
+                                        "line": line,
+                                    })
                 variants.sort(key=lambda row: row["score"], reverse=True)
-                best = variants[0] if variants else {"profile": None, "text": "", "score": (0, 0)}
+                best = variants[0] if variants else {"profile": None, "text": "", "score": (0, 0), "lines": []}
                 pages.append(best["text"])
                 profile_rows.append({
                     "page": page_no,
                     "media_id": media_id,
                     "best_profile": best["profile"],
                     "score": best["score"],
-                    "accounting_lines": [
-                        line.strip() for line in best["text"].splitlines()
-                        if any(key in line.lower() for key in KEYWORDS)
+                    "accounting_lines": best["lines"],
+                    "all_profile_lines": [
+                        {"profile": row["profile"], "score": row["score"], "accounting_lines": row["lines"]}
+                        for row in variants
                     ],
                 })
     candidates = extract_candidates_from_pages(pages)
+    counts = Counter(row["digits"] for row in net_income_observations)
+    consensus_digits = None
+    consensus_votes = 0
+    if counts:
+        consensus_digits, consensus_votes = counts.most_common(1)[0]
     out = {
         "post_id": POST_ID,
         "profiles": profile_rows,
+        "net_income_consensus": {
+            "observations": net_income_observations,
+            "counts": dict(counts),
+            "consensus_digits": consensus_digits,
+            "consensus_votes": consensus_votes,
+            "valid": bool(consensus_digits and consensus_votes >= 2),
+        },
         "candidates": {
             field: [
                 {"value": row.get("value"), "page": row.get("page"), "column_index": row.get("column_index"), "alias": row.get("alias"), "evidence": row.get("evidence")}
