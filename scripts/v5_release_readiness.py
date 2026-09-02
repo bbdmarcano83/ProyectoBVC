@@ -32,9 +32,8 @@ EXPECTED_HISTORY = {
     },
     "ICP.B": {
         "industry": "investment_vehicle",
-        "required_dates": {"2022-12-31", "2024-12-31", "2025-12-31"},
-        "forbidden_dates": {"2023-12-31"},
-        "min_periods": 3,
+        "required_dates": {"2022-12-31", "2023-12-31", "2024-12-31", "2025-12-31"},
+        "min_periods": 4,
     },
 }
 
