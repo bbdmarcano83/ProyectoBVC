@@ -17,8 +17,12 @@ from io import BytesIO
 import re
 import unicodedata
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
+import httpx
 from pypdf import PdfReader
+
+from services.fundamental_sources_v5 import get_source
 
 _MONTHS = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
@@ -84,17 +88,12 @@ def _clean(text: str) -> str:
     return " ".join(raw.replace("\u00a0", " ").split())
 
 
-def _lower(text: str) -> str:
-    return _clean(text).lower()
-
-
 def _date_candidates(pages: Iterable[str], max_pages: int = 12) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for page_no, raw in enumerate(pages or [], start=1):
         if page_no > max_pages:
             break
         text = _clean(raw)
-        low = text.lower()
         for match in _DATE_RE.finditer(text):
             try:
                 d = int(match.group("day"))
@@ -144,8 +143,6 @@ def infer_document_metadata_from_pages(pages: Iterable[str]) -> dict[str, Any]:
     if ranked:
         best = ranked[0]
         tied = [r for r in ranked if r["score"] == best["score"] and r["mentions"] == best["mentions"]]
-        # When several equally strong dates exist, prefer the latest only if they share the same page
-        # and look like a standard comparative header. Otherwise remain unresolved.
         if len(tied) == 1:
             as_of = best["as_of"]
             as_of_meta = {"resolved": True, "method": "explicit_statement_date", **best, "candidates": ranked[:6]}
@@ -169,7 +166,6 @@ def infer_document_metadata_from_pages(pages: Iterable[str]) -> dict[str, Any]:
         currency = "VES"
         currency_evidence = ves_hits[:4]
     elif usd_hits and ves_hits:
-        # Mixed presentation is not auto-resolved; could be translations or note disclosures.
         currency_evidence = {"usd": usd_hits[:4], "ves": ves_hits[:4]}
 
     monetary_basis = None
@@ -234,4 +230,42 @@ def extract_document_metadata_from_pdf_bytes(data: bytes, max_pages: int = 12) -
             pages.append("")
     meta = infer_document_metadata_from_pages(pages)
     meta["pages_scanned"] = len(pages)
+    return meta
+
+
+def _official_host_allowed(symbol: str, url: str) -> bool:
+    source = get_source(symbol)
+    if not source:
+        return False
+    target = (urlparse(str(url or "")).hostname or "").lower().strip(".")
+    registered = (urlparse(str(source.get("primary_url") or "")).hostname or "").lower().strip(".")
+    if not target or not registered:
+        return False
+    return target == registered or target.endswith("." + registered) or registered.endswith("." + target)
+
+
+def fetch_official_pdf_document_metadata(symbol: str, url: str, timeout: float = 20.0) -> dict[str, Any]:
+    symbol = str(symbol or "").upper().strip()
+    if not str(url or "").startswith("https://"):
+        return {"resolved": False, "error": "https_required"}
+    if not _official_host_allowed(symbol, url):
+        return {"resolved": False, "error": "host_not_registered_for_issuer"}
+    try:
+        response = httpx.get(
+            url,
+            timeout=timeout,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; CaracasBull-MetadataAudit/1.0)",
+                "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.5",
+            },
+        )
+        response.raise_for_status()
+        data = response.content
+    except Exception as exc:
+        return {"resolved": False, "error": f"download_error:{type(exc).__name__}"}
+    if not data.startswith(b"%PDF"):
+        return {"resolved": False, "error": "download_not_pdf"}
+    meta = extract_document_metadata_from_pdf_bytes(data)
+    meta["source_url"] = url
     return meta
