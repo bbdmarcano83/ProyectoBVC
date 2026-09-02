@@ -21,14 +21,26 @@ def _score(doc: dict) -> tuple[int, str]:
     text = f"{doc.get('text','')} {doc.get('url','')}".lower()
     score = 0
     for word, points in (
-        ("audit", 10), ("estado", 8), ("financ", 8), ("anual", 6),
-        ("informe", 4), ("balance", 4), ("2026", 6), ("2025", 5),
-        ("2024", 4), ("2023", 3), ("2022", 2),
+        ("estados financieros", 30), ("estado financiero", 24),
+        ("audit", 18), ("informe auditor", 16), ("contadores independientes", 16),
+        ("balance", 12), ("informe anual", 10), ("financ", 8), ("anual", 6),
+        ("2026", 7), ("2025", 6), ("2024", 5), ("2023", 4), ("2022", 3),
+    ):
+        if word in text:
+            score += points
+    for word, points in (
+        ("manual", -35), ("codigo-de-etica", -35), ("código de ética", -35),
+        ("politicas", -25), ("políticas", -25), ("terminos", -20), ("términos", -20),
+        ("folleto", -18), ("prospecto", -12), ("convocatoria", -18),
+        ("comisiones", -25), ("carta poder", -25),
     ):
         if word in text:
             score += points
     if str(doc.get("kind")) == "pdf":
         score += 20
+    # Prefer documents discovered deeper in explicitly financial routes only mildly;
+    # freshness/financial semantics still dominate the ranking.
+    score += min(2, int(doc.get("discovery_depth") or 0))
     return score, str(doc.get("url") or "")
 
 
@@ -36,14 +48,17 @@ def _sample_candidates(candidates: dict) -> dict:
     out = {}
     for field, options in (candidates or {}).items():
         rows = []
-        for option in (options or [])[:3]:
+        for option in (options or [])[:4]:
             rows.append({
                 "value": option.get("value"),
                 "raw": option.get("raw"),
                 "page": option.get("page"),
                 "alias": option.get("alias"),
                 "column_index": option.get("column_index"),
-                "evidence": str(option.get("evidence") or "")[:260],
+                "context_quality": option.get("context_quality"),
+                "page_years": option.get("page_years") or [],
+                "derived_from": option.get("derived_from") or [],
+                "evidence": str(option.get("evidence") or "")[:300],
             })
         out[field] = {"count": len(options or []), "sample": rows}
     return out
@@ -56,9 +71,12 @@ async def _attempt_pdf(symbol: str, doc: dict, sem: asyncio.Semaphore) -> dict:
     attempt = {
         "url": url,
         "text": doc.get("text"),
+        "rank_score": _score(doc)[0],
+        "discovery_depth": doc.get("discovery_depth"),
         "parse_valid": bool(meta.get("valid")),
         "reason": meta.get("reason"),
         "fields_with_candidates": int(meta.get("fields_with_candidates") or 0),
+        "derived_accounting_candidates": int(meta.get("derived_accounting_candidates") or 0),
         "sha256": meta.get("source_document_sha256"),
         "pages": meta.get("pages"),
     }
@@ -69,7 +87,11 @@ async def _attempt_pdf(symbol: str, doc: dict, sem: asyncio.Semaphore) -> dict:
             source_document_sha256=meta.get("source_document_sha256"),
         )
         proposal = propose_fail_closed_selections(review)
+        attempt["preferred_column"] = review.get("preferred_column")
+        attempt["preferred_column_evidence"] = review.get("preferred_column_evidence")
         attempt["autoreview_valid"] = bool(proposal.get("valid"))
+        attempt["autoreview_method"] = proposal.get("method")
+        attempt["balance_page"] = proposal.get("balance_page")
         attempt["missing_required"] = proposal.get("missing_required") or []
         attempt["selected_fields"] = sorted((proposal.get("selections") or {}).keys())
     return attempt
@@ -80,13 +102,14 @@ async def _one_symbol(symbol: str, validated: set[str], sem: asyncio.Semaphore) 
         return {"symbol": symbol, "skipped": "already_validated"}
     disc = await discover_documents(symbol, timeout=12.0)
     docs = sorted((disc.get("documents") or []), key=_score, reverse=True)
-    pdfs = [d for d in docs if d.get("kind") == "pdf"][:2]
+    pdfs = [d for d in docs if d.get("kind") == "pdf"][:3]
     attempts = await asyncio.gather(*(_attempt_pdf(symbol, doc, sem) for doc in pdfs)) if pdfs else []
     return {
         "symbol": symbol,
         "discovery_ok": bool(disc.get("ok")),
         "discovery_error": disc.get("error"),
         "discovered": int(disc.get("count") or 0),
+        "visited_pages": int(disc.get("visited_pages") or 0),
         "ranked_pdf_candidates": len(pdfs),
         "parse_valid_candidates": sum(1 for a in attempts if a.get("parse_valid")),
         "autoreview_ready_candidates": sum(1 for a in attempts if a.get("autoreview_valid")),
