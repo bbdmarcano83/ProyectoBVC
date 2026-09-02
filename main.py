@@ -34,6 +34,7 @@ from app.routers.auth import register_auth_routes
 from app.routers.subscription import register_subscription_routes
 from app.routers.market import register_market_routes
 from app.routers.bitacora import register_bitacora_routes
+from app.routers.alerts import register_alert_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -154,23 +155,7 @@ async def api_scoring(deval: float = 0, request: Request = None, db: Session = D
 
 
 # ── Alertas de cierre Telegram ────────────────────────────────────────────────
-
-@app.get("/api/alertas-cierre", response_class=JSONResponse)
-async def disparar_alertas_cierre(request: Request, key: str = "", db: Session = Depends(get_db)):
-    """
-    Endpoint para disparar alertas de cierre.
-    Protegido por clave secreta para que solo el cron lo llame.
-    Configurar cron job en Render a las 17:15 UTC (1:15 PM VET):
-      curl https://caracasbull.com/api/alertas-cierre?key=TU_CLAVE_SECRETA
-    """
-    import os
-    clave = os.environ.get("ALERTA_SECRET", "caracasbull-alerta-2026")
-    if key != clave:
-        return JSONResponse({"error": "No autorizado"}, status_code=401)
-
-    from services.alertas_cierre import enviar_alertas_cierre
-    resultado = await enviar_alertas_cierre()
-    return JSONResponse(resultado)
+register_alert_routes(app)
 
 
 # ── Bitácora ──────────────────────────────────────────────────────────────────
