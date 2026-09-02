@@ -41,6 +41,8 @@ _AUDIT_HINTS = (
     "informe de los contadores públicos independientes",
     "informe de los contadores publicos independientes",
     "informe del auditor independiente",
+    "informe de los auditores independientes",
+    "informe de auditores independientes",
     "informe de auditoría independiente",
     "informe de auditoria independiente",
     "estados financieros auditados",
@@ -86,6 +88,10 @@ _VES_HINTS = (
 def _clean(text: str) -> str:
     raw = unicodedata.normalize("NFKC", str(text or ""))
     return " ".join(raw.replace("\u00a0", " ").split())
+
+
+def _lower(text: str) -> str:
+    return _clean(text).lower()
 
 
 def _date_candidates(pages: Iterable[str], max_pages: int = 12) -> list[dict[str, Any]]:
