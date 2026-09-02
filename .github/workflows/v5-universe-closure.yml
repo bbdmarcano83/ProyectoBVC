@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/v5-universe-closure.yml"
       - "scripts/v5_universe_closure.py"
+      - "scripts/v5_universe_candidate_audit.py"
       - "scripts/fundamental_backfill_v5.py"
       - "scripts/persist_verified_pilots_v5.py"
       - "services/fundamental_*.py"
@@ -47,6 +48,8 @@ jobs:
         run: python scripts/fundamental_backfill_v5.py --all
       - name: Audit all registered V5 symbols against Neon and live discovery
         run: python scripts/v5_universe_closure.py --discover --output v5_universe_closure.json
+      - name: Audit parseable official PDF candidates
+        run: python scripts/v5_universe_candidate_audit.py
       - name: Print unresolved symbols
         run: |
           python - <<'PY'
@@ -59,5 +62,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: v5-universe-closure
-          path: v5_universe_closure.json
+          path: |
+            v5_universe_closure.json
+            v5_universe_candidates.json
           retention-days: 14
