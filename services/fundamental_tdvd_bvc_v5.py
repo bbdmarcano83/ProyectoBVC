@@ -56,37 +56,54 @@ def _tail_for_field(line: str, field: str) -> str | None:
 
 
 def _extract_current_integer(tail: str) -> int | None:
-    """Extrae exclusivamente el primer importe tras la etiqueta.
+    """Valida un único importe corriente inmediatamente después de la etiqueta.
 
-    Si el primer importe está corrupto, la fila se rechaza; jamás se avanza a la
-    columna comparativa siguiente. Admite agrupación correcta, compacto OCR,
-    espacios/puntuación entre grupos y un separador perdido entre miles.
+    Nunca busca una segunda cifra en la fila. Soporta agrupación normal, OCR
+    compacto, espacios alrededor de separadores y exactamente un separador de
+    miles perdido (último grupo de seis dígitos). Cualquier otra forma falla.
     """
     text = str(tail or "")
-    patterns = (
-        r"^\s*(\(?\s*\d{1,3}(?:[.,]\d{3}){3}\s*\)?)",
-        r"^\s*(\(?\s*\d{1,3}[.,]\d{3}[.,]\d{6}\s*\)?)",
-        r"^\s*(\(?\s*\d{1,3}\s*[.,]\s*\d{3}\s*[.,]\s*\d{3}\s*\)?)",
-        r"^\s*(\(?\s*\d{1,3}\s+\d{3}[.,]\d{3}\s*\)?)",
-        r"^\s*(\(?\s*\d{1,3}(?:[.,]\d{3}){2}\s*\)?)",
-        r"^\s*(\(?\s*\d{9,12}\s*\)?)",
+    match = re.match(
+        r"^\s*(\()?\s*(\d+(?:(?:\s*[.,]\s*|\s+)\d+)*)(\))?",
+        text,
     )
-    for pattern in patterns:
-        match = re.match(pattern, text)
-        if not match:
-            continue
-        token = match.group(1)
-        # Evita aceptar un prefijo válido de un grupo OCR de cuatro dígitos.
-        remainder = text[match.end():]
-        if remainder and remainder[0].isdigit():
-            continue
-        negative = "(" in token and ")" in token
-        digits = re.sub(r"\D", "", token)
-        if not (9 <= len(digits) <= 12):
-            continue
-        value = int(digits)
-        return -value if negative else value
-    return None
+    if not match:
+        return None
+    token = match.group(2).strip()
+    negative = bool(match.group(1) and match.group(3))
+
+    # No aceptar un prefijo cuando el OCR dejó más dígitos pegados.
+    remainder = text[match.end():]
+    if remainder and remainder[0].isdigit():
+        return None
+
+    compact = re.sub(r"\s*([.,])\s*", r"\1", token)
+    compact = re.sub(r"\s+", " ", compact).strip()
+
+    if re.fullmatch(r"\d{9,12}", compact):
+        digits = compact
+    else:
+        groups = re.split(r"[.,\s]+", compact)
+        if not groups or not groups[0] or not all(group.isdigit() for group in groups):
+            return None
+        if not (1 <= len(groups[0]) <= 3):
+            return None
+        if all(len(group) == 3 for group in groups[1:]):
+            digits = "".join(groups)
+        elif (
+            len(groups) >= 3
+            and all(len(group) == 3 for group in groups[1:-1])
+            and len(groups[-1]) == 6
+        ):
+            # OCR perdió exactamente un separador entre dos grupos finales.
+            digits = "".join(groups[:-1]) + groups[-1][:3] + groups[-1][3:]
+        else:
+            return None
+
+    if not (9 <= len(digits) <= 12):
+        return None
+    value = int(digits)
+    return -value if negative else value
 
 
 def _line_field(line: str) -> tuple[str | None, int | None]:
