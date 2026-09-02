@@ -38,7 +38,6 @@ class FxHistoryV5Tests(unittest.TestCase):
         self.assertEqual(close_rate_from_records(self.records, "2026-01-05"), 110.0)
 
     def test_calendar_average_forward_fills_non_publishing_days(self):
-        # Jan 2,3,4 = 100; Jan 5 = 110; Jan 6 = 120 => 530 / 5 = 106
         avg = calendar_average_from_records(self.records, "2026-01-02", "2026-01-06")
         self.assertEqual(avg, 106.0)
 
@@ -81,6 +80,26 @@ class FxHistoryV5Tests(unittest.TestCase):
         self.assertEqual(meta["source_kind"], "crosschecked_secondary_history")
         self.assertIn("close_point", meta["fallback_components"])
 
+    def test_new_verified_fiscal_closes_resolve_exactly(self):
+        verified = {
+            "2022-08-31": 7.8922,
+            "2022-10-31": 8.5918,
+            "2022-11-30": 11.079,
+            "2023-02-28": 24.361,
+        }
+        for as_of, expected in verified.items():
+            with self.subTest(as_of=as_of), patch("services.fx_history_v5.get_close_rate", return_value=None):
+                out, meta = attach_historical_bcv_fx(
+                    {"currency": "VES", "monetary_basis": "constant_ves_end_period", "total_assets": 100},
+                    as_of=as_of,
+                    fiscal_period=f"FY{as_of[:4]}",
+                    refresh_if_missing=False,
+                )
+            self.assertTrue(meta["ok"])
+            self.assertEqual(out["fx_rate_bcv_close"], expected)
+            self.assertEqual(meta["fallback_rate_date"], as_of)
+            self.assertEqual(meta["source_kind"], "crosschecked_secondary_history")
+
     def test_verified_point_fallback_uses_last_publication_for_weekend_2023_close(self):
         data = {"currency": "VES", "monetary_basis": "constant_ves_end_period", "total_assets": 100}
         with patch("services.fx_history_v5.get_close_rate", return_value=None):
@@ -95,7 +114,7 @@ class FxHistoryV5Tests(unittest.TestCase):
         data = {"currency": "VES", "monetary_basis": "constant_ves_end_period", "total_assets": 100}
         with patch("services.fx_history_v5.get_close_rate", return_value=None):
             out, meta = attach_historical_bcv_fx(
-                data, as_of="2022-08-31", fiscal_period="FY2022", refresh_if_missing=False
+                data, as_of="2022-08-30", fiscal_period="FY2022", refresh_if_missing=False
             )
         self.assertFalse(meta["ok"])
         self.assertNotIn("fx_rate_bcv_close", out)
