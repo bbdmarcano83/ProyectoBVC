@@ -30,8 +30,8 @@ from services.email import email_recuperar_password, email_bienvenida
 from app.startup import run_startup
 from app.factory import create_app
 from app.templating import render
-from app.routers.auth import router as auth_router
-from app.routers.subscription import router as subscription_router
+from app.routers.auth import register_auth_routes
+from app.routers.subscription import register_subscription_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -44,8 +44,8 @@ async def startup():
     await run_startup(registrar_webhook_telegram)
 
 # ── Auth / Suscripción ─────────────────────────────────────────────────────────
-app.include_router(auth_router)
-app.include_router(subscription_router)
+register_auth_routes(app)
+register_subscription_routes(app)
 
 
 # ── Pizarra ───────────────────────────────────────────────────────────────────
