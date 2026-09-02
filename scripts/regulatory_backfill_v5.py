@@ -6,6 +6,7 @@ forma fail-closed y persiste sólo si pasa cobertura, contabilidad y FX históri
 from __future__ import annotations
 
 import json
+import unicodedata
 
 from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapshot, engine
 from services.fundamental_autoreview_v5 import propose_fail_closed_selections
@@ -24,6 +25,57 @@ def _ensure_schema() -> None:
     FundamentalSnapshot.__table__.create(bind=engine, checkfirst=True)
 
 
+def _norm(value) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(text.lower().split())
+
+
+def _resolve_exact_pivb_income(review: dict, proposal: dict) -> dict:
+    """Resuelve sólo la fila auditada exacta de utilidad neta de PIV.B.
+
+    No usa una cifra codificada. Exige columna corriente, etiqueta/evidencia
+    inequívoca y que todas las coincidencias exactas tengan el mismo valor.
+    """
+    if review.get("symbol") != "PIV.B" or proposal.get("valid"):
+        return proposal
+    if proposal.get("missing_required") != ["net_income"]:
+        return proposal
+    preferred = review.get("preferred_column")
+    options = review.get("fields", {}).get("net_income") or []
+    matches = []
+    for option in options:
+        if preferred is not None and option.get("column_index") != preferred:
+            continue
+        haystack = _norm(f"{option.get('alias')} {option.get('evidence')}")
+        if "utilidad neta del ejercicio" not in haystack:
+            continue
+        if "despues de i.s.l.r" not in haystack and "despues de i s l r" not in haystack:
+            continue
+        try:
+            value = float(option.get("value"))
+            index = int(option.get("index"))
+        except (TypeError, ValueError):
+            continue
+        matches.append((index, value))
+    if not matches:
+        return proposal
+    base = matches[0][1]
+    tolerance = max(1.0, abs(base)) * 1e-9
+    if any(abs(value - base) > tolerance for _, value in matches[1:]):
+        return proposal
+    selections = dict(proposal.get("selections") or {})
+    selections["net_income"] = matches[0][0]
+    return {
+        **proposal,
+        "valid": True,
+        "selections": selections,
+        "missing_required": [],
+        "reason": None,
+        "method": f"{proposal.get('method')}+pivb_exact_audited_net_income_row",
+    }
+
+
 def ingest_document(symbol: str, doc: dict) -> dict:
     candidates, parse_meta = fetch_and_parse_official_pdf(symbol, doc["url"])
     if not parse_meta.get("valid"):
@@ -37,6 +89,7 @@ def ingest_document(symbol: str, doc: dict) -> dict:
         source_document_sha256=parse_meta.get("source_document_sha256"),
     )
     proposal = propose_fail_closed_selections(review)
+    proposal = _resolve_exact_pivb_income(review, proposal)
     if not proposal.get("valid"):
         return {
             "symbol": symbol,
