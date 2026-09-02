@@ -36,6 +36,7 @@ from app.routers.market import register_market_routes
 from app.routers.bitacora import register_bitacora_routes
 from app.routers.alerts import register_alert_routes
 from app.routers.scoring import register_scoring_routes
+from app.routers.profile import register_profile_routes
 from database import ActivoPortafolio, Watchlist
 
 app = create_app()
@@ -263,105 +264,7 @@ async def ver_detalle(request: Request, simbolo: str, db: Session = Depends(get_
 
 
 # ── Perfil ───────────────────────────────────────────────────────────────────────
-
-@app.get("/perfil", response_class=HTMLResponse)
-async def ver_perfil(request: Request, db: Session = Depends(get_db)):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    return render("perfil.html", {
-        "request": request,
-        "usuario": usuario,
-        "dias": dias_restantes(usuario),
-        "mercado": mercado_abierto(),
-        "active": "",
-        "msg_info": None, "msg_pass": None,
-        "error_pass": False,
-    })
-
-
-@app.post("/perfil/info")
-async def actualizar_info(
-    request: Request,
-    nombre: str = Form(...),
-    email: str = Form(...),
-    broker: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-    usuario.nombre = nombre.strip()
-    usuario.email  = email.strip().lower()
-    db.commit()
-    return render("perfil.html", {
-        "request": request, "usuario": usuario,
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-        "active": "", "msg_info": "Datos actualizados correctamente",
-        "msg_pass": None, "error_pass": False,
-    })
-
-
-@app.post("/perfil/password")
-async def cambiar_password(
-    request: Request,
-    password_actual: str = Form(...),
-    password_nueva: str = Form(...),
-    password_nueva2: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    from services.auth import verificar_password, hash_password
-    usuario = get_usuario_actual(request, db)
-    if not usuario:
-        return RedirectResponse(url="/login", status_code=302)
-
-    if not verificar_password(password_actual, usuario.password_hash):
-        return render("perfil.html", {
-            "request": request, "usuario": usuario,
-            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-            "active": "", "msg_info": None,
-            "msg_pass": "Contraseña actual incorrecta", "error_pass": True,
-        })
-    if password_nueva != password_nueva2:
-        return render("perfil.html", {
-            "request": request, "usuario": usuario,
-            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-            "active": "", "msg_info": None,
-            "msg_pass": "Las contraseñas nuevas no coinciden", "error_pass": True,
-        })
-    if len(password_nueva) < 8:
-        return render("perfil.html", {
-            "request": request, "usuario": usuario,
-            "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-            "active": "", "msg_info": None,
-            "msg_pass": "La contraseña debe tener al menos 8 caracteres", "error_pass": True,
-        })
-
-    usuario.password_hash = hash_password(password_nueva)
-    db.commit()
-    return render("perfil.html", {
-        "request": request, "usuario": usuario,
-        "dias": dias_restantes(usuario), "mercado": mercado_abierto(),
-        "active": "", "msg_info": None,
-        "msg_pass": "Contraseña cambiada correctamente", "error_pass": False,
-    })
-
-
-@app.post("/perfil/eliminar")
-async def eliminar_cuenta(
-    request: Request,
-    password: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    from services.auth import verificar_password
-    usuario = get_usuario_actual(request, db)
-    if not usuario or not verificar_password(password, usuario.password_hash):
-        return RedirectResponse(url="/perfil", status_code=302)
-    db.delete(usuario)
-    db.commit()
-    response = RedirectResponse(url="/", status_code=302)
-    response.delete_cookie("access_token")
-    return response
+register_profile_routes(app)
 
 
 # ── Telegram ─────────────────────────────────────────────────────────────────────
