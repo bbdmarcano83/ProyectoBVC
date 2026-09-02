@@ -1,9 +1,9 @@
 """Auditoría read-only de documentos fundamentales V5 persistidos.
 
 Reporta cobertura de fingerprint SHA-256 del PDF, published_at, versiones por
-período e identidades económicas repetidas. No modifica Neon. `published_at`
-desconocido es una brecha informativa, no un error: el loader de backtest ya
-falla cerrado ante esa brecha.
+período e identidades económicas repetidas. Incluye el manifiesto base y la
+ruta regulatoria BVC/SUNAVAL. No modifica Neon. `published_at` desconocido es
+una brecha informativa, no un error: el loader de backtest ya falla cerrado.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from typing import Any
 from database import DB_PERSISTENCE_MODE, FundamentalDocument, FundamentalSnapshot, SessionLocal
 from services.fundamental_backfill_manifest_v5 import FUNDAMENTAL_BACKFILL_V5
 from services.fundamental_identity_v5 import economic_signature
+from services.fundamental_regulatory_manifest_v5 import REGULATORY_BACKFILL_V5
 
 
 def _metadata(raw: Any) -> tuple[dict, bool]:
@@ -44,15 +45,39 @@ def _sha256(value: Any) -> str | None:
     return digest
 
 
+def _combined_manifest() -> dict[str, dict]:
+    """Une fuentes verificadas sin permitir sobrescrituras silenciosas."""
+    combined = dict(FUNDAMENTAL_BACKFILL_V5)
+    for symbol, issuer in REGULATORY_BACKFILL_V5.items():
+        if symbol in combined:
+            base_periods = {
+                str(doc.get("fiscal_period") or "")
+                for doc in combined[symbol].get("documents", [])
+                if doc.get("fiscal_period")
+            }
+            extra_docs = [
+                doc for doc in issuer.get("documents", [])
+                if str(doc.get("fiscal_period") or "") not in base_periods
+            ]
+            combined[symbol] = {
+                **combined[symbol],
+                "documents": list(combined[symbol].get("documents", [])) + extra_docs,
+            }
+        else:
+            combined[symbol] = issuer
+    return combined
+
+
 def audit_documents() -> dict:
+    manifest = _combined_manifest()
     expected: dict[str, set[str]] = {
         symbol: {str(doc.get("fiscal_period") or "") for doc in issuer.get("documents", []) if doc.get("fiscal_period")}
-        for symbol, issuer in FUNDAMENTAL_BACKFILL_V5.items()
+        for symbol, issuer in manifest.items()
     }
-    pilot_symbols = set(expected)
+    audited_symbols = set(expected)
 
     with SessionLocal() as db:
-        rows = db.query(FundamentalDocument).filter(FundamentalDocument.simbolo.in_(sorted(pilot_symbols))).order_by(
+        rows = db.query(FundamentalDocument).filter(FundamentalDocument.simbolo.in_(sorted(audited_symbols))).order_by(
             FundamentalDocument.simbolo.asc(),
             FundamentalDocument.fiscal_period.asc(),
             FundamentalDocument.id.asc(),
@@ -168,7 +193,11 @@ def audit_documents() -> dict:
     return {
         "database_mode": DB_PERSISTENCE_MODE,
         "read_only": True,
+        "audited_manifest_symbols": len(expected),
+        "base_manifest_symbols": len(FUNDAMENTAL_BACKFILL_V5),
+        "regulatory_manifest_symbols": len(REGULATORY_BACKFILL_V5),
         "documents_total_for_pilots": len(rows),
+        "documents_total_for_certified_universe": len(rows),
         "expected_manifest_periods": expected_periods,
         "present_manifest_periods": present_periods,
         "periods_with_source_document_sha256": periods_with_sha,
@@ -194,7 +223,7 @@ def main() -> int:
     parser.add_argument(
         "--require-any-sha",
         action="store_true",
-        help="Fail if no persisted pilot period has a source PDF SHA-256",
+        help="Fail if no persisted certified period has a source PDF SHA-256",
     )
     args = parser.parse_args()
 
