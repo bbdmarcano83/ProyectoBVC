@@ -1,11 +1,13 @@
-"""Print the FastAPI route surface in a stable JSON form.
+"""Print the FastAPI route surface in a stable JSON form or SHA-256 digest.
 
 Used only as a refactor guardrail. It imports the application without running
 startup events and records user-defined HTTP routes (static mount included).
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import sys
 
 import main
 
@@ -23,5 +25,16 @@ def inventory(app) -> list[dict]:
     return sorted(rows, key=lambda x: (x["path"], x["methods"], x["name"]))
 
 
+def canonical_json(app) -> str:
+    return json.dumps(inventory(app), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def digest(app) -> str:
+    return hashlib.sha256(canonical_json(app).encode("utf-8")).hexdigest()
+
+
 if __name__ == "__main__":
-    print(json.dumps(inventory(main.app), ensure_ascii=False, indent=2))
+    if "--hash" in sys.argv:
+        print(digest(main.app))
+    else:
+        print(json.dumps(inventory(main.app), ensure_ascii=False, indent=2))
