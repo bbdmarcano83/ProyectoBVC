@@ -48,7 +48,9 @@ def main() -> int:
     if missing:
         raise SystemExit(f"refactor aborted: expected route fragments missing: {missing}")
     text = text.replace(IMPORT_ANCHOR, IMPORT_ANCHOR + NEW_IMPORTS, 1)
-    text = text[:start] + REPLACEMENT + text[end:]
+    if segment not in text:
+        raise SystemExit("refactor aborted: captured router segment changed unexpectedly")
+    text = text.replace(segment, REPLACEMENT, 1)
     PATH.write_text(text, encoding="utf-8")
     print("auth + subscription router extraction applied")
     return 0
