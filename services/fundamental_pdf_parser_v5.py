@@ -4,6 +4,10 @@ Descarga documentos oficiales registrados y devuelve candidatos por campo con
 página, columna comparativa y fragmento. No elige automáticamente entre múltiples
 cifras ni guarda en Neon; la normalización/validación contable ocurre después.
 Cada PDF descargado queda identificado por SHA-256 de sus bytes exactos.
+
+La extracción prioriza filas contables reales. Esto evita que al aplanar una
+página completa se mezclen notas, años y cifras de filas vecinas. El escaneo
+amplio se conserva únicamente como fallback cuando un campo no aparece en filas.
 """
 from __future__ import annotations
 
@@ -21,10 +25,22 @@ from services.fundamental_sources_v5 import get_source
 MAX_PDF_BYTES = 25 * 1024 * 1024
 
 FIELD_ALIASES = {
-    "total_assets": ("total activo", "total activos", "activos totales"),
-    "total_liabilities": ("total pasivo", "total pasivos", "pasivos totales"),
-    "equity": ("total patrimonio", "patrimonio total", "patrimonio"),
-    "net_income": ("resultado neto", "utilidad neta", "ganancia neta", "pérdida neta", "perdida neta"),
+    "total_assets": (
+        "total del activo", "total activo", "total activos", "activos totales",
+    ),
+    "total_liabilities": (
+        "total del pasivo", "total pasivo", "total pasivos", "pasivos totales",
+    ),
+    "equity": (
+        "total patrimonio de los accionistas", "total patrimonio de accionistas",
+        "total del patrimonio", "total patrimonio", "patrimonio total", "patrimonio",
+    ),
+    "net_income": (
+        "utilidad (pérdida) neta", "utilidad (perdida) neta",
+        "ganancia (pérdida) neta", "ganancia (perdida) neta",
+        "resultado neto del ejercicio", "resultado neto", "utilidad neta",
+        "ganancia neta", "pérdida neta", "perdida neta",
+    ),
     "revenue": ("ingresos totales", "ingresos", "ventas netas", "ventas"),
     "cash": ("efectivo y equivalentes", "disponibilidades", "efectivo"),
     "total_debt": ("deuda financiera", "deuda total", "obligaciones financieras"),
@@ -33,8 +49,14 @@ FIELD_ALIASES = {
     "nav": ("valor neto de los activos", "valor de unidad de inversión", "valor patrimonial"),
 }
 
-_NUMBER_BODY = r"(?:\d{1,3}(?:[\.\s]\d{3})*(?:,\d+)?|\d+(?:[\.,]\d+)?)"
+# Deliberadamente NO acepta espacios como separador de miles. En PDFs comparativos
+# un espacio normalmente separa columnas ("348.224.455 466.175.472"). Permitirlo
+# convertía las dos columnas en un único número gigantesco. Espacios OCR del tipo
+# "404. 499.712" se corrigen antes de aplicar la expresión regular.
+_NUMBER_BODY = r"(?:\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[\.,]\d+)?)"
 NUMBER_RE = re.compile(rf"(?<!\w)(?:Bs\.?\s*)?(?:\(-?{_NUMBER_BODY}\)|-?{_NUMBER_BODY})")
+
+_ALL_ALIASES = tuple(sorted({a for aliases in FIELD_ALIASES.values() for a in aliases}, key=len, reverse=True))
 
 
 def source_document_sha256(data: bytes) -> str | None:
@@ -70,7 +92,7 @@ def _official_host_allowed(symbol: str, url: str) -> bool:
     if not target:
         return False
     registered = []
-    for key in ("url", "source_url", "discovery_url"):
+    for key in ("primary_url", "url", "source_url", "discovery_url"):
         value = src.get(key)
         if value:
             registered.append((urlparse(str(value)).hostname or "").lower())
@@ -82,37 +104,109 @@ def _official_host_allowed(symbol: str, url: str) -> bool:
     return any(target == h or target.endswith("." + h) or h.endswith("." + target) for h in registered)
 
 
+def _clean_row(raw: str) -> str:
+    text = " ".join(str(raw or "").replace("\u00a0", " ").split())
+    # pypdf a veces separa un grupo de miles después del punto: 404. 499.712
+    return re.sub(r"(?<=\.)\s+(?=\d{3}(?:\D|$))", "", text)
+
+
+def _after_alias_until_next_label(text: str, alias: str, idx: int) -> str:
+    """Limit numeric scan to the current accounting label when possible."""
+    start = idx + len(alias)
+    end = len(text)
+    lower = text.lower()
+    for other in _ALL_ALIASES:
+        pos = lower.find(other, start)
+        if pos >= 0 and pos < end:
+            end = pos
+    return text[start:end]
+
+
+def _append_matches(
+    bucket: list[dict], *, page_no: int, alias: str, occurrence: int,
+    evidence: str, scan_text: str, context_quality: str,
+) -> int:
+    added = 0
+    matches = NUMBER_RE.findall(scan_text)
+    for column_index, token in enumerate(matches[:3]):
+        value = _normalize_number(token)
+        if value is None:
+            continue
+        bucket.append({
+            "value": value,
+            "raw": token,
+            "page": page_no,
+            "alias": alias,
+            "evidence": evidence,
+            "column_index": column_index,
+            "occurrence": occurrence,
+            "context_quality": context_quality,
+        })
+        added += 1
+    return added
+
+
 def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
     candidates: dict[str, list[dict]] = {field: [] for field in FIELD_ALIASES}
     for page_no, raw_text in enumerate(pages or [], start=1):
-        text = " ".join(str(raw_text or "").split())
-        lower = text.lower()
+        raw_page = str(raw_text or "")
+        rows = [_clean_row(line) for line in raw_page.splitlines() if _clean_row(line)]
+        row_hits: dict[str, int] = {field: 0 for field in FIELD_ALIASES}
+
+        # Primera pasada: una fila contable a la vez. Las columnas comparativas
+        # conservan índices 0/1 sin contaminarse con cifras de la fila siguiente.
         for field, aliases in FIELD_ALIASES.items():
+            occurrence = 0
+            for row in rows:
+                lower = row.lower()
+                for alias in aliases:
+                    start = 0
+                    while True:
+                        idx = lower.find(alias, start)
+                        if idx < 0:
+                            break
+                        scan = _after_alias_until_next_label(row, alias, idx)
+                        added = _append_matches(
+                            candidates[field],
+                            page_no=page_no,
+                            alias=alias,
+                            occurrence=occurrence,
+                            evidence=row[:500],
+                            scan_text=scan,
+                            context_quality="accounting_row",
+                        )
+                        row_hits[field] += added
+                        occurrence += 1
+                        start = idx + len(alias)
+
+        # Fallback: sólo para campos sin ninguna cifra en filas de esta página.
+        # Es útil para PDFs donde pypdf rompe etiqueta y valores en líneas distintas.
+        flat = _clean_row(raw_page)
+        lower_flat = flat.lower()
+        for field, aliases in FIELD_ALIASES.items():
+            if row_hits[field] > 0:
+                continue
+            occurrence = 0
             for alias in aliases:
                 start = 0
-                occurrence = 0
                 while True:
-                    idx = lower.find(alias, start)
+                    idx = lower_flat.find(alias, start)
                     if idx < 0:
                         break
-                    window = text[max(0, idx - 80): min(len(text), idx + len(alias) + 180)]
-                    after = text[idx + len(alias): min(len(text), idx + len(alias) + 140)]
-                    matches = NUMBER_RE.findall(after)
-                    for column_index, token in enumerate(matches[:3]):
-                        value = _normalize_number(token)
-                        if value is None:
-                            continue
-                        candidates[field].append({
-                            "value": value,
-                            "raw": token,
-                            "page": page_no,
-                            "alias": alias,
-                            "evidence": window,
-                            "column_index": column_index,
-                            "occurrence": occurrence,
-                        })
+                    window = flat[max(0, idx - 80): min(len(flat), idx + len(alias) + 180)]
+                    after = flat[idx + len(alias): min(len(flat), idx + len(alias) + 140)]
+                    _append_matches(
+                        candidates[field],
+                        page_no=page_no,
+                        alias=alias,
+                        occurrence=occurrence,
+                        evidence=window,
+                        scan_text=after,
+                        context_quality="page_fallback",
+                    )
                     occurrence += 1
                     start = idx + len(alias)
+
     return {k: v for k, v in candidates.items() if v}
 
 
@@ -139,11 +233,16 @@ def parse_pdf_bytes(data: bytes) -> tuple[dict, dict]:
             empty_pages += 1
         pages.append(text)
     candidates = extract_candidates_from_pages(pages)
+    row_candidates = sum(
+        1 for options in candidates.values() for option in options
+        if option.get("context_quality") == "accounting_row"
+    )
     return candidates, {
         "valid": bool(candidates),
         "pages": len(pages),
         "empty_pages": empty_pages,
         "fields_with_candidates": len(candidates),
+        "accounting_row_candidates": row_candidates,
         "requires_review": True,
         "source_document_sha256": digest,
     }
