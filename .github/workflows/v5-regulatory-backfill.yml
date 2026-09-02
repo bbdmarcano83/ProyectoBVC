@@ -6,6 +6,7 @@ on:
     paths:
       - "services/fundamental_regulatory_manifest_v5.py"
       - "scripts/regulatory_backfill_v5.py"
+      - "scripts/audit_fundamental_documents_v5.py"
       - "tests/test_regulatory_fundamental_sources_v5.py"
       - ".github/workflows/v5-regulatory-backfill.yml"
   workflow_dispatch:
@@ -42,5 +43,5 @@ jobs:
         run: python -m unittest tests.test_regulatory_fundamental_sources_v5
       - name: Persist verified regulatory fundamentals
         run: python scripts/regulatory_backfill_v5.py
-      - name: Audit persisted fundamental documents
-        run: python scripts/audit_fundamental_documents_v5.py
+      - name: Audit combined certified fundamental universe
+        run: python scripts/audit_fundamental_documents_v5.py --strict --require-any-sha
