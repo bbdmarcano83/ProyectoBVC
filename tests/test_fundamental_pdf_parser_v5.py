@@ -33,6 +33,28 @@ class FundamentalPdfParserV5Tests(unittest.TestCase):
         self.assertEqual(liabilities[0]["context_quality"], "accounting_row")
         self.assertLess(liabilities[0]["value"], 1e12)
 
+    def test_single_dot_three_digits_is_thousands_not_decimal(self):
+        out = extract_candidates_from_pages([
+            "Total activos 931.194 850.125\nTotal pasivos 500.000 450.000\nPatrimonio 431.194 400.125"
+        ])
+        self.assertEqual(out["total_assets"][0]["value"], 931194.0)
+        self.assertEqual(out["total_assets"][1]["value"], 850125.0)
+
+    def test_us_grouped_numbers_are_one_token(self):
+        out = extract_candidates_from_pages([
+            "Total activos 223,342,270.07 201,100,000.25\n"
+            "Total pasivos 120,000,000.00 110,000,000.00\n"
+            "Patrimonio 103,342,270.07 91,100,000.25"
+        ])
+        self.assertAlmostEqual(out["total_assets"][0]["value"], 223342270.07)
+        self.assertAlmostEqual(out["total_assets"][1]["value"], 201100000.25)
+        self.assertEqual(out["total_assets"][0]["raw"], "223,342,270.07")
+
+    def test_simple_decimal_remains_decimal(self):
+        out = extract_candidates_from_pages(["Resultado neto 270.07 120,50"])
+        self.assertAlmostEqual(out["net_income"][0]["value"], 270.07)
+        self.assertAlmostEqual(out["net_income"][1]["value"], 120.50)
+
     def test_derives_totals_only_from_same_page_same_column_components(self):
         out = extract_candidates_from_pages([
             "Notas 2025 2024\n"
