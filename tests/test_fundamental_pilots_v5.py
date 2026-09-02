@@ -2,7 +2,7 @@ import unittest
 
 from database import init_db
 from services.fundamental_collector_v5 import ingest_normalized_report
-from services.fundamental_pilots_v5 import PILOTS
+from services.fundamental_pilots_v5 import HISTORICAL_PILOTS, PILOTS
 from services.fundamental_sources_v5 import get_source
 from services.fundamental_store_v5 import validate_snapshot, load_latest_validated
 
@@ -33,6 +33,27 @@ class FundamentalPilotV5Tests(unittest.TestCase):
         self.assertFalse(PILOTS["MVZ.A"]["audited"])
         self.assertTrue(PILOTS["SVS"]["audited"])
         self.assertTrue(PILOTS["ICP.B"]["audited"])
+
+    def test_sivensa_historical_series_has_three_separate_audited_primary_years(self):
+        rows = HISTORICAL_PILOTS["SVS"]
+        self.assertEqual([r["fiscal_period"] for r in rows], ["FY2024", "FY2023", "FY2022"])
+        self.assertTrue(all(r["audited"] for r in rows))
+        self.assertEqual([r["as_of"] for r in rows], ["2024-09-30", "2023-09-30", "2022-09-30"])
+        self.assertEqual(len({r["source_url"] for r in rows}), 3)
+        self.assertTrue(all(r["data"]["monetary_basis"] == "constant_ves_end_period" for r in rows))
+
+    def test_sivensa_historical_balance_equation_is_exact(self):
+        for row in HISTORICAL_PILOTS["SVS"]:
+            d = row["data"]
+            self.assertEqual(d["total_assets"], d["total_liabilities"] + d["equity"], row["fiscal_period"])
+            out = validate_snapshot("SVS", d, row["source_url"], row["as_of"])
+            self.assertTrue(out["valid"], f"{row['fiscal_period']}: {out}")
+
+    def test_sivensa_historical_net_income_signs_are_preserved(self):
+        rows = {r["fiscal_period"]: r["data"]["net_income"] for r in HISTORICAL_PILOTS["SVS"]}
+        self.assertLess(rows["FY2024"], 0)
+        self.assertLess(rows["FY2023"], 0)
+        self.assertGreater(rows["FY2022"], 0)
 
     def test_end_to_end_ingestion_persists_three_validated_families_offline_fixture_mode(self):
         # Los fixtures no hacen red en CI. Producción usa los defaults
