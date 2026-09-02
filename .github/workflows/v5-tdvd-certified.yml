@@ -8,7 +8,6 @@ on:
       - "services/fundamental_source_review_v5.py"
       - "scripts/fundamental_backfill_v5.py"
       - "scripts/diagnose_tdvd_certified_v5.py"
-      - "scripts/diagnose_tdvd_ocr_profiles_v5.py"
       - "tests/test_fundamental_tdvd_bvc_v5.py"
       - "requirements.txt"
       - ".github/workflows/v5-tdvd-certified.yml"
@@ -20,7 +19,7 @@ permissions:
 jobs:
   closure:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 30
     env:
       APP_ENV: production
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -43,7 +42,7 @@ jobs:
       - name: Install dependencies and OCR
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq tesseract-ocr imagemagick
+          sudo apt-get install -y -qq tesseract-ocr
           python -m pip install -r requirements.txt
       - name: Run TDV.D fail-closed unit tests
         run: python -m unittest tests.test_fundamental_tdvd_bvc_v5 tests.test_fundamental_bvc_image_parser_v5
@@ -52,11 +51,6 @@ jobs:
         run: |
           set -euo pipefail
           python -m scripts.diagnose_tdvd_certified_v5 | tee tdvd_diagnostic.json
-      - name: Test high-contrast OCR profiles
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m scripts.diagnose_tdvd_ocr_profiles_v5 | tee tdvd_ocr_profiles.json
       - name: Persist TDV.D FY2025 through all V5 gates
         shell: bash
         run: |
@@ -74,7 +68,6 @@ jobs:
           name: v5-tdvd-certified-closure
           path: |
             tdvd_diagnostic.json
-            tdvd_ocr_profiles.json
             tdvd_backfill.json
             tdvd_audit.json
           if-no-files-found: warn
