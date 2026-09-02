@@ -1,7 +1,7 @@
 """Histórico USD/VES para normalización fundamental V5.
 
 Fuente primaria operativa: DolarAPI, que declara datos derivados del BCV. Para
-períodos anteriores a su cobertura se permite un fallback anual secundario sólo
+períodos anteriores a su cobertura se permiten fallbacks secundarios únicamente
 cuando dos proveedores históricos independientes coinciden. La procedencia nunca
 se presenta como BCV oficial y queda explícita en metadata.
 
@@ -10,6 +10,7 @@ Reglas:
 - promedio de período = promedio calendario con forward-fill sólo cuando la
   historia cacheada cubre realmente el fin solicitado;
 - fallback anual sólo para FY completo y años explícitamente verificados;
+- fallback fecha-específica sólo para cierres fiscales explícitamente verificados;
 - nunca se usa la tasa actual para un estado histórico;
 - una caché vieja no puede extenderse indefinidamente hacia el futuro;
 - los datos primarios se cachean/persisten en la misma DB (Neon en producción).
@@ -45,6 +46,16 @@ FALLBACK_SOURCE_CONFIDENCE = 80
 VERIFIED_ANNUAL_FX_FALLBACK = {
     2022: {"close": 17.489, "average": 6.7632, "close_date": "2022-12-30"},
     2023: {"close": 35.959, "average": 28.780, "close_date": "2023-12-29"},
+}
+
+# Cierres fiscales no-calendar-year verificados por coincidencia entre
+# Exchange-Rates.org y ValutaFX. Para una fecha no hábil se conserva la última
+# publicación anterior. Se usan únicamente si la fuente primaria no cubre la
+# fecha solicitada; no se insertan como si fueran datos BCV oficiales.
+VERIFIED_POINT_FX_FALLBACK = {
+    "2022-09-30": {"close": 8.2036, "rate_date": "2022-09-30"},
+    "2023-09-30": {"close": 34.425, "rate_date": "2023-09-29"},
+    "2024-09-30": {"close": 36.923, "rate_date": "2024-09-30"},
 }
 
 
@@ -280,6 +291,15 @@ def _full_year_fallback(start: str | None, end: str, fiscal_period: str | None) 
     return VERIFIED_ANNUAL_FX_FALLBACK.get(e.year)
 
 
+def _point_fallback(end: str) -> dict | None:
+    """Retorna sólo cierres fecha-específica previamente cross-checkeados."""
+    try:
+        key = _date(end).isoformat()
+    except (TypeError, ValueError):
+        return None
+    return VERIFIED_POINT_FX_FALLBACK.get(key)
+
+
 def attach_historical_bcv_fx(data: dict, *, as_of: str, fiscal_period: str | None = None,
                              period_start: str | None = None, refresh_if_missing: bool = True) -> tuple[dict, dict]:
     """Añade FX histórico manteniendo trazabilidad primaria/fallback por componente."""
@@ -295,15 +315,24 @@ def attach_historical_bcv_fx(data: dict, *, as_of: str, fiscal_period: str | Non
     close_rate = get_close_rate(as_of, refresh_if_missing=refresh_if_missing)
     avg_rate = get_period_average(start, as_of, refresh_if_missing=refresh_if_missing) if basis == "nominal_ves" and start else None
 
-    fallback = _full_year_fallback(start, as_of, fiscal_period)
-    fallback_used = []
-    if fallback:
+    fallback_used: list[str] = []
+    fallback_rate_date = None
+
+    point_fallback = _point_fallback(as_of)
+    if close_rate is None and point_fallback:
+        close_rate = float(point_fallback["close"])
+        fallback_rate_date = str(point_fallback["rate_date"])
+        fallback_used.append("close_point")
+
+    annual_fallback = _full_year_fallback(start, as_of, fiscal_period)
+    if annual_fallback:
         if close_rate is None:
-            close_rate = float(fallback["close"])
-            fallback_used.append("close")
+            close_rate = float(annual_fallback["close"])
+            fallback_rate_date = str(annual_fallback["close_date"])
+            fallback_used.append("close_annual")
         if basis == "nominal_ves" and avg_rate is None:
-            avg_rate = float(fallback["average"])
-            fallback_used.append("average")
+            avg_rate = float(annual_fallback["average"])
+            fallback_used.append("average_annual")
 
     if close_rate is not None:
         out["fx_rate_bcv_close"] = close_rate
@@ -321,6 +350,8 @@ def attach_historical_bcv_fx(data: dict, *, as_of: str, fiscal_period: str | Non
         out["fx_fallback_components"] = fallback_used
         out["fx_fallback_sources"] = fallback_urls
         out["fx_primary_source_url"] = HISTORY_URL
+        if fallback_rate_date:
+            out["fx_fallback_rate_date"] = fallback_rate_date
     else:
         source_kind = SOURCE_KIND
         source_confidence = SOURCE_CONFIDENCE
@@ -349,6 +380,7 @@ def attach_historical_bcv_fx(data: dict, *, as_of: str, fiscal_period: str | Non
         "source_kind": source_kind,
         "source_confidence": source_confidence,
         "fallback_components": fallback_used,
+        "fallback_rate_date": fallback_rate_date,
         "fallback_sources": out.get("fx_fallback_sources", []),
         "primary_source_url": HISTORY_URL,
     }
