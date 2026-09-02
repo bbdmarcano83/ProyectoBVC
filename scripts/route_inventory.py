@@ -2,6 +2,7 @@
 
 Used only as a refactor guardrail. It imports the application without running
 startup events and records user-defined HTTP routes (static mount included).
+The frozen digest is intentionally verified after every structural extraction.
 """
 from __future__ import annotations
 
