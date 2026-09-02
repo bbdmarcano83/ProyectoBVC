@@ -33,6 +33,22 @@ class FundamentalPdfParserV5Tests(unittest.TestCase):
         self.assertEqual(liabilities[0]["context_quality"], "accounting_row")
         self.assertLess(liabilities[0]["value"], 1e12)
 
+    def test_derives_totals_only_from_same_page_same_column_components(self):
+        out = extract_candidates_from_pages([
+            "Notas 2025 2024\n"
+            "Total activos corrientes 650.000.000 700.000.000\n"
+            "Total activos no corrientes 350.000.000 300.000.000\n"
+            "Total pasivos corrientes 200.000.000 250.000.000\n"
+            "Total pasivos no corrientes 100.000.000 100.000.000\n"
+            "Total patrimonio 700.000.000 650.000.000"
+        ])
+        derived_assets = [x for x in out["total_assets"] if x.get("context_quality") == "derived_accounting_total"]
+        derived_liabilities = [x for x in out["total_liabilities"] if x.get("context_quality") == "derived_accounting_total"]
+        self.assertEqual([x["value"] for x in derived_assets], [1000000000.0, 1000000000.0])
+        self.assertEqual([x["value"] for x in derived_liabilities], [300000000.0, 350000000.0])
+        self.assertEqual(derived_assets[0]["page_years"][:2], [2025, 2024])
+        self.assertEqual(derived_assets[0]["derived_from"], ["assets_current", "assets_noncurrent"])
+
     def test_ocr_space_after_thousands_dot_is_repaired(self):
         out = extract_candidates_from_pages(["Resultado neto (404. 499.712) (346.028.278)"])
         self.assertEqual(out["net_income"][0]["value"], -404499712.0)
