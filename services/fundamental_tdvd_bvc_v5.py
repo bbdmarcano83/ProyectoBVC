@@ -56,53 +56,35 @@ def _tail_for_field(line: str, field: str) -> str | None:
 
 
 def _extract_current_integer(tail: str) -> int | None:
-    """Valida un único importe corriente inmediatamente después de la etiqueta.
+    """Extrae sólo el primer importe FY2025 con una forma OCR permitida.
 
-    Nunca busca una segunda cifra en la fila. Un espacio sólo puede funcionar
-    como separador de miles si introduce exactamente un grupo de tres dígitos;
-    así el siguiente valor comparativo no puede ser absorbido por el token FY2025.
+    Los patrones están anclados al inicio y terminan antes de la columna
+    comparativa. Un grupo de cuatro dígitos (p.ej. ``831.044.0072``) queda
+    rechazado; nunca se busca una cifra posterior en la misma fila.
     """
     text = str(tail or "")
-    separator = r"(?:\s*[.,]\s*|\s+(?=\d{3}(?:[.,\s]|$)))"
-    match = re.match(
-        rf"^\s*(\()?\s*(\d+(?:{separator}\d+)*)(\))?",
-        text,
+    patterns = (
+        # Cuatro grupos de miles: 227.463.132.627
+        r"^\s*(\()?\s*(\d{1,3}(?:\s*[.,]\s*\d{3}){3})(\))?(?![.,\d])",
+        # Un único separador perdido al final: 23.483.735502
+        r"^\s*(\()?\s*(\d{1,3}\s*[.,]\s*\d{3}\s*[.,]\s*\d{6})(\))?(?![.,\d])",
+        # OCR separó el primer grupo: 331 .044,072 o 331 044,072
+        r"^\s*(\()?\s*(\d{1,3}\s+[.,]?\s*\d{3}\s*[.,]\s*\d{3})(\))?(?![.,\d])",
+        # Tres grupos normales: 331.044.072
+        r"^\s*(\()?\s*(\d{1,3}(?:\s*[.,]\s*\d{3}){2})(\))?(?![.,\d])",
+        # Importe compacto sin separadores.
+        r"^\s*(\()?\s*(\d{9,12})(\))?(?![.,\d])",
     )
-    if not match:
-        return None
-    token = match.group(2).strip()
-    negative = bool(match.group(1) and match.group(3))
-
-    remainder = text[match.end():]
-    if remainder and remainder[0].isdigit():
-        return None
-
-    compact = re.sub(r"\s*([.,])\s*", r"\1", token)
-    compact = re.sub(r"\s+", " ", compact).strip()
-
-    if re.fullmatch(r"\d{9,12}", compact):
-        digits = compact
-    else:
-        groups = re.split(r"[.,\s]+", compact)
-        if not groups or not groups[0] or not all(group.isdigit() for group in groups):
-            return None
-        if not (1 <= len(groups[0]) <= 3):
-            return None
-        if all(len(group) == 3 for group in groups[1:]):
-            digits = "".join(groups)
-        elif (
-            len(groups) >= 3
-            and all(len(group) == 3 for group in groups[1:-1])
-            and len(groups[-1]) == 6
-        ):
-            digits = "".join(groups[:-1]) + groups[-1][:3] + groups[-1][3:]
-        else:
-            return None
-
-    if not (9 <= len(digits) <= 12):
-        return None
-    value = int(digits)
-    return -value if negative else value
+    for pattern in patterns:
+        match = re.match(pattern, text)
+        if not match:
+            continue
+        digits = re.sub(r"\D", "", match.group(2))
+        if not (9 <= len(digits) <= 12):
+            continue
+        value = int(digits)
+        return -value if bool(match.group(1) and match.group(3)) else value
+    return None
 
 
 def _line_field(line: str) -> tuple[str | None, int | None]:
