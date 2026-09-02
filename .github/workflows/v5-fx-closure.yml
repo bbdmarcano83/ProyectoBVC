@@ -1,0 +1,59 @@
+name: V5 FX closure
+
+on:
+  push:
+    branches: [feature/v5-fx-closure]
+    paths:
+      - "services/fx_history_v5.py"
+      - "tests/test_fx_history_v5.py"
+      - "scripts/persist_fx_blocked_periods_v5.py"
+      - ".github/workflows/v5-fx-closure.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fx-closure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: "."
+      SCORING_ENGINE_V5_ENABLED: "false"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Require external Neon secret
+        shell: bash
+        run: |
+          case "$DATABASE_URL" in
+            postgres://*|postgresql://*|postgresql+psycopg://*) ;;
+            *) echo "DATABASE_URL must point to PostgreSQL/Neon"; exit 2 ;;
+          esac
+      - name: Install dependencies and OCR
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr
+          python -m pip install -r requirements.txt
+      - name: Run FX regression tests
+        run: python -m unittest tests.test_fx_history_v5
+      - name: Persist certified periods previously blocked only by FX
+        run: python -m scripts.persist_fx_blocked_periods_v5 | tee fx_closure_backfill.json
+      - name: Reaudit certified universe
+        run: python -m scripts.audit_fundamental_documents_v5 --strict --require-any-sha | tee fx_closure_audit.json
+      - name: Upload closure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v5-fx-closure
+          path: |
+            fx_closure_backfill.json
+            fx_closure_audit.json
+          if-no-files-found: warn
+          retention-days: 14
