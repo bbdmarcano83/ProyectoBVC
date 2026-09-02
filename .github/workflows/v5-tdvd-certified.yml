@@ -1,11 +1,16 @@
-name: V5 TDV.D certified diagnostic
+name: V5 TDV.D certified closure
 
 on:
   push:
     branches: [feature/v5-tdvd-certified]
     paths:
+      - "services/fundamental_tdvd_bvc_v5.py"
+      - "services/fundamental_source_review_v5.py"
+      - "scripts/fundamental_backfill_v5.py"
       - "scripts/diagnose_tdvd_certified_v5.py"
       - "scripts/diagnose_tdvd_ocr_profiles_v5.py"
+      - "tests/test_fundamental_tdvd_bvc_v5.py"
+      - "requirements.txt"
       - ".github/workflows/v5-tdvd-certified.yml"
   workflow_dispatch:
 
@@ -13,23 +18,35 @@ permissions:
   contents: read
 
 jobs:
-  diagnostic:
+  closure:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       APP_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       PYTHONPATH: "."
+      SCORING_ENGINE_V5_ENABLED: "false"
+      PORTFOLIO_IBC_BENCHMARK_V5_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+      - name: Require external Neon secret
+        shell: bash
+        run: |
+          case "$DATABASE_URL" in
+            postgres://*|postgresql://*|postgresql+psycopg://*) ;;
+            *) echo "DATABASE_URL must point to PostgreSQL/Neon"; exit 2 ;;
+          esac
       - name: Install dependencies and OCR
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq tesseract-ocr imagemagick
           python -m pip install -r requirements.txt
+      - name: Run TDV.D fail-closed unit tests
+        run: python -m unittest tests.test_fundamental_tdvd_bvc_v5 tests.test_fundamental_bvc_image_parser_v5
       - name: Inspect TDV.D certified BVC evidence
         shell: bash
         run: |
@@ -40,13 +57,25 @@ jobs:
         run: |
           set -euo pipefail
           python -m scripts.diagnose_tdvd_ocr_profiles_v5 | tee tdvd_ocr_profiles.json
-      - name: Upload diagnostic evidence
+      - name: Persist TDV.D FY2025 through all V5 gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.fundamental_backfill_v5 --symbol TDV.D --period FY2025 | tee tdvd_backfill.json
+      - name: Reaudit certified universe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.audit_fundamental_documents_v5 --strict --require-any-sha | tee tdvd_audit.json
+      - name: Upload TDV.D closure evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: v5-tdvd-certified-diagnostic
+          name: v5-tdvd-certified-closure
           path: |
             tdvd_diagnostic.json
             tdvd_ocr_profiles.json
+            tdvd_backfill.json
+            tdvd_audit.json
           if-no-files-found: warn
           retention-days: 14
