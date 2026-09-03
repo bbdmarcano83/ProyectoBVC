@@ -23,10 +23,7 @@ class V5ScoringUiParityTests(unittest.TestCase):
             {"philosophy_score_v5": 45, "accion_label": "Score alto"},
             {"philosophy_score_v5": 20, "accion_label": "Score alto"},
         ]
-        self.assertEqual(
-            _score_bucket_counts(rows, v5_active=True),
-            (1, 1, 1, 1),
-        )
+        self.assertEqual(_score_bucket_counts(rows, v5_active=True), (1, 1, 1, 1))
 
     def test_legacy_buckets_remain_available_when_v5_is_disabled(self):
         rows = [
@@ -35,10 +32,7 @@ class V5ScoringUiParityTests(unittest.TestCase):
             {"accion_label": "Score bajo"},
             {"accion_label": "Score mínimo"},
         ]
-        self.assertEqual(
-            _score_bucket_counts(rows, v5_active=False),
-            (1, 1, 1, 1),
-        )
+        self.assertEqual(_score_bucket_counts(rows, v5_active=False), (1, 1, 1, 1))
 
     def test_scoring_template_has_client_side_filters_without_recomputing_scores(self):
         html = SCORING_TEMPLATE.read_text(encoding="utf-8")
@@ -57,13 +51,42 @@ class V5ScoringUiParityTests(unittest.TestCase):
         self.assertIn("function applyFilters()", html)
         self.assertNotIn("fetch('/api/scoring", html)
 
-    def test_v5_is_visually_primary_but_v3_remains_auditable(self):
+    def test_primary_score_is_visually_clear_without_internal_version_labels(self):
         html = SCORING_TEMPLATE.read_text(encoding="utf-8")
-        self.assertIn("Ranking activo", html)
-        self.assertIn('class="tdc v3-secondary"', html)
-        self.assertIn('class="tdc v5-primary"', html)
+        self.assertIn("Puntuación principal", html)
+        self.assertIn('class="score-primary"', html)
         self.assertIn("r.get('score_v3', r.total)", html)
         self.assertIn("r.get('philosophy_score_v5'", html)
+        self.assertNotIn("Scoring Engine", html)
+        self.assertNotIn("Ranking activo", html)
+        self.assertNotIn(">V3<", html)
+        self.assertNotIn(">V5<", html)
+
+    def test_user_facing_language_is_plain_spanish(self):
+        html = SCORING_TEMPLATE.read_text(encoding="utf-8")
+        for marker in (
+            "Panorama de acciones",
+            "Condición del mercado",
+            "Participación del mercado",
+            "Información financiera",
+            "Situación financiera",
+            "Cerca de entrada",
+            "Calidad del negocio",
+            "Valor y margen de seguridad",
+            "Rentabilidad del capital",
+            "Confianza del análisis",
+        ):
+            self.assertIn(marker, html)
+        for jargon in (">Confidence<", ">Strength<", ">Opportunity<", ">Tier evidencia<", "Filosofía Caracas Bull V5"):
+            self.assertNotIn(jargon, html)
+
+    def test_mobile_uses_cards_instead_of_compressed_desktop_table(self):
+        html = SCORING_TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn('id="mobile-ranking"', html)
+        self.assertIn('class="mobile-card"', html)
+        self.assertIn("toggleMobileCard", html)
+        self.assertIn(".desktop-ranking{display:none}", html)
+        self.assertIn(".mobile-ranking{display:flex", html)
 
     def test_semantic_market_states_and_momentum_colors_are_present(self):
         html = SCORING_TEMPLATE.read_text(encoding="utf-8")
