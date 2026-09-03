@@ -17,10 +17,29 @@ from services.portfolio_benchmark_v5 import normalize_ibc_points, ibc_asof
 
 
 def _score(r: dict) -> float:
-    try:
-        return float(r.get("score_v3", r.get("total", 0)) or 0)
-    except (TypeError, ValueError):
-        return 0.0
+    """Return the active public score, preferring Caracas Bull V5 when present."""
+    for key in ("philosophy_score_v5", "total", "score_v3"):
+        value = r.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def _stage(r: dict) -> str:
+    """Return the active signal stage without falling back to V3 when V5 exists."""
+    if "signal_stage_v5" in r:
+        return str(r.get("signal_stage_v5") or "")
+    return str(r.get("signal_stage_v3") or "")
+
+
+def _has_v5(resultados: list[dict], metadata: dict | None = None) -> bool:
+    if isinstance((metadata or {}).get("v5"), dict):
+        return True
+    return any("philosophy_score_v5" in r or "signal_stage_v5" in r for r in resultados)
 
 
 async def generar_alerta_basico(resultados: list, deval: float, metadata: dict | None = None) -> str:
@@ -51,23 +70,48 @@ async def generar_alerta_intermedio(resultados: list, deval: float, metadata: di
             f"Conf {r.get('confidence_score_v3', '—')} | "
             f"Risk {r.get('risk_score_v3', '—')}\n"
         )
-    preparar = [r for r in resultados if r.get("signal_stage_v3") == "PREPARAR COMPRA"]
-    if preparar:
-        msg += "\n<b>🟡 Preparar compra:</b>\n"
-        for r in preparar[:5]:
-            msg += f"  {r.get('simbolo')} — Opportunity {r.get('opportunity_score_v3')}\n"
+
+    if _has_v5(resultados, metadata):
+        preparar = [r for r in resultados if _stage(r) in {"PREPARAR ENTRADA", "CANDIDATA FUNDAMENTAL"}]
+        if preparar:
+            msg += "\n<b>🟡 Preparar / candidatas V5:</b>\n"
+            for r in preparar[:5]:
+                msg += f"  {r.get('simbolo')} — {_stage(r)} | Score {_score(r):.1f}\n"
+    else:
+        preparar = [r for r in resultados if r.get("signal_stage_v3") == "PREPARAR COMPRA"]
+        if preparar:
+            msg += "\n<b>🟡 Preparar compra:</b>\n"
+            for r in preparar[:5]:
+                msg += f"  {r.get('simbolo')} — Opportunity {r.get('opportunity_score_v3')}\n"
     return msg
 
 
 async def generar_alerta_pro(resultados: list, deval: float, metadata: dict | None = None, usuario=None, db=None) -> str:
     msg = await generar_alerta_intermedio(resultados, deval, metadata)
-    compras = [r for r in resultados if r.get("señal_compra_v3") or r.get("señal_compra")]
+
+    if _has_v5(resultados, metadata):
+        compras = [r for r in resultados if _stage(r) == "OPORTUNIDAD HÍBRIDA CONFIRMADA"]
+        mercado_sin_fundamental = [
+            r for r in resultados if _stage(r) == "OPORTUNIDAD DE MERCADO · SIN FUNDAMENTAL"
+        ]
+    else:
+        compras = [r for r in resultados if r.get("señal_compra_v3") or r.get("señal_compra")]
+        mercado_sin_fundamental = []
+
     if compras:
         msg += "\n<b>🟢 OPORTUNIDADES CONFIRMADAS:</b>\n"
         for r in compras:
             msg += (
                 f"  {r.get('simbolo')} — caída {r.get('caida_pct')}% | "
                 f"Score {_score(r):.1f} | Conf {r.get('confidence_score_v3', '—')}\n"
+            )
+
+    if mercado_sin_fundamental:
+        msg += "\n<b>🟠 OPORTUNIDADES DE MERCADO · SIN FUNDAMENTAL:</b>\n"
+        for r in mercado_sin_fundamental:
+            msg += (
+                f"  {r.get('simbolo')} — Score {_score(r):.1f} | "
+                f"Conf {r.get('confidence_score_v3', '—')} | no confirmada por fundamental\n"
             )
 
     if usuario and db:
