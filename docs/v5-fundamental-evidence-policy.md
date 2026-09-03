@@ -7,8 +7,10 @@ Un activo válido del universo BVC no deja de ser evaluable porque falten estado
 ## Jerarquía de evidencia
 
 - **A_CERTIFIED**: documento publicado o certificado por el emisor registrado, la Bolsa de Valores de Caracas (BVC) o SUNAVAL. Confianza de evidencia: 100.
-- **B_SECONDARY**: fuente secundaria HTTPS trazable para un emisor registrado. Puede alimentar el fundamental con menor confianza y menor peso en el score.
+- **B_SECONDARY**: fuente secundaria HTTPS trazable y **registrada explícitamente para ese emisor** en el catálogo V5. Puede alimentar el fundamental con menor confianza y menor peso en el score.
 - **NONE**: no existe fundamental utilizable. El activo sigue siendo evaluable con los pilares de mercado, oportunidad, confianza y riesgo.
+
+Una URL HTTPS cualquiera no se convierte automáticamente en evidencia B. El host y la ruta secundaria deben estar previamente auditados y asociados al símbolo. Esto permite usar reproducciones de comunicados, casas de bolsa y repositorios confiables sin abrir una vía de inyección de cifras desde sitios arbitrarios.
 
 ## Precedencia
 
