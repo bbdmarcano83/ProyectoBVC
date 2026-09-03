@@ -12,6 +12,38 @@ from services.bvc import mercado_abierto
 from services.scoring import calcular_scoring_completo
 
 
+def _active_score(row: dict) -> float:
+    """Return the active public score while preserving V3 as an audit field."""
+    for key in ("philosophy_score_v5", "total", "score_v3"):
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def _score_bucket_counts(resultados: list[dict], *, v5_active: bool) -> tuple[int, int, int, int]:
+    """Dashboard buckets follow the active engine, not legacy labels."""
+    if not v5_active:
+        return (
+            sum(1 for r in resultados if r.get("accion_label") == "Score alto"),
+            sum(1 for r in resultados if r.get("accion_label") == "Score medio"),
+            sum(1 for r in resultados if r.get("accion_label") == "Score bajo"),
+            sum(1 for r in resultados if r.get("accion_label") == "Score mínimo"),
+        )
+
+    scores = [_active_score(r) for r in resultados]
+    return (
+        sum(1 for score in scores if score >= 75),
+        sum(1 for score in scores if 55 <= score < 75),
+        sum(1 for score in scores if 30 <= score < 55),
+        sum(1 for score in scores if score < 30),
+    )
+
+
 async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(get_db)):
     usuario = get_usuario_actual(request, db)
     if not usuario:
@@ -25,12 +57,15 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
 
     deval_input = deval if deval > 0 else None
     resultados, deval_usado, metadata = await calcular_scoring_completo(devaluacion_pct=deval_input)
+    v5_active = bool((metadata or {}).get("v5"))
+    alto_count, medio_count, bajo_count, minimo_count = _score_bucket_counts(
+        resultados, v5_active=v5_active
+    )
 
     señales_compra = []
     señales_venta = []
 
     if plan in ("pro", "trial"):
-        v5_active = bool((metadata or {}).get("v5"))
         if v5_active:
             señales_compra = [
                 r for r in resultados
@@ -56,7 +91,7 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
                 motivo = "ganancia"
             elif r.get("din_score", 0) == 0:
                 motivo = "congelado"
-            elif r.get("total", 0) < 30:
+            elif _active_score(r) < 30:
                 motivo = "score_minimo"
             if motivo:
                 señales_venta.append({
@@ -65,7 +100,7 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
                     "precio_compra": precio_compra,
                     "precio_actual": precio_actual,
                     "cantidad": activo.cantidad,
-                    "total": r.get("total", 0),
+                    "total": _active_score(r),
                     "din_score": r.get("din_score", 0),
                     "motivo": motivo,
                 })
@@ -81,10 +116,10 @@ async def ver_scoring(request: Request, deval: float = 0, db: Session = Depends(
         "deval": deval_usado,
         "metadata": metadata,
         "ibc_count": sum(1 for r in resultados if r.get("ibc")),
-        "alto_count": sum(1 for r in resultados if r.get("accion_label") == "Score alto"),
-        "medio_count": sum(1 for r in resultados if r.get("accion_label") == "Score medio"),
-        "bajo_count": sum(1 for r in resultados if r.get("accion_label") == "Score bajo"),
-        "minimo_count": sum(1 for r in resultados if r.get("accion_label") == "Score mínimo"),
+        "alto_count": alto_count,
+        "medio_count": medio_count,
+        "bajo_count": bajo_count,
+        "minimo_count": minimo_count,
         "señales_compra": señales_compra,
         "señales_venta": señales_venta,
         "plan": plan,
