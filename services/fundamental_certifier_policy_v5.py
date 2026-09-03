@@ -2,7 +2,7 @@
 
 Jerarquía de evidencia:
 A) certificada por emisor registrado, BVC o SUNAVAL;
-B) secundaria HTTPS trazable para un emisor registrado.
+B) secundaria trazable y explícitamente registrada para el emisor.
 
 La evidencia secundaria puede alimentar el fundamental, pero nunca desplaza a
 una fuente certificada. Si existe evidencia A, prevalece siempre. Los conflictos
@@ -15,14 +15,14 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlparse
 
+from services.fundamental_secondary_sources_v5 import secondary_source_for_url
 from services.fundamental_sources_v5 import get_source, source_url_allowed
 
-CERTIFIER_POLICY_VERSION = "v5.3-tiered-fundamental-evidence"
+CERTIFIER_POLICY_VERSION = "v5.4-curated-tiered-fundamental-evidence"
 CERTIFIERS = ("issuer", "bvc", "sunaval")
 BVC_HOSTS = ("bolsadecaracas.com",)
 SUNAVAL_HOSTS = ("sunaval.gob.ve",)
 CERTIFIED_CONFIDENCE = 100
-SECONDARY_CONFIDENCE = 60
 
 
 def _host(url: str) -> str:
@@ -82,12 +82,7 @@ def certify_fundamental_source(symbol: str, url: str) -> dict:
 
 
 def classify_fundamental_source(symbol: str, url: str) -> dict:
-    """Clasifica una fuente como nivel A certificado o nivel B secundario.
-
-    Sólo símbolos registrados y URLs HTTPS son admisibles. Nivel B es utilizable
-    para scoring fundamental con menor confianza, pero queda explícitamente
-    marcado como no certificado.
-    """
+    """Clasifica una fuente como nivel A certificado o nivel B secundario curado."""
     certified = certify_fundamental_source(symbol, url)
     if certified.get("valid"):
         return {**certified, "admissible": True, "certified": True}
@@ -99,14 +94,25 @@ def classify_fundamental_source(symbol: str, url: str) -> dict:
     if not _https(url) or not host:
         return {**certified, "admissible": False, "certified": False}
 
+    secondary = secondary_source_for_url(symbol, url)
+    if not secondary:
+        return {
+            **certified,
+            "admissible": False,
+            "certified": False,
+            "reason": "secondary_source_not_registered_for_symbol",
+        }
+
+    confidence = max(1, min(99, int(secondary.get("confidence") or 0)))
     return {
         **certified,
         "admissible": True,
         "certified": False,
         "reason": None,
-        "route": "secondary_https",
+        "route": secondary.get("route") or "curated_secondary",
+        "secondary_source_name": secondary.get("name"),
         "evidence_tier": "B_SECONDARY",
-        "evidence_confidence": SECONDARY_CONFIDENCE,
+        "evidence_confidence": confidence,
     }
 
 
@@ -166,6 +172,7 @@ def resolve_certified_evidence(symbol: str, candidates: list[dict[str, Any]]) ->
                 "rejected": rejected,
                 "policy_version": CERTIFIER_POLICY_VERSION,
             }
+        confidence = min(int(row["certification"].get("evidence_confidence") or 0) for row in secondary)
         return {
             "valid": True,
             "reason": None,
@@ -175,7 +182,7 @@ def resolve_certified_evidence(symbol: str, candidates: list[dict[str, Any]]) ->
             "rejected": rejected,
             "certifiers": [],
             "evidence_tier": "B_SECONDARY",
-            "evidence_confidence": SECONDARY_CONFIDENCE,
+            "evidence_confidence": confidence,
             "policy_version": CERTIFIER_POLICY_VERSION,
         }
 
