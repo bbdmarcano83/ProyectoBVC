@@ -55,19 +55,22 @@ def _fundamental_evidence(row: dict) -> dict:
     return classify_fundamental_source(symbol, source_url)
 
 
-def _weighted_available(parts: list[tuple[float | None, float]]) -> tuple[float | None, float]:
+def _weighted_available(parts: list[tuple[float | None, float]], *, nominal_weight: float = 1.0) -> tuple[float | None, float]:
     available = [(float(v), float(w)) for v, w in parts if v is not None and w > 0]
     if not available:
         return None, 0.0
     total = sum(w for _, w in available)
     score = sum(v * w for v, w in available) / total
-    nominal = sum(float(w) for _, w in parts if w > 0)
-    coverage = total / nominal * 100.0 if nominal > 0 else 0.0
-    return _clamp(score), round(coverage, 1)
+    coverage = total / nominal_weight * 100.0 if nominal_weight > 0 else 0.0
+    return _clamp(score), round(max(0.0, min(100.0, coverage)), 1)
 
 
 def _philosophy_score(row: dict) -> tuple[float | None, float]:
-    """Renormalize over available pillars; missing fundamental is never zero."""
+    """Renormalize over available pillars; missing fundamental is never zero.
+
+    Coverage remains referenced to the full nominal model (100%):
+    certified fundamental = 100%, secondary confidence 60 = 84%, no fundamental = 60%.
+    """
     fundamental = row.get("fundamental_score_v5")
     evidence_conf = _n(row.get("fundamental_evidence_confidence_v5"), 0.0) / 100.0
     fundamental_weight = 0.40 * max(0.0, min(1.0, evidence_conf)) if fundamental is not None else 0.0
@@ -77,7 +80,7 @@ def _philosophy_score(row: dict) -> tuple[float | None, float]:
         (_n(row.get("opportunity_score_v3")), 0.15),
         (_n(row.get("confidence_score_v3")), 0.10),
         (100.0 - _n(row.get("risk_score_v3"), 100.0), 0.10),
-    ])
+    ], nominal_weight=1.0)
 
 
 def _v5_signal(row: dict) -> tuple[str, list[str]]:
@@ -105,7 +108,9 @@ def _v5_signal(row: dict) -> tuple[str, list[str]]:
     if row.get("fx_valid_v5") is False:
         flags = row.get("fx_flags_v5") or []
         detail = ", ".join(str(x) for x in flags[:3]) if flags else "tasa BCV histórica incompleta"
-        return "EVALUABLE · FUNDAMENTAL FX PENDIENTE", [f"normalización USD pendiente: {detail}"] + reasons
+        # Conserva etiqueta pública histórica para no romper consumidores. El activo
+        # sigue siendo evaluable mediante asset_evaluable_v5=True.
+        return "FUNDAMENTALES · FX PENDIENTE", [f"normalización USD pendiente: {detail}"] + reasons
 
     fscore = _n(fundamental)
     if coverage < 50:
@@ -152,8 +157,11 @@ def apply_v5(rows: list[dict], metadata: dict | None = None) -> tuple[list[dict]
 
     for row in rows:
         src = get_source(str(row.get("simbolo") or ""))
+        registry_confidence = src.get("confidence", 0) if src else 0
         row["fundamental_source_registered_v5"] = bool(src)
-        row["fundamental_source_registry_confidence_v5"] = src.get("confidence", 0) if src else 0
+        # Preserve legacy public key while exposing the more explicit alias.
+        row["fundamental_source_confidence_v5"] = registry_confidence
+        row["fundamental_source_registry_confidence_v5"] = registry_confidence
         row["fundamental_source_status_v5"] = src.get("status", "unmapped") if src else "unmapped"
         if src and not row.get("industry_type_v5"):
             row["industry_type_v5"] = src.get("industry_type")
