@@ -1,16 +1,16 @@
 """Collector/ingestion layer for Caracas Bull V5 fundamentals.
 
 Acquisition, accounting validation and FX normalization are separate concerns.
-Production ingestion is fail-closed for VES: a report is not persisted as a
-usable V5 snapshot until its historical BCV close/period rate is resolved.
-Only documents certified by the issuer, BVC or SUNAVAL can enter production.
-Controlled fixtures may explicitly disable the network-dependent FX gate.
+Production ingestion is fail-closed for the *fundamental datum*, never for the
+listed asset. Certified sources (issuer/BVC/SUNAVAL) are tier A; secondary HTTPS
+sources for registered issuers are tier B and may feed the fundamental score
+with lower confidence. Controlled fixtures may disable the FX gate explicitly.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from services.fundamental_certifier_policy_v5 import certify_fundamental_source
+from services.fundamental_certifier_policy_v5 import classify_fundamental_source
 from services.fundamental_sources_v5 import get_source, source_audit_summary
 from services.fundamental_store_v5 import save_snapshot, validate_snapshot
 from services.fx_history_v5 import attach_historical_bcv_fx
@@ -24,7 +24,6 @@ REQUIRED_BY_TYPE = {
 
 
 def normalize_record(symbol: str, record: dict[str, Any]) -> dict[str, Any]:
-    """Normalize field names without inventing absent values."""
     out = dict(record or {})
     aliases = {
         "assets": "total_assets",
@@ -113,25 +112,29 @@ def ingest_normalized_report(
     hydrate_fx: bool = True,
     require_fx: bool = True,
 ) -> dict:
-    """Single production write entry point for collectors/admin imports.
+    """Production entry point for tier-A or tier-B fundamental evidence.
 
-    A source must terminate in one of the three approved certifiers: issuer,
-    BVC or SUNAVAL. Secondary sites may aid discovery but cannot persist a
-    certified fundamental snapshot.
+    Failure rejects only this fundamental snapshot. It does not make the listed
+    asset ineligible for market/technical scoring.
     """
-    certification = certify_fundamental_source(symbol, source_url)
-    if not certification.get("valid"):
+    evidence = classify_fundamental_source(symbol, source_url)
+    if not evidence.get("admissible"):
         return {
             "accepted": False,
+            "asset_evaluable": True,
+            "fundamental_available": False,
             "coverage": coverage_report(symbol, record),
-            "validation": {"valid": False, "score": 0.0, "notes": ["fuente no certificada por emisor/BVC/SUNAVAL"]},
-            "fx": {"valid": False, "flags": ["not_evaluated_due_to_source_certifier_gate"]},
-            "certification": certification,
+            "validation": {"valid": False, "score": 0.0, "notes": ["fuente fundamental no admisible"]},
+            "fx": {"valid": False, "flags": ["not_evaluated_due_to_source_gate"]},
+            "certification": evidence,
             "persisted": False,
-            "error": "source_certifier_required",
+            "error": "fundamental_source_not_admissible",
         }
 
     normalized = normalize_record(symbol, record)
+    normalized["fundamental_evidence_tier"] = evidence.get("evidence_tier")
+    normalized["fundamental_evidence_confidence"] = evidence.get("evidence_confidence")
+    normalized["fundamental_source_certified"] = bool(evidence.get("certified"))
     normalized, fx = _prepare_fx(
         normalized,
         as_of=as_of,
@@ -143,10 +146,12 @@ def ingest_normalized_report(
     if require_fx and not fx.get("valid"):
         return {
             "accepted": False,
+            "asset_evaluable": True,
+            "fundamental_available": False,
             "coverage": coverage_report(symbol, normalized),
             "validation": {"valid": False, "score": 0.0, "notes": ["FX histórico requerido"]},
             "fx": fx,
-            "certification": certification,
+            "certification": evidence,
             "persisted": False,
             "error": "historical_fx_required",
         }
@@ -156,18 +161,23 @@ def ingest_normalized_report(
     if not validation.get("valid"):
         return {
             "accepted": False,
+            "asset_evaluable": True,
+            "fundamental_available": False,
             "coverage": coverage,
             "validation": validation,
             "fx": fx,
-            "certification": certification,
+            "certification": evidence,
             "persisted": False,
         }
 
     meta = dict(metadata or {})
     meta["fx_validation"] = fx
-    meta["source_certifier_v5"] = certification.get("certifier")
-    meta["source_certifier_route_v5"] = certification.get("route")
-    meta["source_certifier_policy_version_v5"] = certification.get("policy_version")
+    meta["source_certifier_v5"] = evidence.get("certifier")
+    meta["source_certifier_route_v5"] = evidence.get("route")
+    meta["source_certifier_policy_version_v5"] = evidence.get("policy_version")
+    meta["fundamental_evidence_tier_v5"] = evidence.get("evidence_tier")
+    meta["fundamental_evidence_confidence_v5"] = evidence.get("evidence_confidence")
+    meta["fundamental_source_certified_v5"] = bool(evidence.get("certified"))
     persisted = save_snapshot(
         symbol,
         normalized,
@@ -179,12 +189,15 @@ def ingest_normalized_report(
         published_at=published_at,
         metadata=meta,
     )
+    accepted = bool(persisted.get("saved") or persisted.get("duplicate"))
     return {
-        "accepted": bool(persisted.get("saved") or persisted.get("duplicate")),
+        "accepted": accepted,
+        "asset_evaluable": True,
+        "fundamental_available": accepted,
         "coverage": coverage,
         "validation": validation,
         "fx": fx,
-        "certification": certification,
+        "certification": evidence,
         "persisted": bool(persisted.get("saved")),
         "duplicate": bool(persisted.get("duplicate")),
         "document_id": persisted.get("document_id"),
@@ -193,5 +206,4 @@ def ingest_normalized_report(
 
 
 def audit_universe(symbols: list[str]) -> dict:
-    """Report source-registry coverage for the live BVC universe."""
     return source_audit_summary([str(s).upper() for s in symbols])

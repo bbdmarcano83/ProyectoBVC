@@ -1,9 +1,11 @@
 import unittest
+from unittest.mock import patch
 
 from services.fundamental_certifier_policy_v5 import (
     CERTIFIERS,
     CERTIFIER_POLICY_VERSION,
     certify_fundamental_source,
+    classify_fundamental_source,
     resolve_certified_evidence,
 )
 from services.fundamental_collector_v5 import ingest_normalized_report
@@ -21,6 +23,7 @@ class CertifierPolicyV5Tests(unittest.TestCase):
         )
         self.assertTrue(result["valid"])
         self.assertEqual(result["certifier"], "issuer")
+        self.assertEqual(result["evidence_tier"], "A_CERTIFIED")
 
     def test_registered_issuer_cdn_is_certified_as_issuer(self):
         result = certify_fundamental_source(
@@ -46,12 +49,20 @@ class CertifierPolicyV5Tests(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(result["certifier"], "sunaval")
 
-    def test_secondary_https_source_never_certifies(self):
-        result = certify_fundamental_source("PIV.B", "https://example.com/informe.pdf")
-        self.assertFalse(result["valid"])
-        self.assertEqual(result["reason"], "source_not_certified_by_issuer_bvc_or_sunaval")
+    def test_secondary_https_source_is_not_certified_but_is_admissible(self):
+        certified = certify_fundamental_source("PIV.B", "https://example.com/informe.pdf")
+        self.assertFalse(certified["valid"])
+        result = classify_fundamental_source("PIV.B", "https://example.com/informe.pdf")
+        self.assertTrue(result["admissible"])
+        self.assertFalse(result["certified"])
+        self.assertEqual(result["evidence_tier"], "B_SECONDARY")
+        self.assertLess(result["evidence_confidence"], 100)
 
-    def test_lookalike_authority_hosts_are_rejected(self):
+    def test_non_https_secondary_is_not_admissible(self):
+        result = classify_fundamental_source("PIV.B", "http://example.com/informe.pdf")
+        self.assertFalse(result["admissible"])
+
+    def test_lookalike_authority_hosts_are_not_certified(self):
         self.assertFalse(certify_fundamental_source(
             "PIV.B", "https://bolsadecaracas.com.attacker.invalid/informe.pdf"
         )["valid"])
@@ -59,21 +70,22 @@ class CertifierPolicyV5Tests(unittest.TestCase):
             "PIV.B", "https://sunaval.gob.ve.attacker.invalid/informe.pdf"
         )["valid"])
 
-    def test_collector_fails_before_fx_for_non_certified_source(self):
-        result = ingest_normalized_report(
-            "PIV.B",
-            {"currency": "VES", "total_assets": 100, "equity": 60, "net_income": 10},
-            source_url="https://example.com/informe.pdf",
-            as_of="2025-12-31",
-            document_type="annual_audited",
-            fiscal_period="FY2025",
-        )
-        self.assertFalse(result["accepted"])
-        self.assertFalse(result["persisted"])
-        self.assertEqual(result["error"], "source_certifier_required")
-        self.assertEqual(result["fx"]["flags"], ["not_evaluated_due_to_source_certifier_gate"])
+    def test_collector_accepts_valid_secondary_fundamental(self):
+        with patch("services.fundamental_collector_v5.save_snapshot", return_value={"saved": True, "duplicate": False, "document_id": 1, "snapshot_id": 2}):
+            result = ingest_normalized_report(
+                "PIV.B",
+                {"currency": "USD", "total_assets": 100, "total_liabilities": 40, "equity": 60, "net_income": 10},
+                source_url="https://example.com/informe.pdf",
+                as_of="2025-12-31",
+                document_type="secondary_financial_report",
+                fiscal_period="FY2025",
+                require_fx=False,
+            )
+        self.assertTrue(result["accepted"])
+        self.assertTrue(result["asset_evaluable"])
+        self.assertEqual(result["certification"]["evidence_tier"], "B_SECONDARY")
 
-    def test_certified_value_beats_uncertified_candidate(self):
+    def test_certified_value_beats_secondary_candidate(self):
         result = resolve_certified_evidence("PIV.B", [
             {"value": 100, "source_url": "https://example.com/scraped.pdf"},
             {"value": 125, "source_url": "https://pivca.com/wp-content/uploads/auditado.pdf"},
@@ -81,15 +93,24 @@ class CertifierPolicyV5Tests(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(result["value"], 125)
         self.assertEqual(result["certifiers"], ["issuer"])
-        self.assertEqual(len(result["rejected"]), 1)
+        self.assertEqual(result["evidence_tier"], "A_CERTIFIED")
+        self.assertEqual(len(result["secondary"]), 1)
 
-    def test_uncertified_candidate_cannot_fill_missing_certified_evidence(self):
+    def test_secondary_candidate_can_fill_when_no_certified_evidence_exists(self):
         result = resolve_certified_evidence("PIV.B", [
             {"value": 999, "source_url": "https://example.com/scraped.pdf"},
         ])
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["value"], 999)
+        self.assertEqual(result["evidence_tier"], "B_SECONDARY")
+
+    def test_conflicting_secondary_values_fail_closed_for_fundamental_only(self):
+        result = resolve_certified_evidence("PIV.B", [
+            {"value": 100, "source_url": "https://example.com/a.pdf"},
+            {"value": 101, "source_url": "https://other.example/b.pdf"},
+        ])
         self.assertFalse(result["valid"])
-        self.assertIsNone(result["value"])
-        self.assertEqual(result["reason"], "no_certified_evidence")
+        self.assertEqual(result["reason"], "secondary_evidence_conflict")
 
     def test_conflicting_certified_authorities_fail_closed(self):
         result = resolve_certified_evidence("PIV.B", [
