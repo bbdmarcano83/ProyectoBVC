@@ -17,6 +17,7 @@ from __future__ import annotations
 from io import BytesIO
 import hashlib
 import re
+import unicodedata
 from typing import Iterable
 
 import httpx
@@ -111,10 +112,22 @@ def _page_statement_context(text: str) -> dict:
         basis = "nominal_ves"
     else:
         basis = None
+    normalized = unicodedata.normalize("NFKD", lower)
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    if (
+        "consolidado con sucursales en el exterior" in normalized
+        or "banco nacional de credito, c.a., banco universal y sucursal en el exterior" in normalized
+    ):
+        page_scope = "bnc_consolidated_foreign_branches"
+    elif "balance de operaciones en venezuela" in normalized:
+        page_scope = "bnc_venezuela_operations"
+    else:
+        page_scope = None
     return {
         "page_value_multiplier": multiplier,
         "page_statement_unit": unit,
         "page_monetary_basis": basis,
+        "page_scope": page_scope,
     }
 
 
@@ -352,7 +365,7 @@ def extract_candidates_from_pages(pages: Iterable[str]) -> dict:
     return {k: v for k, v in candidates.items() if v}
 
 
-def parse_pdf_bytes(data: bytes) -> tuple[dict, dict]:
+def parse_pdf_bytes(data: bytes, *, extraction_mode: str | None = None) -> tuple[dict, dict]:
     if not data or len(data) > MAX_PDF_BYTES:
         return {}, {"valid": False, "reason": "pdf_empty_or_too_large"}
     digest = source_document_sha256(data)
@@ -364,7 +377,8 @@ def parse_pdf_bytes(data: bytes) -> tuple[dict, dict]:
     empty_pages = 0
     for page in reader.pages:
         try:
-            text = page.extract_text() or ""
+            text = page.extract_text(extraction_mode=extraction_mode) if extraction_mode else page.extract_text()
+            text = text or ""
         except Exception:
             text = ""
         if not text.strip():
@@ -416,7 +430,10 @@ def fetch_and_parse_official_pdf(symbol: str, url: str, timeout: float = 20.0) -
             "source_url": url, "bytes": len(data), "content_type": content_type,
             "source_document_sha256": digest,
         }
-    candidates, meta = parse_pdf_bytes(data)
+    candidates, meta = parse_pdf_bytes(
+        data,
+        extraction_mode="layout" if symbol == "BNC" else None,
+    )
     meta.update({
         "symbol": symbol,
         "source_url": url,

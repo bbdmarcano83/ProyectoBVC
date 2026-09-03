@@ -4,6 +4,46 @@ from services.fundamental_source_review_v5 import propose_issuer_specific
 
 
 class FundamentalSourceReviewV5Tests(unittest.TestCase):
+    def test_bnc_uses_only_consolidated_exact_rows_across_folios(self):
+        scope = "bnc_consolidated_foreign_branches"
+        review = {
+            "symbol": "BNC", "preferred_column": 0,
+            "fields": {
+                "total_assets": [
+                    {"index": 0, "alias": "total del activo", "evidence": "TOTAL DEL ACTIVO 80", "value": 80, "page": 5, "column_index": 0, "page_scope": "bnc_venezuela_operations"},
+                    {"index": 1, "alias": "total del activo", "evidence": "TOTAL DEL ACTIVO 100", "value": 100, "page": 8, "column_index": 0, "page_scope": None},
+                ],
+                "total_liabilities": [
+                    {"index": 2, "alias": "total del pasivo", "evidence": "TOTAL DEL PASIVO 50", "value": 50, "page": 6, "column_index": 0, "page_scope": "bnc_venezuela_operations"},
+                    {"index": 3, "alias": "total del pasivo", "evidence": "TOTAL DEL PASIVO 60", "value": 60, "page": 9, "column_index": 0, "page_scope": scope},
+                ],
+                "equity": [
+                    {"index": 4, "alias": "total del patrimonio", "evidence": "TOTAL DEL PATRIMONIO 30", "value": 30, "page": 6, "column_index": 0, "page_scope": "bnc_venezuela_operations"},
+                    {"index": 5, "alias": "total del patrimonio", "evidence": "TOTAL DEL PATRIMONIO 40", "value": 40, "page": 9, "column_index": 0, "page_scope": scope},
+                ],
+                "net_income": [
+                    {"index": 6, "alias": "resultado neto", "evidence": "RESULTADO NETO 7", "value": 7, "page": 10, "column_index": 0, "page_scope": scope},
+                ],
+            },
+        }
+        out = propose_issuer_specific(review)
+        self.assertEqual(out["selections"], {
+            "total_assets": 1, "total_liabilities": 3, "equity": 5, "net_income": 6,
+        })
+        self.assertEqual(out["method"], "bnc_consolidated_exact_labels_layout_current_column")
+
+    def test_bnc_fails_closed_without_consolidated_scope(self):
+        review = {
+            "symbol": "BNC", "preferred_column": 0,
+            "fields": {
+                "total_assets": [{"alias": "total del activo", "evidence": "TOTAL DEL ACTIVO 80", "value": 80, "page": 5, "column_index": 0, "page_scope": "bnc_venezuela_operations"}],
+                "total_liabilities": [{"alias": "total del pasivo", "evidence": "TOTAL DEL PASIVO 50", "value": 50, "page": 6, "column_index": 0, "page_scope": "bnc_venezuela_operations"}],
+                "equity": [{"alias": "total del patrimonio", "evidence": "TOTAL DEL PATRIMONIO 30", "value": 30, "page": 6, "column_index": 0, "page_scope": "bnc_venezuela_operations"}],
+                "net_income": [{"alias": "resultado neto", "evidence": "RESULTADO NETO 7", "value": 7, "page": 7, "column_index": 0, "page_scope": "bnc_venezuela_operations"}],
+            },
+        }
+        self.assertIsNone(propose_issuer_specific(review))
+
     def test_cantv_uses_exact_labels_across_split_balance_pages(self):
         review = {
             "symbol": "TDV.D",
