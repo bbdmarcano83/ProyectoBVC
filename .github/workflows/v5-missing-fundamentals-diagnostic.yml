@@ -45,3 +45,5 @@ jobs:
         run: python scripts/diagnose_missing_fundamentals_v5.py
       - name: Audit certified universe after diagnostic
         run: python scripts/audit_fundamental_documents_v5.py --strict --require-any-sha
+
+# Trigger TDV.D accounting-triplet backfill after PR #22.
