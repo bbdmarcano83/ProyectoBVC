@@ -7,6 +7,7 @@ on:
       - ".github/workflows/v5-universe-closure.yml"
       - "scripts/v5_universe_closure.py"
       - "scripts/v5_universe_candidate_audit.py"
+      - "scripts/v5_secondary_candidate_audit.py"
       - "scripts/v5_bvc_attachment_audit.py"
       - "scripts/v5_ingest_tpg_safe.py"
       - "scripts/v5_ingest_cgq_safe.py"
@@ -16,6 +17,7 @@ on:
       - "tests/test_fundamental_pdf_parser_v5.py"
       - "tests/test_fundamental_document_metadata_v5.py"
       - "tests/test_fundamental_autoreview_closure_v5.py"
+      - "tests/test_fundamental_secondary_discovery_v5.py"
       - "tests/test_bvc_attachment_adapter_v5.py"
   workflow_dispatch:
 
@@ -48,14 +50,16 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           python -m pip install pytest
-      - name: Parser, metadata, autoreview and BVC adapter regression tests
+      - name: Parser, metadata, autoreview, secondary-source and BVC adapter regression tests
         run: |
-          python -m unittest tests.test_fundamental_pdf_parser_v5 tests.test_fundamental_document_metadata_v5 -v
+          python -m unittest tests.test_fundamental_pdf_parser_v5 tests.test_fundamental_document_metadata_v5 tests.test_fundamental_secondary_discovery_v5 -v
           python -m pytest tests/test_fundamental_autoreview_closure_v5.py tests/test_bvc_attachment_adapter_v5.py -q
-      - name: Audit all registered V5 symbols against Neon and live discovery
+      - name: Audit all registered V5 symbols against Neon and live official discovery
         run: python scripts/v5_universe_closure.py --discover --output v5_universe_closure_before_ingest.json
       - name: Audit parseable official PDF candidates
         run: python scripts/v5_universe_candidate_audit.py
+      - name: Audit curated tier-B secondary fundamental candidates
+        run: python scripts/v5_secondary_candidate_audit.py
       - name: Audit BVC WordPress and SharePoint evidence routes
         run: python scripts/v5_bvc_attachment_audit.py
       - name: Persist bounded TPG audited snapshots
@@ -82,6 +86,7 @@ jobs:
             v5_universe_closure_before_ingest.json
             v5_universe_closure.json
             v5_universe_candidates.json
+            v5_secondary_candidates.json
             v5_bvc_attachment_audit.json
             v5_tpg_ingest.json
             v5_cgq_ingest.json
