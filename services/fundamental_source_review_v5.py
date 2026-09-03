@@ -117,6 +117,101 @@ def _propose_cantv_split_balance(fields: dict, preferred: int | None) -> dict | 
     }
 
 
+def _bnc_exact_values(
+    fields: dict,
+    field: str,
+    *,
+    aliases: tuple[str, ...],
+    column: int,
+    required_scope: str | None = None,
+    reject_scope: str | None = None,
+) -> list[tuple[int, float, int]]:
+    rows = []
+    for fallback, option in enumerate(fields.get(field) or []):
+        if not isinstance(option, dict) or _norm(option.get("alias")) not in aliases:
+            continue
+        if option.get("column_index") != column:
+            continue
+        scope = option.get("page_scope")
+        if required_scope is not None and scope != required_scope:
+            continue
+        if reject_scope is not None and scope == reject_scope:
+            continue
+        evidence = _norm(option.get("evidence"))
+        if not any(evidence.startswith(alias) for alias in aliases):
+            continue
+        value = _num(option.get("value"))
+        try:
+            page = int(option.get("page"))
+        except (TypeError, ValueError):
+            continue
+        if value is not None:
+            rows.append((_idx(option, fallback), value, page))
+    return rows
+
+
+def _propose_bnc_consolidated(fields: dict, preferred: int | None) -> dict | None:
+    """Select the issuer's explicitly consolidated publication statements.
+
+    BNC prints assets on the preceding folio and liabilities/equity on the next
+    folio. Layout extraction preserves the section heading. We accept only the
+    current column and a single economic identity that reconciles exactly.
+    """
+    column = 0 if preferred is None else preferred
+    scope = "bnc_consolidated_foreign_branches"
+    assets = _bnc_exact_values(
+        fields, "total_assets", aliases=("total del activo", "total activo"),
+        column=column, reject_scope="bnc_venezuela_operations",
+    )
+    liabilities = _bnc_exact_values(
+        fields, "total_liabilities", aliases=("total del pasivo", "total pasivo"),
+        column=column, required_scope=scope,
+    )
+    equity = _bnc_exact_values(
+        fields, "equity", aliases=("total del patrimonio", "total patrimonio"),
+        column=column, required_scope=scope,
+    )
+    incomes = _bnc_exact_values(
+        fields, "net_income", aliases=("resultado neto", "resultado neto del ejercicio"),
+        column=column, required_scope=scope,
+    )
+    matches = []
+    for asset, liability, capital in product(assets, liabilities, equity):
+        if not (0 <= liability[2] - asset[2] <= 12) or liability[2] != capital[2]:
+            continue
+        if abs(asset[1]) < 1e-12:
+            continue
+        error = abs(asset[1] - (liability[1] + capital[1])) / abs(asset[1]) * 100.0
+        if error <= 0.01:
+            matches.append((error, asset, liability, capital))
+    signatures = {(a[1], l[1], e[1]) for _, a, l, e in matches}
+    if len(signatures) != 1:
+        return None
+    error, asset, liability, capital = min(matches, key=lambda row: row[0])
+
+    eligible_income = [row for row in incomes if liability[2] <= row[2] <= liability[2] + 10]
+    income_values = {row[1] for row in eligible_income}
+    if len(income_values) != 1:
+        return None
+    income = min(eligible_income, key=lambda row: row[2])
+    return {
+        "valid": True,
+        "selections": {
+            "total_assets": asset[0],
+            "total_liabilities": liability[0],
+            "equity": capital[0],
+            "net_income": income[0],
+        },
+        "required": ["equity", "net_income", "total_assets"],
+        "missing_required": [],
+        "reason": None,
+        "method": "bnc_consolidated_exact_labels_layout_current_column",
+        "preferred_column": column,
+        "balance_page": liability[2],
+        "accounting_error_pct": round(error, 6),
+    }
+
+
 def _balance_matches(fields: dict, preferred_column: int | None, tolerance_pct: float = 1.0) -> list[dict]:
     assets = fields.get("total_assets") or []
     liabilities = fields.get("total_liabilities") or []
@@ -196,7 +291,7 @@ def _unique_income_near_balance(fields: dict, *, balance_page: int, preferred_co
 def propose_issuer_specific(review: dict) -> dict | None:
     """Devuelve selecciones específicas sólo si el contexto queda inequívoco."""
     symbol = str(review.get("symbol") or "").upper().strip()
-    if symbol not in {"MVZ.A", "ICP.B", "TDV.D"}:
+    if symbol not in {"MVZ.A", "ICP.B", "TDV.D", "BNC"}:
         return None
     fields = review.get("fields") or {}
     preferred = review.get("preferred_column")
@@ -207,6 +302,8 @@ def propose_issuer_specific(review: dict) -> dict | None:
 
     if symbol == "TDV.D":
         return _propose_cantv_split_balance(fields, preferred)
+    if symbol == "BNC":
+        return _propose_bnc_consolidated(fields, preferred)
 
     balance = _unique_on_earliest_page(_balance_matches(fields, preferred))
     if not balance:
