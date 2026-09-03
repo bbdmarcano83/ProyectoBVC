@@ -102,6 +102,7 @@ def build_review_package(
                 "page_value_multiplier": option.get("page_value_multiplier"),
                 "page_statement_unit": option.get("page_statement_unit"),
                 "page_monetary_basis": option.get("page_monetary_basis"),
+                "page_scope": option.get("page_scope"),
             })
         if clean:
             fields[field] = clean
@@ -177,6 +178,7 @@ def select_candidates(
             "normalized_value": selected[field],
             "page_statement_unit": choice.get("page_statement_unit"),
             "page_monetary_basis": choice.get("page_monetary_basis"),
+            "page_scope": choice.get("page_scope"),
         }
     return selected, {
         "valid": not errors and bool(selected),
