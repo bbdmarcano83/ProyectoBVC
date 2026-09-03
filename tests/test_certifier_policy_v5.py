@@ -11,6 +11,11 @@ from services.fundamental_certifier_policy_v5 import (
 from services.fundamental_collector_v5 import ingest_normalized_report
 
 
+MPA_SECONDARY = "https://es.marketscreener.com/noticias/manpa-estados-financieros-auditados-2024-2023"
+CCR_SECONDARY_A = "https://es.marketscreener.com/noticias/ceramica-carabobo-estados-financieros"
+CCR_SECONDARY_B = "https://wtcasadebolsa.com/ceramica-carabobo-estados-financieros/"
+
+
 class CertifierPolicyV5Tests(unittest.TestCase):
     def test_exact_three_certifiers(self):
         self.assertEqual(CERTIFIERS, ("issuer", "bvc", "sunaval"))
@@ -49,36 +54,45 @@ class CertifierPolicyV5Tests(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(result["certifier"], "sunaval")
 
-    def test_secondary_https_source_is_not_certified_but_is_admissible(self):
-        certified = certify_fundamental_source("PIV.B", "https://example.com/informe.pdf")
+    def test_curated_secondary_is_not_certified_but_is_admissible(self):
+        certified = certify_fundamental_source("MPA", MPA_SECONDARY)
         self.assertFalse(certified["valid"])
-        result = classify_fundamental_source("PIV.B", "https://example.com/informe.pdf")
+        result = classify_fundamental_source("MPA", MPA_SECONDARY)
         self.assertTrue(result["admissible"])
         self.assertFalse(result["certified"])
         self.assertEqual(result["evidence_tier"], "B_SECONDARY")
-        self.assertLess(result["evidence_confidence"], 100)
+        self.assertEqual(result["evidence_confidence"], 70)
+
+    def test_arbitrary_https_secondary_is_not_admissible(self):
+        result = classify_fundamental_source("MPA", "https://example.com/informe.pdf")
+        self.assertFalse(result["admissible"])
+        self.assertEqual(result["reason"], "secondary_source_not_registered_for_symbol")
 
     def test_non_https_secondary_is_not_admissible(self):
-        result = classify_fundamental_source("PIV.B", "http://example.com/informe.pdf")
+        result = classify_fundamental_source("MPA", "http://es.marketscreener.com/informe.pdf")
         self.assertFalse(result["admissible"])
 
-    def test_lookalike_authority_hosts_are_not_certified(self):
-        self.assertFalse(certify_fundamental_source(
+    def test_lookalike_authority_hosts_are_not_certified_or_secondary(self):
+        result = classify_fundamental_source(
             "PIV.B", "https://bolsadecaracas.com.attacker.invalid/informe.pdf"
-        )["valid"])
-        self.assertFalse(certify_fundamental_source(
+        )
+        self.assertFalse(result["certified"])
+        self.assertFalse(result["admissible"])
+        result = classify_fundamental_source(
             "PIV.B", "https://sunaval.gob.ve.attacker.invalid/informe.pdf"
-        )["valid"])
+        )
+        self.assertFalse(result["certified"])
+        self.assertFalse(result["admissible"])
 
-    def test_collector_accepts_valid_secondary_fundamental(self):
+    def test_collector_accepts_curated_secondary_fundamental(self):
         with patch("services.fundamental_collector_v5.save_snapshot", return_value={"saved": True, "duplicate": False, "document_id": 1, "snapshot_id": 2}):
             result = ingest_normalized_report(
-                "PIV.B",
+                "MPA",
                 {"currency": "USD", "total_assets": 100, "total_liabilities": 40, "equity": 60, "net_income": 10},
-                source_url="https://example.com/informe.pdf",
-                as_of="2025-12-31",
+                source_url=MPA_SECONDARY,
+                as_of="2024-12-31",
                 document_type="secondary_financial_report",
-                fiscal_period="FY2025",
+                fiscal_period="FY2024",
                 require_fx=False,
             )
         self.assertTrue(result["accepted"])
@@ -86,28 +100,29 @@ class CertifierPolicyV5Tests(unittest.TestCase):
         self.assertEqual(result["certification"]["evidence_tier"], "B_SECONDARY")
 
     def test_certified_value_beats_secondary_candidate(self):
-        result = resolve_certified_evidence("PIV.B", [
-            {"value": 100, "source_url": "https://example.com/scraped.pdf"},
-            {"value": 125, "source_url": "https://pivca.com/wp-content/uploads/auditado.pdf"},
+        result = resolve_certified_evidence("MPA", [
+            {"value": 100, "source_url": MPA_SECONDARY},
+            {"value": 125, "source_url": "https://www.bolsadecaracas.com/manpa-auditado/"},
         ])
         self.assertTrue(result["valid"])
         self.assertEqual(result["value"], 125)
-        self.assertEqual(result["certifiers"], ["issuer"])
+        self.assertEqual(result["certifiers"], ["bvc"])
         self.assertEqual(result["evidence_tier"], "A_CERTIFIED")
         self.assertEqual(len(result["secondary"]), 1)
 
     def test_secondary_candidate_can_fill_when_no_certified_evidence_exists(self):
-        result = resolve_certified_evidence("PIV.B", [
-            {"value": 999, "source_url": "https://example.com/scraped.pdf"},
+        result = resolve_certified_evidence("MPA", [
+            {"value": 999, "source_url": MPA_SECONDARY},
         ])
         self.assertTrue(result["valid"])
         self.assertEqual(result["value"], 999)
         self.assertEqual(result["evidence_tier"], "B_SECONDARY")
+        self.assertEqual(result["evidence_confidence"], 70)
 
     def test_conflicting_secondary_values_fail_closed_for_fundamental_only(self):
-        result = resolve_certified_evidence("PIV.B", [
-            {"value": 100, "source_url": "https://example.com/a.pdf"},
-            {"value": 101, "source_url": "https://other.example/b.pdf"},
+        result = resolve_certified_evidence("CCR", [
+            {"value": 100, "source_url": CCR_SECONDARY_A},
+            {"value": 101, "source_url": CCR_SECONDARY_B},
         ])
         self.assertFalse(result["valid"])
         self.assertEqual(result["reason"], "secondary_evidence_conflict")
