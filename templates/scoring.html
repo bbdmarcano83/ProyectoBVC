@@ -24,7 +24,7 @@
   <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:9px; margin-bottom:18px;">
     <div class="v3card"><small>Régimen</small><strong>{{ market.get('regime','—') }}</strong></div>
     <div class="v3card"><small>Breadth</small><strong>{{ market.get('breadth_score','—') }}</strong></div>
-    <div class="v3card"><small>Score alto</small><strong>{{ alto_count }}</strong></div>
+    <div class="v3card"><small>{{ 'Score alto V5' if v5 else 'Score alto' }}</small><strong>{{ alto_count }}</strong></div>
     <div class="v3card"><small>Oportunidades</small><strong>{{ v5.get('confirmed_opportunities', metadata.get('confirmed_opportunities',0)) if metadata else 0 }}</strong></div>
     <div class="v3card"><small>Quality issues</small><strong>{{ metadata.get('data_quality_issues',0) if metadata else 0 }}</strong></div>
     {% if v5 %}
@@ -82,7 +82,7 @@
             <div style="font-weight:600;">{{ r.simbolo }} {% if r.ibc %}<span class="tag">IBC</span>{% endif %}</div>
             <div style="color:var(--text-secondary); font-size:10px;">{{ r.sector }} · sector #{{ r.get('sector_rank_v3','—') }}</div>
           </td>
-          <td class="tdc"><b style="font-size:15px;">{{ r.total }}</b></td>
+          <td class="tdc"><b style="font-size:15px;">{{ r.get('score_v3', r.total) if v5 else r.total }}</b></td>
           {% if v5 %}
           <td class="tdc">{{ r.get('fundamental_score_v5','—') if r.get('fundamental_score_v5') is not none else '—' }}</td>
           <td class="tdc"><b>{{ r.get('philosophy_score_v5','—') if r.get('philosophy_score_v5') is not none else '—' }}</b></td>
@@ -107,6 +107,8 @@
               <div><small>Graham</small><div><b>{{ r.get('graham_score_v5','—') }}</b></div></div>
               <div><small>Buffett</small><div><b>{{ r.get('buffett_score_v5','—') }}</b></div></div>
               <div><small>Cobertura fundamental</small><div><b>{{ r.get('fundamental_coverage_v5','—') }}%</b></div></div>
+              <div><small>Cobertura de pilares</small><div><b>{{ r.get('philosophy_pillar_coverage_v5','—') }}%</b></div></div>
+              <div><small>Tier evidencia</small><div><b>{{ r.get('fundamental_evidence_tier_v5','NONE') }}</b></div></div>
               <div><small>Earnings Yield</small><div><b>{{ r.get('earnings_yield_pct_v5','—') }}{% if r.get('earnings_yield_pct_v5') is not none %}%{% endif %}</b></div></div>
               <div><small>ROC / ROE</small><div><b>{% if r.get('industry_type_v5') == 'financial' %}ROE {{ r.get('roe_pct_v5','—') }}%{% else %}ROC {{ r.get('return_on_capital_pct_v5','—') }}%{% endif %}</b></div></div>
             </div>
