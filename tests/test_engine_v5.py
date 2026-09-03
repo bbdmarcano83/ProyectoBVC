@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from services.fundamentals_v5 import compute_metrics, enrich_fundamental_scores
-from services.scoring_engine_v5 import _v5_signal, apply_v5
+from services.scoring_engine_v5 import _v5_signal, _philosophy_score, apply_v5
 
 
 class FundamentalMetricsV5Tests(unittest.TestCase):
@@ -61,6 +61,8 @@ class PhilosophySignalV5Tests(unittest.TestCase):
             "simbolo": "AAA",
             "fundamental_score_v5": 80,
             "fundamental_coverage_v5": 90,
+            "fundamental_evidence_tier_v5": "A_CERTIFIED",
+            "fundamental_evidence_confidence_v5": 100,
             "fx_valid_v5": True,
             "fx_flags_v5": [],
             "strength_score_v3": 82,
@@ -94,18 +96,49 @@ class PhilosophySignalV5Tests(unittest.TestCase):
         self.assertEqual(stage, "OPORTUNIDAD HÍBRIDA CONFIRMADA")
         self.assertTrue(any("ruta líder" in r for r in reasons))
 
-    def test_no_fundamentals_never_claims_v5_confirmation(self):
+    def test_no_fundamentals_remains_evaluable(self):
         row = self._base()
         row["fundamental_score_v5"] = None
-        stage, _ = _v5_signal(row)
-        self.assertEqual(stage, "TÉCNICO V3 · SIN FUNDAMENTALES")
+        row["fundamental_evidence_confidence_v5"] = 0
+        stage, reasons = _v5_signal(row)
+        self.assertEqual(stage, "OPORTUNIDAD DE MERCADO · SIN FUNDAMENTAL")
+        self.assertTrue(any("activo valorado" in r for r in reasons))
+        score, coverage = _philosophy_score(row)
+        self.assertIsNotNone(score)
+        self.assertGreater(score, 0)
+        self.assertGreater(coverage, 0)
 
-    def test_apply_v5_keeps_v3_fields(self):
+    def test_missing_fundamental_is_not_counted_as_zero(self):
+        row = self._base()
+        row["fundamental_score_v5"] = None
+        row["fundamental_evidence_confidence_v5"] = 0
+        score_without, _ = _philosophy_score(row)
+        row["fundamental_score_v5"] = 0
+        row["fundamental_evidence_confidence_v5"] = 100
+        score_zero, _ = _philosophy_score(row)
+        self.assertGreater(score_without, score_zero)
+
+    def test_secondary_fundamental_has_less_weight_than_certified(self):
+        row = self._base()
+        row["fundamental_score_v5"] = 100
+        row["strength_score_v3"] = 20
+        row["opportunity_score_v3"] = 20
+        row["confidence_score_v3"] = 20
+        row["risk_score_v3"] = 80
+        row["fundamental_evidence_confidence_v5"] = 100
+        certified, _ = _philosophy_score(row)
+        row["fundamental_evidence_confidence_v5"] = 60
+        secondary, _ = _philosophy_score(row)
+        self.assertGreater(certified, secondary)
+
+    def test_apply_v5_keeps_v3_fields_and_marks_asset_evaluable(self):
         row = self._base()
         row["total"] = 77
         with patch.dict(os.environ, {}, clear=True):
             rows, meta = apply_v5([row], {"engine_version": "V3"})
         self.assertEqual(rows[0]["total"], 77)
+        self.assertTrue(rows[0]["asset_evaluable_v5"])
+        self.assertIsNotNone(rows[0]["philosophy_score_v5"])
         self.assertEqual(meta["engine_version"], "V5-HYBRID")
 
 
