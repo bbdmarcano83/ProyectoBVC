@@ -124,6 +124,14 @@ class FundamentalPdfParserV5Tests(unittest.TestCase):
         self.assertEqual(out["total_assets"][0]["page_value_multiplier"], 1000)
         self.assertEqual(out["total_assets"][0]["page_monetary_basis"], "constant_ves_end_period")
 
+    def test_marks_bnc_consolidated_and_venezuela_statement_scopes(self):
+        out = extract_candidates_from_pages([
+            "CONSOLIDADO CON SUCURSALES EN EL EXTERIOR\nTOTAL DEL ACTIVO 100 90",
+            "BALANCE DE OPERACIONES EN VENEZUELA\nTOTAL DEL ACTIVO 80 70",
+        ])
+        self.assertEqual(out["total_assets"][0]["page_scope"], "bnc_consolidated_foreign_branches")
+        self.assertEqual(out["total_assets"][2]["page_scope"], "bnc_venezuela_operations")
+
     def test_registered_primary_and_cdn_hosts_only(self):
         self.assertTrue(_official_host_allowed("BNC", "https://www.bncenlinea.com/report.pdf"))
         self.assertTrue(_official_host_allowed("BNC", "https://d3q4nr72nuserl.cloudfront.net/report.pdf"))
