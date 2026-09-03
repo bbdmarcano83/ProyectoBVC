@@ -17,6 +17,7 @@ class FundamentalSourceReviewV5Tests(unittest.TestCase):
                     {"index": 2, "alias": "total pasivo", "evidence": "Total pasivo 60", "value": 60, "page": 2, "column_index": 0},
                 ],
                 "equity": [
+                    {"index": 6, "alias": "total patrimonio", "evidence": "_ Total patrimonio 40.000 39.000", "value": 40000, "page": 1, "column_index": 0},
                     {"index": 3, "alias": "total patrimonio", "evidence": "Total patrimonio 40", "value": 40, "page": 1, "column_index": 0},
                     {"index": 4, "alias": "total patrimonio", "evidence": "Total patrimonio y pasivo 100", "value": 100, "page": 2, "column_index": 0},
                 ],
@@ -31,6 +32,24 @@ class FundamentalSourceReviewV5Tests(unittest.TestCase):
             "total_assets": 1, "total_liabilities": 2, "equity": 3, "net_income": 5,
         })
         self.assertEqual(out["accounting_error_pct"], 0.0)
+
+    def test_cantv_fails_closed_when_two_exact_triplets_reconcile(self):
+        review = {
+            "symbol": "TDV.D", "preferred_column": 0,
+            "fields": {
+                "total_assets": [
+                    {"index": 0, "alias": "total activo", "evidence": "Total activo 100", "value": 100, "page": 1, "column_index": 0},
+                    {"index": 1, "alias": "total activo", "evidence": "Total activo 200", "value": 200, "page": 1, "column_index": 0},
+                ],
+                "total_liabilities": [
+                    {"index": 2, "alias": "total pasivo", "evidence": "Total pasivo 60", "value": 60, "page": 2, "column_index": 0},
+                    {"index": 3, "alias": "total pasivo", "evidence": "Total pasivo 160", "value": 160, "page": 2, "column_index": 0},
+                ],
+                "equity": [{"index": 4, "alias": "total patrimonio", "evidence": "Total patrimonio 40", "value": 40, "page": 1, "column_index": 0}],
+                "net_income": [{"index": 5, "alias": "utilidad (pérdida) neta", "evidence": "Utilidad (Pérdida) neta 7", "value": 7, "page": 3, "column_index": 0}],
+            },
+        }
+        self.assertIsNone(propose_issuer_specific(review))
 
     def test_cantv_fails_closed_when_split_balance_does_not_reconcile(self):
         review = {
