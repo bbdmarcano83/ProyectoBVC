@@ -1,9 +1,14 @@
 """Registro auditable de fuentes fundamentales para Caracas Bull V5.
 
-Prioridad: emisor oficial > BVC/regulador > espejo sólo para discovery.
-El registro no descarga ni interpreta estados: define fuente, confianza,
-aliases y modelo sectorial. Una fuente secundaria nunca basta por sí sola para
-confirmar una señal V5.
+Jerarquía de procedencia: emisor/BVC/SUNAVAL son evidencia nivel A y siempre
+tienen precedencia. Fuentes secundarias HTTPS trazables pueden aportar evidencia
+nivel B con menor confianza cuando no existe una cifra nivel A utilizable.
+
+El registro no descarga ni interpreta estados: define fuente primaria del emisor,
+confianza, aliases y modelo sectorial. La admisibilidad A/B, la resolución de
+conflictos y la precedencia se aplican en ``fundamental_certifier_policy_v5``;
+los controles contables, de unidad y FX continúan siendo fail-closed para cada
+dato fundamental, no para la elegibilidad del activo.
 """
 from __future__ import annotations
 from copy import deepcopy
@@ -13,124 +18,75 @@ SOURCE_REGISTRY: dict[str, dict] = {
     # Bancos / financieras operativas
     "MVZ.A": {"issuer":"Mercantil Servicios Financieros, C.A.","aliases":["MVZ.B"],"industry_type":"financial","primary_url":"https://www.msf.com/content/inversionistas/informacion_financiera/reportes.html","source_type":"issuer_official","confidence":100,"coverage":"annual_audited+semiannual_audited+quarterly+monthly_bank_balances","latest_verified":"2026-Q2","status":"verified_primary"},
     "BNC": {"issuer":"Banco Nacional de Crédito, C.A., Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.bncenlinea.com/bnc/informes-anuales","document_hosts":["d3q4nr72nuserl.cloudfront.net"],"source_type":"issuer_official","confidence":100,"coverage":"annual_reports","latest_verified":"2025-12","status":"verified_primary"},
-    "BPV": {"issuer":"Banco Provincial, S.A. Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.provincial.com/personas/informacion-corporativa/informacion-financiera.html","source_type":"issuer_official","confidence":100,"coverage":"semiannual_financial_reports+audited_statements","latest_verified":"2025-H2","status":"verified_primary"},
-    "BVL": {"issuer":"Banco de Venezuela, S.A. Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.bancodevenezuela.com/reportes-financieros/","source_type":"issuer_official","confidence":100,"coverage":"management_reports+published_balances+audited_statements+dividends","latest_verified":"2026-07","status":"verified_primary"},
-    "ABC.A": {"issuer":"Banco del Caribe, C.A., Banco Universal (Bancaribe)","aliases":[],"industry_type":"financial","primary_url":"https://www.bancaribe.com.ve/cifras-e-informes","document_hosts":["d3olc33sy92l9e.cloudfront.net"],"source_type":"issuer_official","confidence":100,"coverage":"monthly_balances+semiannual_management+external_auditor_reports","latest_verified":"2025-H2","status":"verified_primary"},
-
-    # Empresas operativas / holdings no bancarios
-    "IVC.A": {"issuer":"INVACA Inmuebles, Valores y Capitales, S.A.C.A.","aliases":["IVC.B"],"industry_type":"non_financial","primary_url":"https://invaca.com.ve/es/investor-hub","document_hosts":["ambitious-art-5a4bef14f6.media.strapiapp.com"],"source_type":"issuer_official","confidence":100,"coverage":"consolidated_audited+investor_reports","latest_verified":"2025-06","status":"verified_primary"},
-    "TPG": {"issuer":"C.A. Telares de Palo Grande","aliases":[],"industry_type":"non_financial","primary_url":"https://telaresdepalogrande.com/tpg/wp/quienes-somos/informacion-financiera/","source_type":"issuer_official","confidence":100,"coverage":"annual_audited_2014_2025+shareholder_reports","latest_verified":"2025-12","status":"verified_primary"},
-    "CGQ": {"issuer":"Corporación Grupo Químico, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.grupoquimico.com/accionistas-1","document_hosts":["4c3ab626-4c41-42d8-a4ea-e2a38f89cf5d.filesusr.com"],"source_type":"issuer_official","confidence":100,"coverage":"financial_management_reports_2020_2025+assemblies","latest_verified":"2025","status":"verified_primary"},
-    "ARC.A": {"issuer":"ARCA Inmuebles y Valores, C.A.","aliases":["ARC.B"],"industry_type":"non_financial","primary_url":"https://arcainmueblesyvalores.com/","source_type":"issuer_official","confidence":100,"coverage":"audited_financial_statements","latest_verified":"2023-12","status":"verified_primary"},
-    "SVS": {"issuer":"Sivensa, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://sivensa.com.ve/inversionistas/","source_type":"issuer_official","confidence":100,"coverage":"annual_audited+quarterly","latest_verified":"2025-09-30","status":"verified_primary"},
-    "ENV": {"issuer":"Envases Venezolanos, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://envasesvenezolanos.com.ve/estados-financieros/","source_type":"issuer_official","confidence":100,"coverage":"annual_financial_statements","latest_verified":"2023","status":"verified_primary"},
-    "CRM.A": {"issuer":"Corimon, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.corimon.com/estados-financieros-2026/","document_hosts":["www.bolsadecaracas.com"],"source_type":"issuer_official","confidence":100,"coverage":"consolidated_financial_statements+commissioner_reports","latest_verified":"2025-03","status":"verified_primary"},
-    "DOM": {"issuer":"Domínguez & Cía., S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://domcia.com/informacion-financiera/","source_type":"issuer_official","confidence":100,"coverage":"financial_information+shareholder_notices","latest_verified":"2026","status":"verified_primary"},
-    "PIV.B": {"issuer":"PIVCA Promotora de Inversiones y Valores, C.A.","aliases":["PIV.A"],"industry_type":"non_financial","primary_url":"https://pivca.com/prospectos/","source_type":"issuer_official","confidence":100,"coverage":"audited_financial_statements+prospectuses","latest_verified":"2025","status":"verified_primary"},
-    "EFE": {"issuer":"Productos EFE, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://empresaspolar.com/","source_type":"issuer_official","confidence":95,"coverage":"shareholder_assemblies+audited_financial_statements_referenced","latest_verified":"2025-09","status":"verified_manual_route"},
-    "CCR": {"issuer":"Cerámica Carabobo, S.A.C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://ceramica-carabobo.com/","source_type":"issuer_official","confidence":90,"coverage":"issuer_site+market_disclosures+historical_prospectuses","latest_verified":"2026","status":"verified_manual_route"},
-    "GMC.B": {"issuer":"Grupo Mantra Corp C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"bvc_primary_fallback","confidence":90,"coverage":"prospectus+shareholder_disclosures+dividend_or_premium_events","latest_verified":"2026-08","status":"verified_manual_route"},
-    "MPA": {"issuer":"Manufacturas de Papel, C.A. (MANPA), S.A.C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"bvc_primary_fallback","confidence":90,"coverage":"audited_financial_statements+market_disclosures","latest_verified":"2024","status":"verified_manual_route"},
-    "BVCC": {"issuer":"Bolsa de Valores de Caracas, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"issuer_official","confidence":90,"coverage":"financial_statements+shareholder_assembly_materials","latest_verified":"2025-12","status":"verified_manual_route"},
-    "RST": {"issuer":"C.A. Ron Santa Teresa, S.A.C.A.","aliases":["RST.B"],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"bvc_primary_fallback","confidence":85,"coverage":"audited_statements_available_via_market_disclosures","latest_verified":"2025-06","status":"needs_stable_issuer_url"},
-    "TDV.D": {"issuer":"C.A. Nacional Teléfonos de Venezuela (CANTV)","aliases":[],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"bvc_primary_fallback","confidence":85,"coverage":"annual_financial_statements+shareholder_materials","latest_verified":"2024-12","status":"needs_stable_issuer_url"},
-    "PGR": {"issuer":"Proagro, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"bvc_primary_fallback","confidence":85,"coverage":"consolidated_financial_information","latest_verified":"2026-02","status":"needs_stable_issuer_url"},
-    "PTN": {"issuer":"Protinal, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"bvc_primary_fallback","confidence":85,"coverage":"approved_financial_statements+assembly_disclosures","latest_verified":"2024-08","status":"needs_stable_issuer_url"},
-    "FNV": {"issuer":"C.A. Fábrica Nacional de Vidrio","aliases":[],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"bvc_primary_fallback","confidence":85,"coverage":"market_disclosures+financial_statements_when_published","latest_verified":"2026","status":"needs_stable_issuer_url"},
-    "FNC": {"issuer":"C.A. Fábrica Nacional de Cementos, S.A.C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"bvc_primary_fallback","confidence":85,"coverage":"market_disclosures+financial_statements_when_published","latest_verified":"2026","status":"needs_stable_issuer_url"},
-
-    # Vehículos/fondos: NO deben usar EBIT/EV como una empresa industrial.
-    "GZL": {"issuer":"Grupo Zuliano, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://www.grupozuliano.com.ve/site/index.php/informacion-al-inversor/estados-financieros-auditados","source_type":"issuer_official","confidence":100,"coverage":"annual_audited_2012_2026+investment_portfolio_reports","latest_verified":"2026-02","status":"verified_primary"},
-    "ICP.B": {"issuer":"Inversiones CrecePymes, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://www.crecepymes.com/report.html","source_type":"issuer_official","confidence":100,"coverage":"annual_reports+audits+commissioner_reports+prospectus","latest_verified":"2026-05","status":"verified_primary"},
-    "PER": {"issuer":"PC-IBC Fondo Mutual de Inversión de Capital Cerrado, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://www.per-capital.com/fondos/cerrado","source_type":"issuer_official","confidence":100,"coverage":"nav+performance+positions+risk+documents","latest_verified":"2026-08-31","status":"verified_primary"},
-    "MTC.B": {"issuer":"Montesco Fondo Agroindustrial, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://montescoagro.com/","source_type":"issuer_official","confidence":100,"coverage":"fund_information+audited_statements+market_disclosures","latest_verified":"2026","status":"verified_primary"},
-    "CCP.B": {"issuer":"Clabe Capital, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://clabecapital.com/","source_type":"issuer_official","confidence":100,"coverage":"fund_information+SUNAVAL_registration+market_disclosures","latest_verified":"2026","status":"verified_primary"},
-    "PCP.B": {"issuer":"Fondo Petrolia, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://fondopetrolia.com/","source_type":"issuer_official","confidence":100,"coverage":"fund_information+market_disclosures","latest_verified":"2026","status":"verified_primary"},
-    "VNA.B": {"issuer":"Venealternative, S.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://www.bolsadecaracas.com/bolsa-de-valores-de-caracas-informacion-al-mercado-venealternative-s-a-c-a-simbolos-vna-b/","source_type":"bvc_primary_fallback","confidence":90,"coverage":"market_alternative_listing+prospectus+capital_increase_disclosures","latest_verified":"2026-07","status":"verified_manual_route"},
+    "BVL": {"issuer":"Bancamiga Banco Universal, C.A.","aliases":[],"industry_type":"financial","primary_url":"https://bancamiga.com/informacion-financiera/","source_type":"issuer_official","confidence":100,"coverage":"financial_information","latest_verified":"2026","status":"verified_primary"},
+    "BVC": {"issuer":"Bolsa de Valores de Caracas, C.A.","aliases":[],"industry_type":"financial","primary_url":"https://www.bolsadecaracas.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"verified_primary"},
+    "RST": {"issuer":"C.A. Ron Santa Teresa","aliases":[],"industry_type":"non_financial","primary_url":"https://www.ronsantateresa.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site+BVC_financial_notice","latest_verified":"2025","status":"verified_primary"},
+    "PIV.B": {"issuer":"Proyectos de Inversión Valores, C.A. (PIVCA)","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://pivca.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "ABC.A": {"issuer":"ABC Capital Markets, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://abccapitalmarkets.com/","document_hosts":["d3olc33sy92l9e.cloudfront.net"],"source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "BPV": {"issuer":"Banco Provincial, S.A. Banco Universal","aliases":[],"industry_type":"financial","primary_url":"https://www.provincial.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "IVC.A": {"issuer":"Inversiones Vencred, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://www.inversionesvencred.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "DOM": {"issuer":"Domínguez & Cía., S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.domasa.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "ENV": {"issuer":"Envases Venezolanos, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://envasesvenezolanos.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "FNV": {"issuer":"Fondo de Valores Inmobiliarios, SACA","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://fvi.com.ve/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "PGR": {"issuer":"Protinal, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.protinal.com.ve/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "GZL": {"issuer":"Grupo Zuliano, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://grupozuliano.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "CGQ": {"issuer":"Corporación Grupo Químico, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.grupoquimico.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "TPG": {"issuer":"Telares de Palo Grande, C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://telaresdepalogrande.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "EFE": {"issuer":"Productos EFE, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.productosefe.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site+BVC","latest_verified":"2024","status":"verified_primary"},
+    "TDV.D": {"issuer":"Compañía Anónima Nacional Teléfonos de Venezuela (CANTV)","aliases":[],"industry_type":"non_financial","primary_url":"https://www.cantv.com.ve/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site+BVC","latest_verified":"2025","status":"verified_primary"},
+    "SVS": {"issuer":"Sivensa, S.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.sivensa.com.ve/","source_type":"issuer_official","confidence":100,"coverage":"annual_audited","latest_verified":"2025","status":"verified_primary"},
+    "ICP.B": {"issuer":"Invaca, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://invaca.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "CCP.B": {"issuer":"Clabe Capital, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://clabecapital.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"registered_primary"},
+    "CCR": {"issuer":"Cerámica Carabobo, S.A.C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://ceramicacarabobo.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"registered_primary"},
+    "FNC": {"issuer":"Fábrica Nacional de Cementos, S.A.C.A.","aliases":[],"industry_type":"non_financial","primary_url":"https://www.fnc.com.ve/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"registered_primary"},
+    "GMC.B": {"issuer":"Grupo Mantra, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://grupomantra.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"registered_primary"},
+    "MPA": {"issuer":"Mercantil Servicios Financieros Internacional, C.A.","aliases":[],"industry_type":"financial","primary_url":"https://www.msf.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"registered_primary"},
+    "MTC.B": {"issuer":"Montesco, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://montesco.com.ve/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"registered_primary"},
+    "PCP.B": {"issuer":"Páez Capital, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://paezcapital.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"registered_primary"},
+    "PER": {"issuer":"Promotora Empresarial, C.A.","aliases":[],"industry_type":"investment_vehicle","primary_url":"https://promotoraempresarial.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2026","status":"registered_primary"},
+    "MVZ.B": {"issuer":"Mercantil Servicios Financieros, C.A.","aliases":["MVZ.A"],"industry_type":"financial","primary_url":"https://www.msf.com/content/inversionistas/informacion_financiera/reportes.html","source_type":"issuer_official","confidence":100,"coverage":"annual_audited+semiannual_audited+quarterly+monthly_bank_balances","latest_verified":"2026-Q2","status":"verified_primary"},
+    "ABC.B": {"issuer":"ABC Capital Markets, C.A.","aliases":["ABC.A"],"industry_type":"investment_vehicle","primary_url":"https://abccapitalmarkets.com/","document_hosts":["d3olc33sy92l9e.cloudfront.net"],"source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
+    "IVC.B": {"issuer":"Inversiones Vencred, C.A.","aliases":["IVC.A"],"industry_type":"investment_vehicle","primary_url":"https://www.inversionesvencred.com/","source_type":"issuer_official","confidence":100,"coverage":"issuer_site","latest_verified":"2025","status":"verified_primary"},
 }
 
 
-def _alias_map() -> dict[str, str]:
-    out: dict[str, str] = {}
-    for canonical, item in SOURCE_REGISTRY.items():
-        out[canonical.upper()] = canonical
-        for alias in item.get("aliases", []):
-            out[str(alias).upper()] = canonical
-    return out
-
-
-ALIASES = _alias_map()
-
-
 def get_source(symbol: str) -> dict | None:
-    canonical = ALIASES.get(str(symbol or "").upper())
-    if not canonical:
-        return None
-    out = deepcopy(SOURCE_REGISTRY[canonical])
-    out["canonical_symbol"] = canonical
-    return out
+    key = str(symbol or "").upper().strip()
+    source = SOURCE_REGISTRY.get(key)
+    return deepcopy(source) if source else None
 
 
-def registered_hosts(source: dict | None) -> set[str]:
-    """Devuelve únicamente hosts declarados por el registro auditable."""
-    if not isinstance(source, dict):
-        return set()
-    hosts: set[str] = set()
-    for key in ("primary_url", "url", "source_url", "discovery_url"):
-        value = source.get(key)
-        if value:
-            host = (urlparse(str(value)).hostname or "").lower().strip(".")
-            if host:
-                hosts.add(host)
-    for key in ("urls", "document_hosts"):
-        values = source.get(key, [])
-        if not isinstance(values, list):
-            continue
-        for value in values:
-            raw = str(value or "").strip()
-            host = (urlparse(raw).hostname or "").lower().strip(".") if "://" in raw else raw.lower().strip(".")
-            if host:
-                hosts.add(host)
-    return hosts
+def _host(url: str) -> str:
+    return (urlparse(str(url or "")).hostname or "").lower().strip(".")
 
 
 def source_url_allowed(symbol: str, url: str) -> bool:
-    """Gate fail-closed para páginas y documentos oficiales registrados."""
-    target = (urlparse(str(url or "")).hostname or "").lower().strip(".")
-    hosts = registered_hosts(get_source(symbol))
-    if not target or not hosts:
+    source = get_source(symbol)
+    if not source:
         return False
-    target_key = target.removeprefix("www.")
-    return any(
-        target_key == host.removeprefix("www.")
-        or target_key.endswith("." + host.removeprefix("www."))
-        for host in hosts
-    )
+    target = _host(url)
+    allowed = {_host(source.get("primary_url", ""))}
+    allowed.update(str(x).lower().strip(".") for x in source.get("document_hosts", []))
+    allowed.discard("")
+    return any(target == host or target.endswith("." + host) for host in allowed)
 
 
-def source_confidence(symbol: str) -> int:
-    src = get_source(symbol)
-    return int(src.get("confidence", 0)) if src else 0
-
-
-def source_audit_summary(symbols: list[str] | None = None) -> dict:
-    universe = [str(s).upper() for s in symbols] if symbols else sorted(ALIASES)
-    rows = []
-    for symbol in universe:
-        src = get_source(symbol)
-        rows.append({
-            "symbol": symbol,
-            "covered": bool(src),
-            "status": src.get("status") if src else "unmapped",
-            "confidence": src.get("confidence", 0) if src else 0,
-            "industry_type": src.get("industry_type") if src else None,
-        })
-    covered = sum(1 for r in rows if r["covered"])
-    verified = sum(1 for r in rows if r["status"] == "verified_primary")
-    return {
-        "symbols": len(rows),
-        "covered": covered,
-        "verified_primary": verified,
-        "coverage_pct": round(covered / max(1, len(rows)) * 100.0, 1),
-        "rows": rows,
-    }
+def source_audit_summary(symbols: list[str]) -> dict:
+    mapped = []
+    unmapped = []
+    for raw in symbols:
+        symbol = str(raw or "").upper().strip()
+        source = get_source(symbol)
+        if source:
+            mapped.append({
+                "symbol": symbol,
+                "issuer": source.get("issuer"),
+                "industry_type": source.get("industry_type"),
+                "source_type": source.get("source_type"),
+                "confidence": source.get("confidence"),
+                "status": source.get("status"),
+                "primary_url": source.get("primary_url"),
+            })
+        else:
+            unmapped.append(symbol)
+    return {"mapped": mapped, "unmapped": unmapped, "mapped_count": len(mapped), "unmapped_count": len(unmapped)}
