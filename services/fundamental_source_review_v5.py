@@ -39,7 +39,7 @@ def _norm(value) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
 
 
-def _exact_labeled_value(
+def _exact_labeled_values(
     fields: dict,
     field: str,
     *,
@@ -47,7 +47,7 @@ def _exact_labeled_value(
     page: int,
     column: int,
     reject_phrases: tuple[str, ...] = (),
-) -> tuple[int, float] | None:
+) -> list[tuple[int, float]]:
     matches: list[tuple[int, float]] = []
     for fallback, option in enumerate(fields.get(field) or []):
         if not isinstance(option, dict) or _norm(option.get("alias")) != alias:
@@ -60,43 +60,52 @@ def _exact_labeled_value(
         value = _num(option.get("value"))
         if value is not None:
             matches.append((_idx(option, fallback), value))
-    if not matches:
-        return None
-    distinct = {value for _, value in matches}
-    if len(distinct) != 1:
-        return None
-    return matches[0]
+    return matches
 
 
 def _propose_cantv_split_balance(fields: dict, preferred: int | None) -> dict | None:
     column = 0 if preferred is None else preferred
-    assets = _exact_labeled_value(
+    assets = _exact_labeled_values(
         fields, "total_assets", alias="total activo", page=1, column=column,
         reject_phrases=("total activo corriente", "total activo no corriente"),
     )
-    equity = _exact_labeled_value(
+    equity = _exact_labeled_values(
         fields, "equity", alias="total patrimonio", page=1, column=column,
         reject_phrases=("total patrimonio y pasivo",),
     )
-    liabilities = _exact_labeled_value(
+    liabilities = _exact_labeled_values(
         fields, "total_liabilities", alias="total pasivo", page=2, column=column,
         reject_phrases=("total pasivo corriente", "total pasivo no corriente"),
     )
-    income = _exact_labeled_value(
+    income = _exact_labeled_values(
         fields, "net_income", alias="utilidad perdida neta", page=3, column=column,
     )
     if not all((assets, equity, liabilities, income)):
         return None
-    error = abs(assets[1] - (liabilities[1] + equity[1])) / abs(assets[1]) * 100.0
-    if error > 0.01:
+
+    matches = []
+    for asset, liability, capital in product(assets, liabilities, equity):
+        if abs(asset[1]) < 1e-12:
+            continue
+        error = abs(asset[1] - (liability[1] + capital[1])) / abs(asset[1]) * 100.0
+        if error <= 0.01:
+            matches.append((error, asset, liability, capital))
+    signatures = {(a[1], l[1], e[1]) for _, a, l, e in matches}
+    if len(signatures) != 1:
         return None
+    error, asset, liability, capital = min(matches, key=lambda row: row[0])
+
+    income_values = {value for _, value in income}
+    if len(income_values) != 1:
+        return None
+    income_choice = income[0]
     return {
         "valid": True,
         "selections": {
-            "total_assets": assets[0],
-            "total_liabilities": liabilities[0],
-            "equity": equity[0],
-            "net_income": income[0],
+            "total_assets": asset[0],
+            "total_liabilities": liability[0],
+            "equity": capital[0],
+            "net_income": income_choice[0],
         },
         "required": ["equity", "net_income", "total_assets"],
         "missing_required": [],
