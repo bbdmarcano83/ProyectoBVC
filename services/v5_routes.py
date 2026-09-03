@@ -20,6 +20,7 @@ from services.feature_flags import portfolio_ibc_benchmark_v5_enabled
 from services.fx_history_v5 import get_close_rate
 from services.ibc_history_v5 import load_ibc_history
 from services.portfolio_benchmark_v5 import compare_open_portfolio_to_ibc, normalize_ibc_points
+from services.portfolio_professional_v5 import build_professional_open_metrics
 from services.portfolio_snapshot_v5 import save_daily_snapshot, load_snapshots
 from services.portfolio_performance_v5 import analyze_snapshot_performance
 
@@ -51,12 +52,15 @@ def _position_dict(asset: ActivoPortafolio, price: float) -> dict:
     iva = _to_float(asset.iva or 16)
     cost = qty * prom + com + reg + com * iva / 100.0
     created = getattr(asset, "creado_en", None)
+    created_day = created.date().isoformat() if hasattr(created, "date") else (str(created)[:10] if created else None)
+    historical_fx = get_close_rate(created_day, refresh_if_missing=False) if created_day else None
     return {
         "simb": str(asset.simbolo or "").upper(),
         "cantidad": qty,
         "costo_total": cost,
         "val_mkt": qty * (_to_float(price) or prom),
-        "creado_en": created.date().isoformat() if hasattr(created, "date") else (str(created)[:10] if created else None),
+        "creado_en": created_day,
+        "fx_inicio": historical_fx,
     }
 
 
@@ -90,7 +94,7 @@ def snapshot_capture_policy(*, valuation_day: date, ibc_day: date | None, market
             "reason": "terminal_date_mismatch",
             "as_of": None,
             "valuation_as_of": valuation_day.isoformat(),
-            "ibc_as_of": ibc_day.isoformat(),
+            "ibc_as_of": ibc_day.isoformat() if ibc_day else None,
         }
     return {"capture": True, "reason": None, "as_of": valuation_day.isoformat()}
 
@@ -138,6 +142,12 @@ async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)
     open_benchmark["ibc_as_of"] = current_ibc_day.isoformat() if current_ibc_day else None
     open_benchmark["terminal_dates_aligned"] = bool(current_ibc_day == valuation_day)
 
+    professional = build_professional_open_metrics(
+        positions,
+        transactions,
+        current_fx=current_fx if current_fx > 0 else None,
+    )
+
     capture = snapshot_capture_policy(
         valuation_day=valuation_day,
         ibc_day=current_ibc_day,
@@ -162,9 +172,10 @@ async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)
     temporal = analyze_snapshot_performance(snapshots, transactions, ibc_points=ibc_raw)
 
     return JSONResponse({
-        "engine_version": "v5-portfolio-benchmark",
+        "engine_version": "v5-portfolio-benchmark-professional",
         "as_of": valuation_day.isoformat(),
         "benchmark": open_benchmark,
+        "professional": professional,
         "performance": temporal,
         "ibc": ibc_meta,
         "snapshot": snapshot_state,
@@ -172,6 +183,7 @@ async def portfolio_benchmark_v5(request: Request, db: Session = Depends(get_db)
         "notes": [
             "Benchmark abierto: lotes FIFO y fechas equivalentes contra IBC.",
             "USD usa BCV histórico por fecha; si falta, no se aproxima.",
+            "P/L USD profesional usa costo histórico por lote y valor actual al BCV vigente.",
             "Snapshots temporales sólo se guardan con mercado cerrado e IBC del mismo día.",
             "Ventanas 1M/3M/6M/YTD/1Y: Modified Dietz y benchmark IBC con los mismos flujos.",
         ],
