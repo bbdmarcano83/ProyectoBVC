@@ -1,9 +1,13 @@
 """Registro auditable de fuentes fundamentales para Caracas Bull V5.
 
-Prioridad: emisor oficial > BVC/regulador > espejo sólo para discovery.
-El registro no descarga ni interpreta estados: define fuente, confianza,
-aliases y modelo sectorial. Una fuente secundaria nunca basta por sí sola para
-confirmar una señal V5.
+Jerarquía de procedencia: emisor/BVC/SUNAVAL son evidencia nivel A y siempre
+tienen precedencia. Fuentes secundarias HTTPS trazables pueden aportar evidencia
+nivel B con menor confianza cuando no existe una cifra nivel A utilizable.
+
+El registro no descarga ni interpreta estados: define fuente primaria, confianza,
+aliases y modelo sectorial. La admisibilidad A/B y los conflictos se resuelven en
+``fundamental_certifier_policy_v5``. Los controles contables, de unidad y FX
+siguen siendo fail-closed para el dato fundamental, no para el activo.
 """
 from __future__ import annotations
 from copy import deepcopy
