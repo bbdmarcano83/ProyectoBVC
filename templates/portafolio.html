@@ -176,7 +176,7 @@
     .then(async r => {
       let d={};
       try { d=await r.json(); } catch (_) {}
-      if(!r.ok) throw new Error(d.error || d.detail || (r.status === 404 ? 'Analytics V5 deshabilitado' : 'Analytics no disponible'));
+      if(!r.ok) throw new Error(d.error || d.detail || (r.status === 404 ? 'Benchmark V5 deshabilitado' : 'Analytics no disponible'));
       return d;
     })
     .then(data => {
