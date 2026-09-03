@@ -63,15 +63,17 @@ jobs:
       - name: Persist bounded CGQ FY2025 audited snapshot
         run: python scripts/v5_ingest_cgq_safe.py
       - name: Re-audit Neon after bounded ingestion
-        run: python scripts/v5_universe_closure.py --discover --output v5_universe_closure.json
-      - name: Print unresolved symbols
+        run: python scripts/v5_universe_closure.py --discover --output v5_universe_closure.json --require-asset-evaluable 32
+      - name: Print fundamental coverage gaps without blocking assets
         run: |
           python - <<'PY'
           import json
           r=json.load(open('v5_universe_closure.json',encoding='utf-8'))
+          print('asset_evaluable=', r['symbols_asset_evaluable'], '/', r['universe_symbols'])
+          print('fundamental_ready=', r['symbols_fundamental_ready_for_scoring'], '/', r['universe_symbols'])
           for row in r['rows']:
-              if not row['analysis_ready']:
-                  print(row['symbol'], 'docs=',row['documents'],'validated=',row['validated_snapshots'],'fx=',row['fx_valid'],'history=',row['history_periods_usd'],'discovered=',row['discovered_documents'],'err=',row['discovery_error'])
+              if not row['fundamental_ready_for_scoring']:
+                  print(row['symbol'], 'status=',row['fundamental_status'],'docs=',row['documents'],'validated=',row['validated_snapshots'],'fx=',row['fx_valid'],'history=',row['history_periods_usd'],'discovered=',row['discovered_documents'],'err=',row['discovery_error'],'asset_evaluable=',row['asset_evaluable'])
           PY
       - uses: actions/upload-artifact@v4
         with:
