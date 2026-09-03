@@ -217,12 +217,9 @@ async def editar(
     simb: str = Form(...),
     cant: float = Form(...),
     precio: float = Form(...),
-    com: float = Form(0),
-    reg: float = Form(0),
-    iva: float = Form(16),
     db: Session = Depends(get_db),
 ):
-    """Corrección administrativa del agregado visible; no representa una operación de mercado."""
+    """Corrige cantidad/costo promedio sin borrar los gastos acumulados ni simular una operación."""
     usuario = get_usuario_actual(request, db)
     if not usuario:
         return RedirectResponse(url="/login", status_code=302)
@@ -234,9 +231,7 @@ async def editar(
     if activo and _to_float(cant) >= 0 and _to_float(precio) >= 0:
         activo.cantidad = _to_float(cant)
         activo.precio_promedio = _to_float(precio)
-        activo.comision = max(_to_float(com), 0.0)
-        activo.registro = max(_to_float(reg), 0.0)
-        activo.iva = max(_to_float(iva), 0.0)
+        # Comisión, registro e IVA se preservan. Corregir no es una compra/venta.
         db.commit()
     return RedirectResponse(url="/portafolio", status_code=303)
 
