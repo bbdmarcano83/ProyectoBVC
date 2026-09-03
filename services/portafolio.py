@@ -22,6 +22,11 @@ def _enabled() -> bool:
     return _flag("PORTFOLIO_ENGINE_V4_ENABLED", "true")
 
 
+def _v5_enabled() -> bool:
+    """Match the production scoring facade: V5 is active unless explicitly rolled back."""
+    return _flag("SCORING_ENGINE_V5_ENABLED", "true")
+
+
 def calcular_fila(simb: str, datos: dict, precio_actual: float, total_mkt: float, tasa: float) -> dict:
     return _calcular_fila_legacy(simb, datos, precio_actual, total_mkt, tasa)
 
@@ -57,7 +62,7 @@ def resumen_portafolio(portafolio: dict, datos_bolsa: list, tasa: float) -> dict
     enriched["engine_version"] = "v4-stateless-full"
     enriched["storage"] = "stateless"
 
-    if _flag("SCORING_ENGINE_V5_ENABLED", "false"):
+    if _v5_enabled():
         try:
             from services.scoring_engine_v5 import get_last_scoring_map_v5
             from services.portfolio_v5 import analizar_portafolio_v5
