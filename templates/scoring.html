@@ -63,43 +63,95 @@
   </div>
   {% endif %}
 
+  <div class="score-tools" aria-label="Controles del ranking">
+    <div class="score-search-wrap">
+      <input id="scoring-search" class="score-search" type="search" placeholder="Buscar símbolo…" autocomplete="off" aria-label="Buscar título por símbolo">
+    </div>
+    <div class="score-filters" role="group" aria-label="Filtros rápidos">
+      <button type="button" class="score-filter active" data-filter="all">Todos</button>
+      <button type="button" class="score-filter" data-filter="confirmed">Confirmadas</button>
+      <button type="button" class="score-filter" data-filter="prepare">Preparar</button>
+      <button type="button" class="score-filter" data-filter="market-no-fund">Mercado sin fundamental</button>
+      <button type="button" class="score-filter" data-filter="ibc">Solo IBC</button>
+      <button type="button" class="score-filter" data-filter="discard">Descartar</button>
+    </div>
+    <div class="score-tools-meta">
+      <span id="scoring-visible-count">Mostrando {{ resultados|length }} de {{ resultados|length }}</span>
+      <button type="button" id="scoring-clear" class="score-clear">Limpiar filtros</button>
+    </div>
+  </div>
+
   <div style="overflow:auto; background:var(--bg-card); border-radius:12px; border:1px solid var(--border);">
-    <table style="width:100%; border-collapse:collapse; min-width:1200px; font-size:12px;">
+    <table id="scoring-table" style="width:100%; border-collapse:collapse; min-width:1200px; font-size:12px;">
       <thead>
         <tr style="border-bottom:1px solid var(--border); color:var(--text-secondary);">
-          <th class="thl">#</th><th class="thl">Título</th><th class="thc">V3</th>
-          {% if v5 %}<th class="thc">Fundamental</th><th class="thc">V5</th>{% endif %}
-          <th class="thc">Confidence</th><th class="thc">Strength</th><th class="thc">Opportunity</th><th class="thc">Risk</th>
-          <th class="thc">Mom 20d</th><th class="thc">Mom 60d</th><th class="thc">Liq %ile</th><th class="thc">Estado</th>
+          <th class="thl">#</th>
+          <th class="thl sortable" data-sort="symbol" data-sort-type="text">Título <span class="sort-mark">↕</span></th>
+          <th class="thc sortable" data-sort="v3" data-sort-type="number">V3 <span class="sort-mark">↕</span></th>
+          {% if v5 %}
+          <th class="thc sortable" data-sort="fundamental" data-sort-type="number">Fundamental <span class="sort-mark">↕</span></th>
+          <th class="thc sortable active-ranking" data-sort="v5" data-sort-type="number" aria-sort="descending">V5 ↓ <span class="ranking-badge">Ranking activo</span></th>
+          {% endif %}
+          <th class="thc sortable" data-sort="confidence" data-sort-type="number">Confidence <span class="sort-mark">↕</span></th>
+          <th class="thc sortable" data-sort="strength" data-sort-type="number">Strength <span class="sort-mark">↕</span></th>
+          <th class="thc sortable" data-sort="opportunity" data-sort-type="number">Opportunity <span class="sort-mark">↕</span></th>
+          <th class="thc sortable" data-sort="risk" data-sort-type="number">Risk <span class="sort-mark">↕</span></th>
+          <th class="thc sortable" data-sort="mom20" data-sort-type="number">Mom 20d <span class="sort-mark">↕</span></th>
+          <th class="thc sortable" data-sort="mom60" data-sort-type="number">Mom 60d <span class="sort-mark">↕</span></th>
+          <th class="thc sortable" data-sort="liq" data-sort-type="number">Liq %ile <span class="sort-mark">↕</span></th>
+          <th class="thc sortable" data-sort="stage" data-sort-type="text">Estado <span class="sort-mark">↕</span></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="scoring-body">
       {% for r in resultados %}
         {% set h = r.get('history_v3', {}) %}
-        <tr style="border-bottom:1px solid var(--border); cursor:pointer;" onclick="toggleV3('d-{{ loop.index }}')">
-          <td class="tdl" style="color:var(--text-secondary);">{{ loop.index }}</td>
+        {% set stage = r.get('signal_stage_v5', r.get('signal_stage_v3', r.accion_label)) %}
+        {% set mom20 = h.get('momentum_20d_pct') %}
+        {% set mom60 = h.get('momentum_60d_pct') %}
+        {% set risk = r.get('risk_score_v3') %}
+        <tr class="score-row"
+            data-row-id="{{ loop.index }}"
+            data-symbol="{{ r.simbolo }}"
+            data-stage="{{ stage }}"
+            data-ibc="{{ 'true' if r.ibc else 'false' }}"
+            data-sort-symbol="{{ r.simbolo }}"
+            data-sort-v3="{{ r.get('score_v3', r.total) if v5 else r.total }}"
+            data-sort-fundamental="{{ r.get('fundamental_score_v5','') if r.get('fundamental_score_v5') is not none else '' }}"
+            data-sort-v5="{{ r.get('philosophy_score_v5','') if r.get('philosophy_score_v5') is not none else '' }}"
+            data-sort-confidence="{{ r.get('confidence_score_v3','') }}"
+            data-sort-strength="{{ r.get('strength_score_v3','') }}"
+            data-sort-opportunity="{{ r.get('opportunity_score_v3','') }}"
+            data-sort-risk="{{ r.get('risk_score_v3','') }}"
+            data-sort-mom20="{{ mom20 if mom20 is not none else '' }}"
+            data-sort-mom60="{{ mom60 if mom60 is not none else '' }}"
+            data-sort-liq="{{ r.get('liquidity_percentile_v3','') }}"
+            data-sort-stage="{{ stage }}"
+            style="border-bottom:1px solid var(--border); cursor:pointer;"
+            onclick="toggleV3('d-{{ loop.index }}')">
+          <td class="tdl row-rank" style="color:var(--text-secondary);">{{ loop.index }}</td>
           <td class="tdl">
             <div style="font-weight:600;">{{ r.simbolo }} {% if r.ibc %}<span class="tag">IBC</span>{% endif %}</div>
             <div style="color:var(--text-secondary); font-size:10px;">{{ r.sector }} · sector #{{ r.get('sector_rank_v3','—') }}</div>
           </td>
-          <td class="tdc"><b style="font-size:15px;">{{ r.get('score_v3', r.total) if v5 else r.total }}</b></td>
+          <td class="tdc v3-secondary"><b style="font-size:14px;">{{ r.get('score_v3', r.total) if v5 else r.total }}</b></td>
           {% if v5 %}
           <td class="tdc">{{ r.get('fundamental_score_v5','—') if r.get('fundamental_score_v5') is not none else '—' }}</td>
-          <td class="tdc"><b>{{ r.get('philosophy_score_v5','—') if r.get('philosophy_score_v5') is not none else '—' }}</b></td>
+          <td class="tdc v5-primary"><b>{{ r.get('philosophy_score_v5','—') if r.get('philosophy_score_v5') is not none else '—' }}</b></td>
           {% endif %}
           <td class="tdc">{{ r.get('confidence_score_v3','—') }}</td>
           <td class="tdc">{{ r.get('strength_score_v3','—') }}</td>
           <td class="tdc">{{ r.get('opportunity_score_v3','—') }}</td>
-          <td class="tdc"><span class="risk {% if r.get('risk_score_v3',0) >= 70 %}riskhi{% endif %}">{{ r.get('risk_score_v3','—') }}</span></td>
-          <td class="tdc">{% if h.get('momentum_20d_pct') is not none %}{{ h.get('momentum_20d_pct') }}%{% else %}—{% endif %}</td>
-          <td class="tdc">{% if h.get('momentum_60d_pct') is not none %}{{ h.get('momentum_60d_pct') }}%{% else %}—{% endif %}</td>
+          <td class="tdc">
+            <span class="risk {% if risk is not none and risk >= 70 %}riskhi{% elif risk is not none and risk >= 45 %}riskmed{% else %}risklo{% endif %}">{{ r.get('risk_score_v3','—') }}</span>
+          </td>
+          <td class="tdc mom {% if mom20 is not none and mom20 > 0 %}mompos{% elif mom20 is not none and mom20 < 0 %}momneg{% else %}momflat{% endif %}">{% if mom20 is not none %}{{ mom20 }}%{% else %}—{% endif %}</td>
+          <td class="tdc mom {% if mom60 is not none and mom60 > 0 %}mompos{% elif mom60 is not none and mom60 < 0 %}momneg{% else %}momflat{% endif %}">{% if mom60 is not none %}{{ mom60 }}%{% else %}—{% endif %}</td>
           <td class="tdc">{{ r.get('liquidity_percentile_v3','—') }}</td>
           <td class="tdc">
-            {% set stage = r.get('signal_stage_v5', r.get('signal_stage_v3', r.accion_label)) %}
-            <span class="stage {% if 'CONFIRMADA' in stage %}go{% elif 'PREPARAR' in stage %}prep{% endif %}">{{ stage }}</span>
+            <span class="stage {% if 'SIN FUNDAMENTAL' in stage %}market{% elif 'CONFIRMADA' in stage %}go{% elif 'PREPARAR' in stage or 'CANDIDATA' in stage %}prep{% elif 'DESCARTAR' in stage %}discard{% endif %}">{{ stage }}</span>
           </td>
         </tr>
-        <tr id="d-{{ loop.index }}" style="display:none; border-bottom:1px solid var(--border);">
+        <tr id="d-{{ loop.index }}" class="score-detail" data-parent-row="{{ loop.index }}" style="display:none; border-bottom:1px solid var(--border);">
           <td colspan="{{ 13 if v5 else 11 }}" style="padding:12px 16px; background:var(--bg-body);">
             {% if v5 %}
             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:12px;">
@@ -140,9 +192,122 @@
 </div>
 
 <style>
-.v3card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}.v3card small,td small{color:var(--text-secondary);font-size:10px}.v3card strong{font-size:16px}.thl,.thc{padding:10px 8px;font-size:10px;font-weight:500}.thl{text-align:left}.thc{text-align:center}.tdl,.tdc{padding:9px 8px}.tdl{text-align:left}.tdc{text-align:center;font-family:'IBM Plex Mono',monospace}.tag{font-size:8px;padding:1px 4px;border-radius:4px;background:var(--accent);color:#fff}.stage{font-family:inherit;font-size:9px;padding:3px 7px;border-radius:7px;background:rgba(120,120,120,.12);white-space:nowrap}.stage.prep{background:rgba(237,161,0,.14);color:#b07100}.stage.go{background:rgba(27,175,122,.15);color:#0F6E56}.risk{padding:2px 6px;border-radius:5px}.riskhi{background:rgba(208,59,59,.13);color:#d03b3b}
+.v3card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}.v3card small,td small{color:var(--text-secondary);font-size:10px}.v3card strong{font-size:16px}.thl,.thc{padding:10px 8px;font-size:10px;font-weight:500}.thl{text-align:left}.thc{text-align:center}.tdl,.tdc{padding:9px 8px}.tdl{text-align:left}.tdc{text-align:center;font-family:'IBM Plex Mono',monospace}.tag{font-size:8px;padding:1px 4px;border-radius:4px;background:var(--accent);color:#fff}.score-tools{display:flex;gap:9px;align-items:center;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:10px}.score-search-wrap{flex:1 1 170px;min-width:150px}.score-search{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-body);color:var(--text-primary);font-size:11px}.score-filters{display:flex;gap:5px;flex-wrap:wrap}.score-filter,.score-clear{border:1px solid var(--border);background:var(--bg-body);color:var(--text-secondary);border-radius:8px;padding:7px 9px;font-size:10px;cursor:pointer}.score-filter:hover,.score-clear:hover{color:var(--text-primary);border-color:var(--accent)}.score-filter.active{background:rgba(27,175,122,.12);border-color:rgba(27,175,122,.45);color:#1baf7a;font-weight:600}.score-tools-meta{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:10px}.sortable{cursor:pointer;user-select:none;transition:background .15s ease}.sortable:hover{background:rgba(120,120,120,.07)}.sort-mark{font-size:9px;opacity:.55}.active-ranking{background:rgba(27,175,122,.08);color:#1baf7a}.ranking-badge{display:block;margin-top:2px;font-size:7px;font-family:inherit;text-transform:uppercase;letter-spacing:.04em;color:#1baf7a}.v3-secondary{color:var(--text-secondary)}.v5-primary{background:rgba(27,175,122,.045);font-size:14px}.stage{display:inline-flex;align-items:center;font-family:inherit;font-size:9px;padding:3px 7px;border-radius:999px;background:rgba(120,120,120,.12);white-space:nowrap}.stage.prep{background:rgba(237,161,0,.14);color:#b07100}.stage.go{background:rgba(27,175,122,.15);color:#0F6E56}.stage.market{background:rgba(58,130,246,.13);color:#2f6fca}.stage.discard{background:rgba(208,59,59,.13);color:#d03b3b}.risk{padding:2px 6px;border-radius:5px}.riskhi{background:rgba(208,59,59,.13);color:#d03b3b}.riskmed{background:rgba(237,161,0,.12);color:#b07100}.risklo{background:rgba(27,175,122,.09);color:#0F6E56}.mom{font-weight:600}.mompos{color:#1baf7a}.momneg{color:#d03b3b}.momflat{color:var(--text-secondary)}
+@media (max-width:700px){.score-tools-meta{width:100%;margin-left:0;justify-content:space-between}.score-filters{width:100%}.score-filter{flex:1 1 auto}.ranking-badge{display:none}}
 </style>
 <script>
-function toggleV3(id){const el=document.getElementById(id); if(el){el.style.display=el.style.display==='none'?'table-row':'none';}}
+function toggleV3(id){
+  const el=document.getElementById(id);
+  if(el){el.style.display=el.style.display==='none'?'table-row':'none';}
+}
+
+(function(){
+  const table=document.getElementById('scoring-table');
+  const body=document.getElementById('scoring-body');
+  const search=document.getElementById('scoring-search');
+  const count=document.getElementById('scoring-visible-count');
+  const clear=document.getElementById('scoring-clear');
+  if(!table || !body || !search || !count || !clear){return;}
+
+  const rows=()=>Array.from(body.querySelectorAll('.score-row'));
+  let activeFilter='all';
+  let sortKey={{ "'v5'" if v5 else "'v3'" }};
+  let sortDirection='desc';
+
+  function detailFor(row){return document.getElementById('d-'+row.dataset.rowId);}
+  function text(v){return String(v ?? '').trim();}
+  function numeric(v){const n=Number(v);return Number.isFinite(n)?n:null;}
+
+  function matchesFilter(row){
+    const query=search.value.trim().toUpperCase();
+    const symbol=text(row.dataset.symbol).toUpperCase();
+    const stage=text(row.dataset.stage).toUpperCase();
+    if(query && !symbol.includes(query)){return false;}
+    if(activeFilter==='confirmed'){return stage.includes('CONFIRMADA');}
+    if(activeFilter==='prepare'){return stage.includes('PREPARAR') || stage.includes('CANDIDATA');}
+    if(activeFilter==='market-no-fund'){return stage.includes('SIN FUNDAMENTAL');}
+    if(activeFilter==='ibc'){return row.dataset.ibc==='true';}
+    if(activeFilter==='discard'){return stage.includes('DESCARTAR');}
+    return true;
+  }
+
+  function applyFilters(){
+    let visible=0;
+    rows().forEach(row=>{
+      const show=matchesFilter(row);
+      row.style.display=show?'table-row':'none';
+      const detail=detailFor(row);
+      if(!show && detail){detail.style.display='none';}
+      if(show){visible+=1;}
+    });
+    count.textContent=`Mostrando ${visible} de ${rows().length}`;
+  }
+
+  function sortValue(row,key,type){
+    const raw=row.dataset['sort'+key.charAt(0).toUpperCase()+key.slice(1)] ?? '';
+    if(type==='number'){
+      const n=numeric(raw);
+      return n===null ? (sortDirection==='asc'?Number.POSITIVE_INFINITY:Number.NEGATIVE_INFINITY) : n;
+    }
+    return text(raw).toLocaleUpperCase('es');
+  }
+
+  function sortRows(key,direction,type){
+    sortKey=key; sortDirection=direction;
+    const ordered=rows().sort((a,b)=>{
+      const av=sortValue(a,key,type), bv=sortValue(b,key,type);
+      let cmp=0;
+      if(typeof av==='number' && typeof bv==='number'){cmp=av-bv;}
+      else{cmp=String(av).localeCompare(String(bv),'es',{numeric:true,sensitivity:'base'});}
+      return direction==='asc'?cmp:-cmp;
+    });
+    ordered.forEach((row,index)=>{
+      body.appendChild(row);
+      const detail=detailFor(row);
+      if(detail){body.appendChild(detail);}
+      const rank=row.querySelector('.row-rank');
+      if(rank){rank.textContent=String(index+1);}
+    });
+    table.querySelectorAll('.sortable').forEach(th=>{
+      const selected=th.dataset.sort===key;
+      th.setAttribute('aria-sort',selected?(direction==='asc'?'ascending':'descending'):'none');
+      const mark=th.querySelector('.sort-mark');
+      if(mark){mark.textContent=selected?(direction==='asc'?'↑':'↓'):'↕';}
+    });
+    applyFilters();
+  }
+
+  table.querySelectorAll('.sortable').forEach(th=>{
+    th.setAttribute('tabindex','0');
+    const activate=()=>{
+      const key=th.dataset.sort;
+      const type=th.dataset.sortType || 'text';
+      const direction=(sortKey===key && sortDirection==='desc')?'asc':'desc';
+      sortRows(key,direction,type);
+    };
+    th.addEventListener('click',activate);
+    th.addEventListener('keydown',event=>{
+      if(event.key==='Enter' || event.key===' '){event.preventDefault();activate();}
+    });
+  });
+
+  document.querySelectorAll('.score-filter').forEach(button=>{
+    button.addEventListener('click',()=>{
+      activeFilter=button.dataset.filter || 'all';
+      document.querySelectorAll('.score-filter').forEach(b=>b.classList.toggle('active',b===button));
+      applyFilters();
+    });
+  });
+
+  search.addEventListener('input',applyFilters);
+  clear.addEventListener('click',()=>{
+    search.value='';
+    activeFilter='all';
+    document.querySelectorAll('.score-filter').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));
+    sortRows({{ "'v5'" if v5 else "'v3'" }},'desc','number');
+  });
+
+  sortRows(sortKey,sortDirection,'number');
+})();
 </script>
 {% endblock %}
