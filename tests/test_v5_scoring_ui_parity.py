@@ -1,6 +1,11 @@
 import unittest
+from pathlib import Path
 
 from app.routers.scoring import _active_score, _score_bucket_counts
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCORING_TEMPLATE = ROOT / "templates" / "scoring.html"
 
 
 class V5ScoringUiParityTests(unittest.TestCase):
@@ -34,6 +39,41 @@ class V5ScoringUiParityTests(unittest.TestCase):
             _score_bucket_counts(rows, v5_active=False),
             (1, 1, 1, 1),
         )
+
+    def test_scoring_template_has_client_side_filters_without_recomputing_scores(self):
+        html = SCORING_TEMPLATE.read_text(encoding="utf-8")
+        for marker in (
+            'id="scoring-search"',
+            'data-filter="confirmed"',
+            'data-filter="prepare"',
+            'data-filter="market-no-fund"',
+            'data-filter="ibc"',
+            'data-filter="discard"',
+            'id="scoring-visible-count"',
+            'id="scoring-clear"',
+        ):
+            self.assertIn(marker, html)
+        self.assertIn('data-sort-v5="{{ r.get(\'philosophy_score_v5\'', html)
+        self.assertIn("function applyFilters()", html)
+        self.assertNotIn("fetch('/api/scoring", html)
+
+    def test_v5_is_visually_primary_but_v3_remains_auditable(self):
+        html = SCORING_TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn("Ranking activo", html)
+        self.assertIn('class="tdc v3-secondary"', html)
+        self.assertIn('class="tdc v5-primary"', html)
+        self.assertIn("r.get('score_v3', r.total)", html)
+        self.assertIn("r.get('philosophy_score_v5'", html)
+
+    def test_semantic_market_states_and_momentum_colors_are_present(self):
+        html = SCORING_TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn("'SIN FUNDAMENTAL' in stage", html)
+        self.assertIn("'DESCARTAR' in stage", html)
+        self.assertIn("mompos", html)
+        self.assertIn("momneg", html)
+        self.assertIn("riskhi", html)
+        self.assertIn("riskmed", html)
+        self.assertIn("risklo", html)
 
 
 if __name__ == "__main__":
