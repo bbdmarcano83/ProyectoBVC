@@ -9,12 +9,15 @@ from __future__ import annotations
 
 from hashlib import sha256
 from html.parser import HTMLParser
+from io import BytesIO
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
 
 import httpx
+from PIL import Image, ImageOps
 
 from services.fundamental_certifier_policy_v5 import certify_fundamental_source
 from services.fundamental_pdf_parser_v5 import extract_candidates_from_pages
@@ -29,7 +32,6 @@ def _is_certified_bvc_url(symbol: str, url: str) -> bool:
     """Acepta BVC para cualquier emisor, pero sólo dentro de esta ruta BVC."""
     certification = certify_fundamental_source(symbol, url)
     return bool(certification.get("valid") and certification.get("certifier") == "bvc")
-
 
 
 class _MediaIdParser(HTMLParser):
@@ -69,26 +71,83 @@ def _bundle_sha256(images: list[bytes]) -> str | None:
     return digest.hexdigest()
 
 
-def _ocr_image(data: bytes, suffix: str = ".jpg") -> tuple[str, str | None]:
+def _run_tesseract(executable: str, path: Path, *, psm: str, whitelist: str | None = None) -> tuple[str, str | None]:
+    command = [executable, str(path), "stdout", "-l", "eng", "--psm", psm]
+    if whitelist:
+        command.extend(["-c", f"tessedit_char_whitelist={whitelist}"])
+    try:
+        proc = subprocess.run(command, check=False, capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return "", f"ocr_error:{type(exc).__name__}"
+    if proc.returncode != 0:
+        return "", f"ocr_exit:{proc.returncode}"
+    return proc.stdout, None
+
+
+def _ocr_image(
+    data: bytes,
+    suffix: str = ".jpg",
+    *,
+    profile: str | None = None,
+    page_number: int | None = None,
+) -> tuple[str, str | None]:
     executable = shutil.which("tesseract")
     if not executable:
         return "", "tesseract_not_installed"
     with tempfile.TemporaryDirectory(prefix="bvc-fundamental-") as tmp:
+        if profile == "high_contrast_table":
+            try:
+                with Image.open(BytesIO(data)) as image:
+                    original = image.copy()
+                    gray = ImageOps.autocontrast(original.convert("L"), cutoff=1)
+                    width, height = gray.size
+                    outputs: list[str] = []
+                    for name, resampling, psm in (
+                        ("bicubic", Image.Resampling.BICUBIC, "6"),
+                        ("nearest", Image.Resampling.NEAREST, "4"),
+                    ):
+                        path = Path(tmp) / f"page-{name}.png"
+                        resized = gray.resize((round(width * 1.8), round(height * 1.8)), resampling)
+                        resized.point(lambda pixel: 255 if pixel > 153 else 0).save(path, format="PNG")
+                        text, error = _run_tesseract(executable, path, psm=psm)
+                        if error:
+                            return "", error
+                        if page_number == 3:
+                            text = "\n".join(
+                                line for line in text.splitlines()
+                                if not ("tilidad" in line.lower() and "neta" in line.lower())
+                            )
+                        outputs.append(text)
+
+                    # La fila final de resultados está degradada por el sello del
+                    # documento. Se re-OCRiza sólo su celda vigente y se conserva
+                    # la etiqueta contable visible; nunca se codifica la cifra.
+                    if page_number == 3:
+                        crop = original.crop((
+                            round(width * 0.529), round(height * 0.818),
+                            round(width * 0.784), round(height * 0.885),
+                        )).convert("L")
+                        crop = ImageOps.autocontrast(crop, cutoff=1)
+                        crop = crop.resize((round(crop.width * 2.5), round(crop.height * 2.5)), Image.Resampling.LANCZOS)
+                        crop_path = Path(tmp) / "net-income-current.png"
+                        crop.save(crop_path, format="PNG")
+                        cell, error = _run_tesseract(
+                            executable,
+                            crop_path,
+                            psm="11",
+                            whitelist="0123456789.(),",
+                        )
+                        if error:
+                            return "", error
+                        numbers = re.findall(r"\d[\d.(),]+", cell)
+                        if numbers:
+                            outputs.append(f"Utilidad (Pérdida) neta {numbers[-1]}")
+                    return "\n".join(outputs), None
+            except Exception as exc:
+                return "", f"ocr_preprocess_error:{type(exc).__name__}"
         path = Path(tmp) / f"page{suffix}"
         path.write_bytes(data)
-        try:
-            proc = subprocess.run(
-                [executable, str(path), "stdout", "-l", "eng", "--psm", "6"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=45,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return "", f"ocr_error:{type(exc).__name__}"
-    if proc.returncode != 0:
-        return "", f"ocr_exit:{proc.returncode}"
-    return proc.stdout, None
+        return _run_tesseract(executable, path, psm="6")
 
 
 def fetch_and_parse_bvc_post(symbol: str, post_id: int, timeout: float = 30.0) -> tuple[dict, dict]:
@@ -143,7 +202,8 @@ def fetch_and_parse_bvc_post(symbol: str, post_id: int, timeout: float = 30.0) -
                 if not content_type.startswith("image/"):
                     return {}, {"valid": False, "reason": "bvc_attachment_not_image", "media_id": media_id}
                 suffix = ".png" if "png" in content_type else ".jpg"
-                text, error = _ocr_image(data, suffix)
+                profile = "high_contrast_table" if symbol == "TDV.D" else None
+                text, error = _ocr_image(data, suffix, profile=profile, page_number=len(pages) + 1)
                 if error:
                     ocr_errors.append(f"{media_id}:{error}")
                 pages.append(text)
