@@ -43,6 +43,11 @@ async def calcular_scoring_completo(devaluacion_pct: float | None = None):
 
     if _v5_enabled():
         from services.scoring_engine_v5 import apply_v5
+        from services.scoring_runtime_v5 import activate_v5_runtime
+
         rows, metadata = apply_v5(rows, metadata)
+        # V3 is preserved in score_v3, but all backwards-compatible consumers
+        # must see and rank by the active Caracas Bull V5 philosophy score.
+        rows, metadata = activate_v5_runtime(rows, metadata)
 
     return rows, deval, metadata
