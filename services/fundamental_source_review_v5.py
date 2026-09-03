@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from itertools import product
 from math import isfinite
+import re
+import unicodedata
 
 
 def _num(value):
@@ -29,6 +31,81 @@ def _idx(option: dict, fallback: int) -> int:
         return int(option.get("index", fallback))
     except (TypeError, ValueError):
         return fallback
+
+
+def _norm(value) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+
+def _exact_labeled_value(
+    fields: dict,
+    field: str,
+    *,
+    alias: str,
+    page: int,
+    column: int,
+    reject_phrases: tuple[str, ...] = (),
+) -> tuple[int, float] | None:
+    matches: list[tuple[int, float]] = []
+    for fallback, option in enumerate(fields.get(field) or []):
+        if not isinstance(option, dict) or _norm(option.get("alias")) != alias:
+            continue
+        if option.get("page") != page or option.get("column_index") != column:
+            continue
+        evidence = _norm(option.get("evidence"))
+        if not evidence.startswith(alias) or any(phrase in evidence for phrase in reject_phrases):
+            continue
+        value = _num(option.get("value"))
+        if value is not None:
+            matches.append((_idx(option, fallback), value))
+    if not matches:
+        return None
+    distinct = {value for _, value in matches}
+    if len(distinct) != 1:
+        return None
+    return matches[0]
+
+
+def _propose_cantv_split_balance(fields: dict, preferred: int | None) -> dict | None:
+    column = 0 if preferred is None else preferred
+    assets = _exact_labeled_value(
+        fields, "total_assets", alias="total activo", page=1, column=column,
+        reject_phrases=("total activo corriente", "total activo no corriente"),
+    )
+    equity = _exact_labeled_value(
+        fields, "equity", alias="total patrimonio", page=1, column=column,
+        reject_phrases=("total patrimonio y pasivo",),
+    )
+    liabilities = _exact_labeled_value(
+        fields, "total_liabilities", alias="total pasivo", page=2, column=column,
+        reject_phrases=("total pasivo corriente", "total pasivo no corriente"),
+    )
+    income = _exact_labeled_value(
+        fields, "net_income", alias="utilidad perdida neta", page=3, column=column,
+    )
+    if not all((assets, equity, liabilities, income)):
+        return None
+    error = abs(assets[1] - (liabilities[1] + equity[1])) / abs(assets[1]) * 100.0
+    if error > 0.01:
+        return None
+    return {
+        "valid": True,
+        "selections": {
+            "total_assets": assets[0],
+            "total_liabilities": liabilities[0],
+            "equity": equity[0],
+            "net_income": income[0],
+        },
+        "required": ["equity", "net_income", "total_assets"],
+        "missing_required": [],
+        "reason": None,
+        "method": "cantv_exact_labels_split_balance_pages_current_column",
+        "preferred_column": column,
+        "balance_page": 1,
+        "accounting_error_pct": round(error, 6),
+    }
 
 
 def _balance_matches(fields: dict, preferred_column: int | None, tolerance_pct: float = 1.0) -> list[dict]:
@@ -110,7 +187,7 @@ def _unique_income_near_balance(fields: dict, *, balance_page: int, preferred_co
 def propose_issuer_specific(review: dict) -> dict | None:
     """Devuelve selecciones específicas sólo si el contexto queda inequívoco."""
     symbol = str(review.get("symbol") or "").upper().strip()
-    if symbol not in {"MVZ.A", "ICP.B"}:
+    if symbol not in {"MVZ.A", "ICP.B", "TDV.D"}:
         return None
     fields = review.get("fields") or {}
     preferred = review.get("preferred_column")
@@ -118,6 +195,9 @@ def propose_issuer_specific(review: dict) -> dict | None:
         preferred = int(preferred) if preferred is not None else None
     except (TypeError, ValueError):
         preferred = None
+
+    if symbol == "TDV.D":
+        return _propose_cantv_split_balance(fields, preferred)
 
     balance = _unique_on_earliest_page(_balance_matches(fields, preferred))
     if not balance:
