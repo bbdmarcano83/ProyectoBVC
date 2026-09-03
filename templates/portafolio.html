@@ -1,282 +1,142 @@
 {% extends "base.html" %}
-{% block title %}Portfolio V4/V5 — Caracas Bull{% endblock %}
+{% block title %}Mi portafolio — Caracas Bull{% endblock %}
 {% block content %}
 {% set v4 = resumen.get('portfolio_v4', {}) %}
-<div class="container" style="max-width:1280px; padding:20px 16px;">
-  <div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;">
+<div class="container portfolio-shell">
+  <header class="portfolio-head">
     <div>
-      <h1 style="font-size:22px;margin:0 0 5px;">Portfolio Engine V4 / Analytics V5</h1>
-      <div style="font-size:12px;color:var(--text-secondary);">{{ filas|length }} posiciones · BCV {{ tasa }} · {{ resumen.get('engine_version','legacy') }}</div>
-      <div style="font-size:10px;color:var(--text-secondary);margin-top:4px;">P/L USD usa costo histórico por lote FIFO al BCV de cada compra; nunca reconstruye costo histórico con la tasa actual.</div>
+      <h1>Mi portafolio</h1>
+      <p>{{ filas|length }} posiciones · BCV {{ tasa }} · precios de mercado actualizados desde la BVC</p>
     </div>
-    <details>
-      <summary style="cursor:pointer;padding:7px 12px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);font-size:12px;">Agregar posición</summary>
-      <form action="/agregar" method="post" class="formbox">
-        <input name="simb" placeholder="Símbolo" required>
-        <input name="cant" type="number" step="any" min="0" placeholder="Cantidad" required>
-        <input name="precio" type="number" step="any" min="0" placeholder="Precio compra" required>
-        <input name="com" type="number" step="any" min="0" value="0" placeholder="Comisión">
-        <input name="reg" type="number" step="any" min="0" value="0" placeholder="Registro">
-        <input name="iva" type="number" step="any" min="0" value="16" placeholder="IVA %">
-        <button>Guardar</button>
+    <details class="trade-drawer buy-drawer">
+      <summary>＋ Comprar / añadir</summary>
+      <form action="/agregar" method="post" class="trade-form">
+        <label>Símbolo<input name="simb" placeholder="Ej. RST" required></label>
+        <label>Cantidad<input name="cant" type="number" step="any" min="0.000001" placeholder="Cantidad comprada" required></label>
+        <label>Precio de compra (Bs)<input name="precio" type="number" step="any" min="0.000001" placeholder="Precio por título" required></label>
+        <details class="fee-details"><summary>Gastos de la operación</summary>
+          <div class="fee-grid">
+            <label>Comisión (Bs)<input name="com" type="number" step="any" min="0" value="0"></label>
+            <label>Registro (Bs)<input name="reg" type="number" step="any" min="0" value="0"></label>
+            <label>IVA sobre comisión (%)<input name="iva" type="number" step="any" min="0" value="16"></label>
+          </div>
+        </details>
+        <small>Si ya tienes este activo, la cantidad se suma y el costo promedio se recalcula automáticamente.</small>
+        <button class="primary-action">Registrar compra</button>
       </form>
     </details>
-  </div>
+  </header>
 
-  <div class="cards">
-    <div class="pcard"><small>Valor mercado Bs</small><strong>Bs {{ '%.2f'|format(resumen.total_mkt or 0) }}</strong></div>
-    <div class="pcard"><small>Invertido Bs</small><strong>Bs {{ '%.2f'|format(resumen.total_inv or 0) }}</strong></div>
-    <div class="pcard"><small>P/L nominal Bs</small><strong class="{% if resumen.gan_bs >= 0 %}pos{% else %}neg{% endif %}">Bs {{ '%.2f'|format(resumen.gan_bs or 0) }}</strong></div>
-    <div class="pcard"><small>Rendimiento nominal Bs</small><strong class="{% if resumen.rend >= 0 %}pos{% else %}neg{% endif %}">{{ '%.2f'|format(resumen.rend or 0) }}%</strong></div>
-    <div class="pcard focus"><small>Salud cartera</small><strong>{{ v4.get('salud_cartera','—') }}/100</strong></div>
-    <div class="pcard"><small>Concentración máx.</small><strong>{{ v4.get('concentracion_max_pct','—') }}%</strong></div>
-    <div class="pcard"><small>Top 3</small><strong>{{ v4.get('concentracion_top3_pct','—') }}%</strong></div>
-    <div class="pcard"><small>HHI</small><strong>{{ v4.get('herfindahl','—') }}</strong></div>
-  </div>
+  {% if request.query_params.get('error') %}
+  <div class="notice bad">No se pudo registrar la operación. Verifica símbolo, cantidad, precio y disponibilidad en cartera.</div>
+  {% endif %}
+
+  <section class="portfolio-summary">
+    <div class="hero-value">
+      <small>Valor actual del portafolio</small>
+      <strong>Bs {{ '{:,.2f}'.format(resumen.total_mkt or 0) }}</strong>
+      <div class="hero-return {% if resumen.gan_bs >= 0 %}pos{% else %}neg{% endif %}">
+        {{ '+' if resumen.gan_bs >= 0 else '' }}Bs {{ '{:,.2f}'.format(resumen.gan_bs or 0) }} · {{ '+' if resumen.rend >= 0 else '' }}{{ '%.2f'|format(resumen.rend or 0) }}%
+      </div>
+    </div>
+    <div class="summary-grid">
+      <div><span>Costo total</span><b>Bs {{ '{:,.2f}'.format(resumen.total_inv or 0) }}</b></div>
+      <div><span>Posiciones</span><b>{{ filas|length }}</b></div>
+      <div><span>Salud de cartera</span><b>{{ v4.get('salud_cartera','—') }}/100</b></div>
+      <div><span>Mayor concentración</span><b>{{ v4.get('concentracion_max_pct','—') }}%</b></div>
+    </div>
+  </section>
 
   <section class="professional-box" aria-live="polite">
-    <div class="benchmark-head">
-      <div>
-        <b>Lectura profesional USD · V5</b>
-        <div class="benchmark-note">Costo histórico BCV por lote · valor actual BCV · fees históricos · atribución FX</div>
-      </div>
-      <span id="professional-status" class="benchmark-note">Cargando…</span>
+    <div class="section-head">
+      <div><b>Rendimiento en dólares</b><div class="section-note">Costo histórico por operación y BCV de la fecha; nunca se convierte el costo antiguo con la tasa actual.</div></div>
+      <span id="professional-status" class="section-note">Cargando…</span>
     </div>
-    <div id="professional-summary" class="professional-grid"></div>
-    <div id="professional-message" class="benchmark-note" style="margin-top:8px;"></div>
+    <div id="professional-summary" class="metric-grid"></div>
+    <div id="professional-message" class="section-note section-message"></div>
   </section>
-
-  {% if v4 %}
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin:14px 0 18px;">
-    <div class="metric"><span>Score ponderado</span><b>{{ v4.get('score_ponderado','—') }}</b></div>
-    <div class="metric"><span>Confidence ponderado</span><b>{{ v4.get('confidence_ponderado','—') }}</b></div>
-    <div class="metric"><span>Risk ponderado</span><b>{{ v4.get('risk_ponderado','—') }}</b></div>
-    <div class="metric"><span>Capital score débil</span><b>{{ v4.get('capital_score_debil_pct',0) }}%</b></div>
-    <div class="metric"><span>Capital en alerta</span><b>{{ v4.get('capital_en_alerta_pct',0) }}%</b></div>
-    <div class="metric"><span>Fricción rotación</span><b>{{ v4.get('friccion_rotacion_pct','—') }}%</b></div>
-  </div>
-  {% endif %}
 
   <section id="benchmark-v5" class="benchmark-box" aria-live="polite">
-    <div class="benchmark-head">
-      <div>
-        <b>Portafolio vs IBC · V5</b>
-        <div class="benchmark-note">Mismas fechas/flujos · Bs y USD/BCV histórico · sin aproximar datos faltantes</div>
-      </div>
-      <span id="benchmark-status" class="benchmark-note">Cargando…</span>
+    <div class="section-head">
+      <div><b>Comparación con el mercado</b><div class="section-note">Tu cartera frente al IBC usando las mismas fechas y flujos.</div></div>
+      <span id="benchmark-status" class="section-note">Cargando…</span>
     </div>
-    <div id="benchmark-open" class="benchmark-grid"></div>
-    <div id="benchmark-windows" class="benchmark-grid windows"></div>
-    <div id="benchmark-message" class="benchmark-note" style="margin-top:8px;"></div>
+    <div id="benchmark-open" class="metric-grid"></div>
+    <div id="benchmark-windows" class="metric-grid windows"></div>
+    <div id="benchmark-message" class="section-note section-message"></div>
   </section>
 
-  {% if v4.get('candidatos_toma_ganancia') %}
-  <div class="notice good"><b>Toma de ganancia:</b>
-    {% for x in v4.get('candidatos_toma_ganancia') %} {{ x.simbolo }} +{{ x.rend_pct }}%{% if not loop.last %} ·{% endif %}{% endfor %}
-  </div>
-  {% endif %}
-  {% if v4.get('candidatos_revision') %}
-  <div class="notice bad"><b>Revisar:</b>
-    {% for x in v4.get('candidatos_revision') %} {{ x.simbolo }} {{ x.rend_pct }}%{% if not loop.last %} ·{% endif %}{% endfor %}
-  </div>
-  {% endif %}
+  {% if v4.get('candidatos_toma_ganancia') %}<div class="notice good"><b>Ganancias para revisar:</b>{% for x in v4.get('candidatos_toma_ganancia') %} {{ x.simbolo }} +{{ x.rend_pct }}%{% if not loop.last %} ·{% endif %}{% endfor %}</div>{% endif %}
+  {% if v4.get('candidatos_revision') %}<div class="notice bad"><b>Posiciones para revisar:</b>{% for x in v4.get('candidatos_revision') %} {{ x.simbolo }} {{ x.rend_pct }}%{% if not loop.last %} ·{% endif %}{% endfor %}</div>{% endif %}
 
-  <div style="overflow:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;margin-top:14px;">
-    <table class="portfolio-table" style="width:100%;border-collapse:collapse;min-width:1560px;font-size:12px;">
-      <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-secondary);">
-        <th class="left">Título</th><th>Qty</th><th>Promedio</th><th>Actual</th><th>Valor Bs</th><th>Peso</th><th>P/L Bs</th><th>Ret Bs</th>
-        <th>Costo USD hist.</th><th>Valor USD</th><th>P/L USD</th><th>Ret USD</th><th>FX desde entrada</th><th>Efecto FX</th><th>Contrib. P/L USD</th><th>Cob. USD</th><th>Acciones</th>
-      </tr></thead>
+  <div class="positions-head"><div><h2>Posiciones</h2><p>El costo promedio cambia al comprar más; una venta parcial mantiene el costo promedio de los títulos restantes.</p></div><a href="/bitacora">Ver historial de operaciones →</a></div>
+
+  <div class="portfolio-table-wrap">
+    <table class="portfolio-table">
+      <thead><tr><th class="left">Acción</th><th>Cantidad</th><th>Costo promedio</th><th>Precio actual</th><th>Valor actual</th><th>Ganancia / pérdida</th><th>Rendimiento</th><th>Peso</th><th>Costo USD hist.</th><th>Valor USD</th><th>P/L USD</th><th>Ret. USD</th><th>FX</th><th>Efecto FX</th><th>Contrib. USD</th><th>Cob. USD</th><th>Gestionar</th></tr></thead>
       <tbody>
       {% for f in filas %}
-        <tr data-symbol="{{ f.simb }}" style="border-bottom:1px solid var(--border);">
-          <td class="left"><a href="/detalle/{{ f.simb }}" style="color:inherit;font-weight:600;text-decoration:none;">{{ f.simb }}</a></td>
+        <tr data-symbol="{{ f.simb }}">
+          <td class="left"><a href="/detalle/{{ f.simb }}" class="symbol-link">{{ f.simb }}</a></td>
           <td>{{ '%.2f'|format(f.cantidad) }}</td>
-          <td>{{ '%.2f'|format(f.precio_prom) }}</td>
-          <td>{{ '%.2f'|format(f.precio_actual) }}</td>
-          <td>{{ '%.2f'|format(f.val_mkt) }}</td>
+          <td>Bs {{ '{:,.2f}'.format(f.precio_prom) }}</td>
+          <td>Bs {{ '{:,.2f}'.format(f.precio_actual) }}</td>
+          <td>Bs {{ '{:,.2f}'.format(f.val_mkt) }}</td>
+          <td class="{% if f.ganancia >= 0 %}pos{% else %}neg{% endif %}">{{ '+' if f.ganancia >= 0 else '' }}Bs {{ '{:,.2f}'.format(f.ganancia) }}</td>
+          <td class="{% if f.rend_pct >= 0 %}pos{% else %}neg{% endif %}">{{ '+' if f.rend_pct >= 0 else '' }}{{ '%.2f'|format(f.rend_pct) }}%</td>
           <td>{{ '%.1f'|format(f.peso_pct) }}%</td>
-          <td class="{% if f.ganancia >= 0 %}pos{% else %}neg{% endif %}">{{ '%.2f'|format(f.ganancia) }}</td>
-          <td class="{% if f.rend_pct >= 0 %}pos{% else %}neg{% endif %}">{{ '%.2f'|format(f.rend_pct) }}%</td>
-          <td><span data-prof="cost-usd">—</span></td>
-          <td><span data-prof="value-usd">—</span></td>
-          <td><span data-prof="pnl-usd">—</span></td>
-          <td><span data-prof="ret-usd">—</span></td>
-          <td><span data-prof="fx-change">—</span></td>
-          <td><span data-prof="fx-effect">—</span></td>
-          <td><span data-prof="contrib-usd">—</span></td>
-          <td><span data-prof="coverage-usd">—</span></td>
-          <td>
-            <details style="display:inline-block;">
-              <summary style="cursor:pointer;font-size:10px;">Editar</summary>
-              <form action="/editar" method="post" class="inlineform">
-                <input type="hidden" name="simb" value="{{ f.simb }}">
-                <input name="cant" type="number" step="any" value="{{ f.cantidad }}" required>
-                <input name="precio" type="number" step="any" value="{{ f.precio_prom }}" required>
-                <input name="com" type="number" step="any" value="0">
-                <input name="reg" type="number" step="any" value="0">
-                <input name="iva" type="number" step="any" value="16">
-                <button>Actualizar</button>
-              </form>
-            </details>
-            <form action="/eliminar" method="post" style="display:inline;" onsubmit="return confirm('¿Eliminar {{ f.simb }}?')">
-              <input type="hidden" name="simb" value="{{ f.simb }}"><button class="danger">Eliminar</button>
-            </form>
-          </td>
+          <td><span data-prof="cost-usd">—</span></td><td><span data-prof="value-usd">—</span></td><td><span data-prof="pnl-usd">—</span></td><td><span data-prof="ret-usd">—</span></td><td><span data-prof="fx-change">—</span></td><td><span data-prof="fx-effect">—</span></td><td><span data-prof="contrib-usd">—</span></td><td><span data-prof="coverage-usd">—</span></td>
+          <td><details class="manage"><summary>Gestionar</summary><div class="manage-menu">
+            <details class="operation buy-op"><summary>Comprar / sumar</summary><form action="/agregar" method="post" class="inlineform">
+              <input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad<input name="cant" type="number" step="any" min="0.000001" required></label><label>Precio compra<input name="precio" type="number" step="any" min="0.000001" value="{{ f.precio_actual }}" required></label><label>Comisión Bs<input name="com" type="number" step="any" min="0" value="0"></label><label>Registro Bs<input name="reg" type="number" step="any" min="0" value="0"></label><input name="iva" type="hidden" value="16"><button class="primary-action">Sumar a {{ f.simb }}</button>
+            </form></details>
+            <details class="operation sell-op"><summary>Vender / reducir</summary><form action="/reducir" method="post" class="inlineform">
+              <input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad a vender<input name="cant" type="number" step="any" min="0.000001" max="{{ f.cantidad }}" required></label><label>Precio venta<input name="precio" type="number" step="any" min="0.000001" value="{{ f.precio_actual }}" required></label><label>Comisión Bs<input name="com" type="number" step="any" min="0" value="0"></label><label>Registro Bs<input name="reg" type="number" step="any" min="0" value="0"></label><input name="iva" type="hidden" value="16"><button class="sell-action">Registrar venta</button>
+            </form></details>
+            <details class="operation"><summary>Corregir posición</summary><form action="/editar" method="post" class="inlineform">
+              <input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad total<input name="cant" type="number" step="any" min="0" value="{{ f.cantidad }}" required></label><label>Costo promedio<input name="precio" type="number" step="any" min="0" value="{{ f.precio_prom }}" required></label><label>Comisión acumulada<input name="com" type="number" step="any" min="0" value="0"></label><label>Registro acumulado<input name="reg" type="number" step="any" min="0" value="0"></label><input name="iva" type="hidden" value="16"><small>Úsalo solo para corregir datos cargados; una compra o venta real debe registrarse arriba.</small><button>Guardar corrección</button>
+            </form></details>
+            <form action="/eliminar" method="post" onsubmit="return confirm('Esto eliminará {{ f.simb }} y todo su historial de operaciones en Caracas Bull. ¿Continuar?')"><input type="hidden" name="simb" value="{{ f.simb }}"><button class="danger full">Eliminar posición e historial</button></form>
+          </div></details></td>
         </tr>
-      {% else %}
-        <tr><td colspan="17" style="padding:24px;text-align:center;color:var(--text-secondary);">No hay posiciones en esta instancia.</td></tr>
-      {% endfor %}
+      {% else %}<tr><td colspan="17" class="empty">No tienes posiciones registradas.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
 
-  <div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:15px;align-items:center;">
-    <div style="font-size:10px;color:var(--text-secondary);max-width:760px;">V4 mide salud, concentración y riesgo. V5 separa rendimiento nominal Bs de rendimiento USD, atribuye el efecto cambiario y compara contra IBC con fechas y flujos equivalentes. Una métrica USD queda en “—” cuando falta BCV histórico: nunca se aproxima con la tasa actual.</div>
-    <form action="/configurar" method="post" style="display:flex;gap:6px;align-items:center;">
-      <label style="font-size:10px;color:var(--text-secondary);">BCV fallback</label>
-      <input name="tasa" type="number" step="any" value="{{ tasa }}" style="width:95px;padding:6px;border:1px solid var(--border);border-radius:7px;background:var(--bg-card);color:var(--text-primary);">
-      <button style="padding:6px 9px;">Aplicar</button>
-    </form>
+  <div class="mobile-positions">
+    {% for f in filas %}<article class="position-card">
+      <div class="position-card-head"><div><a href="/detalle/{{ f.simb }}" class="symbol-link">{{ f.simb }}</a><span>{{ '%.2f'|format(f.cantidad) }} títulos</span></div><strong class="{% if f.rend_pct >= 0 %}pos{% else %}neg{% endif %}">{{ '+' if f.rend_pct >= 0 else '' }}{{ '%.2f'|format(f.rend_pct) }}%</strong></div>
+      <div class="position-facts"><div><span>Precio actual</span><b>Bs {{ '{:,.2f}'.format(f.precio_actual) }}</b></div><div><span>Costo promedio</span><b>Bs {{ '{:,.2f}'.format(f.precio_prom) }}</b></div><div><span>Cantidad en cartera</span><b>{{ '%.2f'|format(f.cantidad) }}</b></div><div><span>Valor actual</span><b>Bs {{ '{:,.2f}'.format(f.val_mkt) }}</b></div><div><span>Ganancia / pérdida</span><b class="{% if f.ganancia >= 0 %}pos{% else %}neg{% endif %}">{{ '+' if f.ganancia >= 0 else '' }}Bs {{ '{:,.2f}'.format(f.ganancia) }}</b></div></div>
+      <div class="mobile-actions"><details class="operation buy-op"><summary>Comprar</summary><form action="/agregar" method="post" class="inlineform"><input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad<input name="cant" type="number" step="any" min="0.000001" required></label><label>Precio<input name="precio" type="number" step="any" min="0.000001" value="{{ f.precio_actual }}" required></label><input name="com" type="hidden" value="0"><input name="reg" type="hidden" value="0"><input name="iva" type="hidden" value="16"><button class="primary-action">Registrar compra</button></form></details><details class="operation sell-op"><summary>Reducir</summary><form action="/reducir" method="post" class="inlineform"><input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad<input name="cant" type="number" step="any" min="0.000001" max="{{ f.cantidad }}" required></label><label>Precio<input name="precio" type="number" step="any" min="0.000001" value="{{ f.precio_actual }}" required></label><input name="com" type="hidden" value="0"><input name="reg" type="hidden" value="0"><input name="iva" type="hidden" value="16"><button class="sell-action">Registrar venta</button></form></details></div>
+      <details class="mobile-more"><summary>Más opciones</summary><div class="manage-menu"><form action="/editar" method="post" class="inlineform"><input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad total<input name="cant" type="number" step="any" min="0" value="{{ f.cantidad }}" required></label><label>Costo promedio<input name="precio" type="number" step="any" min="0" value="{{ f.precio_prom }}" required></label><input name="com" type="hidden" value="0"><input name="reg" type="hidden" value="0"><input name="iva" type="hidden" value="16"><button>Guardar corrección</button></form><form action="/eliminar" method="post" onsubmit="return confirm('Eliminar {{ f.simb }} y su historial?')"><input type="hidden" name="simb" value="{{ f.simb }}"><button class="danger full">Eliminar posición</button></form></div></details>
+    </article>{% endfor %}
   </div>
+
+  <footer class="portfolio-foot"><a href="/bitacora">Historial de operaciones</a><form action="/configurar" method="post"><label>BCV de respaldo <input name="tasa" type="number" step="any" value="{{ tasa }}"></label><button>Aplicar</button></form></footer>
 </div>
 
 <style>
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px}.pcard{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}.pcard.focus{border-color:rgba(27,175,122,.45)}.pcard small{font-size:10px;color:var(--text-secondary)}.pcard strong{font-size:15px}.metric{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:9px 11px;display:flex;justify-content:space-between;gap:8px;font-size:11px}.metric span{color:var(--text-secondary)}.pos{color:#1baf7a}.neg{color:#d03b3b}.notice{padding:10px 12px;border-radius:9px;margin:8px 0;font-size:11px}.notice.good{background:rgba(27,175,122,.09);border:1px solid rgba(27,175,122,.3)}.notice.bad{background:rgba(208,59,59,.07);border:1px solid rgba(208,59,59,.3)}th,td{padding:9px 8px;text-align:center}th{font-size:10px;font-weight:500}.left{text-align:left}.formbox,.inlineform{margin-top:8px;padding:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:9px;display:grid;grid-template-columns:repeat(2,minmax(110px,1fr));gap:6px}.formbox input,.inlineform input{padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-body);color:var(--text-primary);min-width:0}.formbox button,.inlineform button,button{cursor:pointer;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);padding:5px 8px}.danger{color:#d03b3b;border-color:rgba(208,59,59,.25)}
-.professional-box,.benchmark-box{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:12px;margin:14px 0}.professional-box{border-color:rgba(27,175,122,.28)}.benchmark-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}.benchmark-note{font-size:10px;color:var(--text-secondary)}.benchmark-status-live{color:#1baf7a;font-weight:600}.benchmark-status-provisional{color:#c58a00;font-weight:700}.benchmark-grid,.professional-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-top:10px}.benchmark-cell,.professional-cell{border:1px solid var(--border);border-radius:8px;padding:8px 10px}.professional-cell{background:var(--bg-body)}.benchmark-cell small,.professional-cell small{display:block;font-size:9px;color:var(--text-secondary);margin-bottom:3px}.benchmark-cell b,.professional-cell b{font-size:13px}.benchmark-grid.windows .benchmark-cell b{font-size:12px}.portfolio-table [data-prof]{font-family:'IBM Plex Mono',monospace;font-size:11px}
+.portfolio-shell{max-width:1280px;padding:20px 16px}.portfolio-head,.section-head,.positions-head,.portfolio-foot{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}.portfolio-head h1,.positions-head h2{margin:0}.portfolio-head p,.positions-head p{margin:5px 0 0;color:var(--text-secondary);font-size:11px}.trade-drawer>summary,.manage>summary{cursor:pointer;border:1px solid var(--border);background:var(--bg-card);border-radius:9px;padding:8px 12px;font-size:12px}.buy-drawer>summary{background:rgba(27,175,122,.12);border-color:rgba(27,175,122,.35);color:#1baf7a;font-weight:700}.trade-form,.inlineform{display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px;margin-top:8px;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px}.trade-form label,.inlineform label{display:flex;flex-direction:column;gap:4px;color:var(--text-secondary);font-size:9px}.trade-form input,.inlineform input,.portfolio-foot input{padding:8px;border:1px solid var(--border);border-radius:7px;background:var(--bg-body);color:var(--text-primary);min-width:0}.trade-form small,.inlineform small{grid-column:1/-1;color:var(--text-secondary);font-size:9px}.fee-details{grid-column:1/-1}.fee-details>summary{cursor:pointer;font-size:10px;color:var(--text-secondary)}.fee-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:7px}.portfolio-summary,.professional-box,.benchmark-box{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:16px;margin:14px 0}.hero-value small,.summary-grid span,.section-note{color:var(--text-secondary);font-size:10px}.hero-value>strong{display:block;font-size:30px;margin:7px 0}.hero-return{font-size:15px;font-weight:700}.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}.summary-grid div{display:flex;flex-direction:column;gap:4px}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-top:10px}.benchmark-cell,.professional-cell{border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--bg-body)}.benchmark-cell small,.professional-cell small{display:block;color:var(--text-secondary);font-size:9px;margin-bottom:3px}.section-message{margin-top:8px}.positions-head{margin:22px 0 10px}.positions-head a,.portfolio-foot a{color:var(--accent);font-size:11px}.portfolio-table-wrap{overflow:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:14px}.portfolio-table{width:100%;border-collapse:collapse;min-width:1750px;font-size:11px}.portfolio-table th,.portfolio-table td{padding:10px 8px;text-align:center;border-bottom:1px solid var(--border)}.portfolio-table th{font-size:9px;color:var(--text-secondary);font-weight:500}.portfolio-table .left{text-align:left}.symbol-link{font-size:14px;font-weight:800;color:inherit;text-decoration:none}.portfolio-table [data-prof]{font-family:'IBM Plex Mono',monospace}.manage-menu{min-width:280px;padding:8px;background:var(--bg-body);border-radius:9px}.operation>summary{cursor:pointer;padding:7px 0;font-size:10px}.primary-action,.sell-action,.danger,button{cursor:pointer;border:1px solid var(--border);border-radius:7px;padding:7px 10px;background:var(--bg-card);color:var(--text-primary)}.primary-action{background:rgba(27,175,122,.14);border-color:rgba(27,175,122,.35);color:#1baf7a}.sell-action,.danger{background:rgba(208,59,59,.09);border-color:rgba(208,59,59,.3);color:#d03b3b}.full{width:100%;margin-top:8px}.pos{color:#1baf7a}.neg{color:#e85b72}.notice{padding:10px 12px;border-radius:9px;margin:8px 0;font-size:11px}.notice.good{background:rgba(27,175,122,.09);border:1px solid rgba(27,175,122,.3)}.notice.bad{background:rgba(208,59,59,.07);border:1px solid rgba(208,59,59,.3)}.empty{padding:30px!important;color:var(--text-secondary)}.mobile-positions{display:none}.portfolio-foot{margin-top:16px;align-items:center}.portfolio-foot form{display:flex;gap:7px;align-items:center;font-size:9px;color:var(--text-secondary)}
+@media(max-width:700px){.portfolio-shell{padding:14px 12px}.portfolio-head{align-items:center}.portfolio-head h1{font-size:24px}.portfolio-summary{padding:18px}.hero-value>strong{font-size:29px}.summary-grid{grid-template-columns:repeat(2,1fr)}.portfolio-table-wrap{display:none}.mobile-positions{display:grid;gap:12px}.position-card{background:var(--bg-card);border:1px solid var(--border);border-radius:18px;padding:16px}.position-card-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.position-card-head>div{display:flex;flex-direction:column;gap:3px}.position-card-head span{font-size:10px;color:var(--text-secondary)}.position-facts{margin-top:14px;border:1px solid var(--border);border-radius:14px;padding:4px 13px}.position-facts div{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}.position-facts div:last-child{border-bottom:0}.position-facts span{color:var(--text-secondary);font-size:11px}.position-facts b{font-size:12px}.mobile-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}.mobile-actions>.operation>summary{text-align:center;border-radius:10px;padding:10px}.mobile-actions>.buy-op>summary{background:rgba(27,175,122,.13);color:#1baf7a}.mobile-actions>.sell-op>summary{background:rgba(208,59,59,.1);color:#e85b72}.inlineform,.trade-form{grid-template-columns:1fr}.mobile-more{margin-top:9px}.mobile-more>summary{text-align:center;color:var(--text-secondary);font-size:10px;cursor:pointer}.fee-grid{grid-template-columns:1fr}.portfolio-foot{align-items:stretch}.portfolio-foot form{width:100%;justify-content:space-between}}
 </style>
 
 <script>
 (function(){
-  const status = document.getElementById('benchmark-status');
-  const openBox = document.getElementById('benchmark-open');
-  const windowsBox = document.getElementById('benchmark-windows');
-  const message = document.getElementById('benchmark-message');
-  const professionalStatus = document.getElementById('professional-status');
-  const professionalBox = document.getElementById('professional-summary');
-  const professionalMessage = document.getElementById('professional-message');
-  const fmt = v => (v === null || v === undefined || Number.isNaN(Number(v))) ? '—' : Number(v).toFixed(2) + '%';
-  const usd = v => (v === null || v === undefined || Number.isNaN(Number(v))) ? '—' : '$' + Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-  const bs = v => (v === null || v === undefined || Number.isNaN(Number(v))) ? '—' : 'Bs ' + Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-  const signClass = v => (v === null || v === undefined || Number.isNaN(Number(v))) ? '' : (Number(v) >= 0 ? 'pos' : 'neg');
-  const cell = (label, value, cls='', professional=false) => {
-    const div = document.createElement('div'); div.className=professional?'professional-cell':'benchmark-cell';
-    const small=document.createElement('small'); small.textContent=label;
-    const b=document.createElement('b'); b.textContent=value; if(cls) b.className=cls;
-    div.appendChild(small); div.appendChild(b); return div;
-  };
-  const setText = (row, key, value, cls='') => {
-    const el=row.querySelector('[data-prof="'+key+'"]');
-    if(!el) return;
-    el.textContent=value;
-    el.classList.remove('pos','neg');
-    if(cls) el.classList.add(cls);
-  };
-  fetch('/api/v5/portfolio-benchmark', {credentials:'same-origin'})
-    .then(async r => {
-      let d={};
-      try { d=await r.json(); } catch (_) {}
-      if(!r.ok) throw new Error(d.error || d.detail || (r.status === 404 ? 'Benchmark V5 deshabilitado' : 'Analytics no disponible'));
-      return d;
-    })
-    .then(data => {
-      openBox.replaceChildren(); windowsBox.replaceChildren(); message.textContent=''; professionalBox.replaceChildren(); professionalMessage.textContent='';
-
-      const pro=data.professional || {};
-      if(pro.available){
-        professionalStatus.textContent='BCV ' + (pro.current_fx ?? '—') + ' · cobertura USD ' + fmt(pro.usd_coverage_pct);
-        professionalStatus.classList.add('benchmark-status-live');
-        professionalBox.appendChild(cell('Valor mercado USD', usd(pro.market_value_usd), '', true));
-        professionalBox.appendChild(cell('Costo USD histórico', usd(pro.cost_usd_historical), '', true));
-        professionalBox.appendChild(cell('P/L USD', usd(pro.pnl_usd), signClass(pro.pnl_usd), true));
-        professionalBox.appendChild(cell('Rendimiento USD', fmt(pro.return_usd_pct), signClass(pro.return_usd_pct), true));
-        professionalBox.appendChild(cell('P/L nominal Bs', bs(pro.pnl_bs), signClass(pro.pnl_bs), true));
-        professionalBox.appendChild(cell('Rendimiento Bs', fmt(pro.return_bs_pct), signClass(pro.return_bs_pct), true));
-        professionalBox.appendChild(cell('Variación BCV desde costo', fmt(pro.fx_change_pct), pro.fx_change_pct>0?'neg':signClass(-Number(pro.fx_change_pct||0)), true));
-        professionalBox.appendChild(cell('Efecto FX sobre retorno', fmt(pro.fx_effect_pp), signClass(pro.fx_effect_pp), true));
-        professionalBox.appendChild(cell('Fees acumulados Bs', bs(pro.fees_total_bs), '', true));
-        professionalBox.appendChild(cell('Fees históricos USD', usd(pro.fees_total_usd_historical), '', true));
-        professionalBox.appendChild(cell('Cobertura USD', fmt(pro.usd_coverage_pct), '', true));
-        const best=pro.best_contributor_usd; const worst=pro.worst_contributor_usd;
-        professionalBox.appendChild(cell('Mejor contribuidor', best ? best.symbol+' · '+usd(best.pnl_usd) : '—', best?signClass(best.pnl_usd):'', true));
-        professionalBox.appendChild(cell('Peor contribuidor', worst ? worst.symbol+' · '+usd(worst.pnl_usd) : '—', worst?signClass(worst.pnl_usd):'', true));
-
-        const bySymbol={}; (pro.positions||[]).forEach(x=>{bySymbol[x.symbol]=x;});
-        document.querySelectorAll('.portfolio-table tbody tr[data-symbol]').forEach(row=>{
-          const p=bySymbol[row.dataset.symbol]||{};
-          if(!p.usd_comparable){
-            row.querySelectorAll('[data-prof]').forEach(el=>{el.textContent='—'; el.title=p.reason||'Sin BCV histórico suficiente';});
-            if(p.usd_coverage_pct !== undefined) setText(row,'coverage-usd',fmt(p.usd_coverage_pct));
-            return;
-          }
-          setText(row,'cost-usd',usd(p.cost_usd_historical));
-          setText(row,'value-usd',usd(p.current_value_usd));
-          setText(row,'pnl-usd',usd(p.pnl_usd),signClass(p.pnl_usd));
-          setText(row,'ret-usd',fmt(p.return_usd_pct),signClass(p.return_usd_pct));
-          setText(row,'fx-change',fmt(p.fx_change_pct),p.fx_change_pct>0?'neg':signClass(-Number(p.fx_change_pct||0)));
-          setText(row,'fx-effect',fmt(p.fx_effect_pp),signClass(p.fx_effect_pp));
-          setText(row,'contrib-usd',fmt(p.pnl_contribution_usd_pct),signClass(p.pnl_usd));
-          setText(row,'coverage-usd',fmt(p.usd_coverage_pct));
-        });
-        if(Number(pro.usd_coverage_pct||0)<100){
-          professionalMessage.textContent='Cobertura USD parcial: las posiciones/lotes sin BCV histórico permanecen fuera del P/L USD en vez de aproximarse.';
-        }
-      } else {
-        professionalStatus.textContent='Pendiente';
-        professionalMessage.textContent='Las métricas USD se habilitan cuando existen posiciones y BCV histórico suficiente.';
-      }
-
-      const b=data.benchmark || {};
-      const aligned = b.terminal_dates_aligned === true;
-      const valuationDate = b.valuation_as_of || data.as_of || '—';
-      const ibcDate = b.ibc_as_of || '—';
-      status.classList.remove('benchmark-status-live','benchmark-status-provisional');
-      if(aligned){
-        status.textContent = 'Cierre comparable · ' + valuationDate;
-        status.classList.add('benchmark-status-live');
-      } else {
-        status.textContent = 'PROVISIONAL · cartera ' + valuationDate + ' / IBC ' + ibcDate;
-        status.classList.add('benchmark-status-provisional');
-        message.textContent = 'Alpha provisional: la valoración de la cartera y el último cierre IBC no corresponden a la misma fecha.';
-      }
-      if(b.available){
-        openBox.appendChild(cell('Cartera Bs', fmt(b.portfolio_return_bs_pct), signClass(b.portfolio_return_bs_pct)));
-        openBox.appendChild(cell('IBC Bs', fmt(b.ibc_return_bs_pct), signClass(b.ibc_return_bs_pct)));
-        openBox.appendChild(cell('Alpha vs IBC Bs', fmt(b.alpha_bs_pp), signClass(b.alpha_bs_pp)));
-        openBox.appendChild(cell('Cartera USD', fmt(b.portfolio_return_usd_pct), signClass(b.portfolio_return_usd_pct)));
-        openBox.appendChild(cell('IBC USD', fmt(b.ibc_return_usd_pct), signClass(b.ibc_return_usd_pct)));
-        openBox.appendChild(cell('Alpha vs IBC USD', fmt(b.alpha_usd_pp), signClass(b.alpha_usd_pp)));
-        openBox.appendChild(cell('Cobertura IBC', fmt(b.coverage_pct)));
-        openBox.appendChild(cell('Cobertura USD', fmt(b.usd_coverage_pct)));
-      } else {
-        const pending = 'IBC desde entrada pendiente: ' + (b.reason || 'histórico insuficiente');
-        message.textContent = message.textContent ? message.textContent + ' · ' + pending : pending;
-      }
-      const p=data.performance || {};
-      if(p.available){
-        ['1M','3M','6M','YTD','1Y'].forEach(k => {
-          const w=(p.windows||{})[k]||{};
-          if(!w.available){windowsBox.appendChild(cell(k, 'Pendiente'));return;}
-          windowsBox.appendChild(cell(k + ' cartera Bs', fmt(w.return_bs_pct), signClass(w.return_bs_pct)));
-          windowsBox.appendChild(cell(k + ' IBC Bs', fmt(w.ibc_return_bs_pct), signClass(w.ibc_return_bs_pct)));
-          windowsBox.appendChild(cell(k + ' Alpha Bs', fmt(w.alpha_bs_pp), signClass(w.alpha_bs_pp)));
-          if(w.return_usd_pct !== null && w.return_usd_pct !== undefined){
-            windowsBox.appendChild(cell(k + ' cartera USD', fmt(w.return_usd_pct), signClass(w.return_usd_pct)));
-            windowsBox.appendChild(cell(k + ' IBC USD', fmt(w.ibc_return_usd_pct), signClass(w.ibc_return_usd_pct)));
-            windowsBox.appendChild(cell(k + ' Alpha USD', fmt(w.alpha_usd_pp), signClass(w.alpha_usd_pp)));
-          }
-        });
-        windowsBox.appendChild(cell('Drawdown cartera Bs', fmt(p.max_drawdown_bs_pct), signClass(p.max_drawdown_bs_pct)));
-        windowsBox.appendChild(cell('Drawdown IBC', fmt(p.ibc_max_drawdown_pct), signClass(p.ibc_max_drawdown_pct)));
-        windowsBox.appendChild(cell('Drawdown cartera USD', fmt(p.max_drawdown_usd_observed_pct), signClass(p.max_drawdown_usd_observed_pct)));
-      } else if(!message.textContent){
-        message.textContent='Ventanas 1M/3M/6M/YTD/1Y se habilitarán al acumular snapshots reales.';
-      }
-    })
-    .catch(err => {
-      professionalStatus.textContent='Pendiente'; professionalMessage.textContent=err.message;
-      status.classList.remove('benchmark-status-live','benchmark-status-provisional'); status.textContent='Pendiente'; message.textContent=err.message;
-    });
+  const status=document.getElementById('benchmark-status'),openBox=document.getElementById('benchmark-open'),windowsBox=document.getElementById('benchmark-windows'),message=document.getElementById('benchmark-message'),professionalStatus=document.getElementById('professional-status'),professionalBox=document.getElementById('professional-summary'),professionalMessage=document.getElementById('professional-message');
+  const fmt=v=>(v===null||v===undefined||Number.isNaN(Number(v)))?'—':Number(v).toFixed(2)+'%';
+  const usd=v=>(v===null||v===undefined||Number.isNaN(Number(v)))?'—':'$'+Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const bs=v=>(v===null||v===undefined||Number.isNaN(Number(v)))?'—':'Bs '+Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const signClass=v=>(v===null||v===undefined||Number.isNaN(Number(v)))?'':(Number(v)>=0?'pos':'neg');
+  const cell=(label,value,cls='',professional=false)=>{const div=document.createElement('div');div.className=professional?'professional-cell':'benchmark-cell';const small=document.createElement('small');small.textContent=label;const b=document.createElement('b');b.textContent=value;if(cls)b.className=cls;div.appendChild(small);div.appendChild(b);return div;};
+  const setText=(row,key,value,cls='')=>{const el=row.querySelector('[data-prof="'+key+'"]');if(!el)return;el.textContent=value;el.classList.remove('pos','neg');if(cls)el.classList.add(cls);};
+  fetch('/api/v5/portfolio-benchmark',{credentials:'same-origin'}).then(async r=>{let d={};try{d=await r.json();}catch(_){}if(!r.ok)throw new Error(d.error||d.detail||(r.status===404?'Benchmark V5 deshabilitado':'Analytics no disponible'));return d;}).then(data=>{
+    openBox.replaceChildren();windowsBox.replaceChildren();message.textContent='';professionalBox.replaceChildren();professionalMessage.textContent='';
+    const pro=data.professional||{};
+    if(pro.available){professionalStatus.textContent='BCV '+(pro.current_fx??'—')+' · cobertura USD '+fmt(pro.usd_coverage_pct);professionalStatus.classList.add('benchmark-status-live');professionalBox.appendChild(cell('Valor actual USD',usd(pro.market_value_usd),'',true));professionalBox.appendChild(cell('Costo histórico USD',usd(pro.cost_usd_historical),'',true));professionalBox.appendChild(cell('Ganancia / pérdida USD',usd(pro.pnl_usd),signClass(pro.pnl_usd),true));professionalBox.appendChild(cell('Rendimiento USD',fmt(pro.return_usd_pct),signClass(pro.return_usd_pct),true));professionalBox.appendChild(cell('Rendimiento Bs',fmt(pro.return_bs_pct),signClass(pro.return_bs_pct),true));professionalBox.appendChild(cell('Efecto cambiario',fmt(pro.fx_effect_pp),signClass(pro.fx_effect_pp),true));professionalBox.appendChild(cell('Gastos históricos USD',usd(pro.fees_total_usd_historical),'',true));professionalBox.appendChild(cell('Cobertura USD',fmt(pro.usd_coverage_pct),'',true));const best=pro.best_contributor_usd,worst=pro.worst_contributor_usd;professionalBox.appendChild(cell('Mejor contribuidor',best?best.symbol+' · '+usd(best.pnl_usd):'—',best?signClass(best.pnl_usd):'',true));professionalBox.appendChild(cell('Peor contribuidor',worst?worst.symbol+' · '+usd(worst.pnl_usd):'—',worst?signClass(worst.pnl_usd):'',true));const bySymbol={};(pro.positions||[]).forEach(x=>{bySymbol[x.symbol]=x;});document.querySelectorAll('.portfolio-table tbody tr[data-symbol]').forEach(row=>{const p=bySymbol[row.dataset.symbol]||{};if(!p.usd_comparable){row.querySelectorAll('[data-prof]').forEach(el=>{el.textContent='—';el.title=p.reason||'Sin BCV histórico suficiente';});if(p.usd_coverage_pct!==undefined)setText(row,'coverage-usd',fmt(p.usd_coverage_pct));return;}setText(row,'cost-usd',usd(p.cost_usd_historical));setText(row,'value-usd',usd(p.current_value_usd));setText(row,'pnl-usd',usd(p.pnl_usd),signClass(p.pnl_usd));setText(row,'ret-usd',fmt(p.return_usd_pct),signClass(p.return_usd_pct));setText(row,'fx-change',fmt(p.fx_change_pct));setText(row,'fx-effect',fmt(p.fx_effect_pp),signClass(p.fx_effect_pp));setText(row,'contrib-usd',fmt(p.pnl_contribution_usd_pct),signClass(p.pnl_usd));setText(row,'coverage-usd',fmt(p.usd_coverage_pct));});if(Number(pro.usd_coverage_pct||0)<100)professionalMessage.textContent='Cobertura USD parcial: las operaciones sin BCV histórico quedan fuera del cálculo USD en vez de aproximarse.';}else{professionalStatus.textContent='Pendiente';professionalMessage.textContent='Las métricas USD se habilitan cuando existen operaciones y BCV histórico suficiente.';}
+    const b=data.benchmark||{},aligned=b.terminal_dates_aligned===true,valuationDate=b.valuation_as_of||data.as_of||'—',ibcDate=b.ibc_as_of||'—';status.classList.remove('benchmark-status-live','benchmark-status-provisional');if(aligned){status.textContent='Cierre comparable · '+valuationDate;status.classList.add('benchmark-status-live');}else{status.textContent='PROVISIONAL · cartera '+valuationDate+' / IBC '+ibcDate;status.classList.add('benchmark-status-provisional');message.textContent='La comparación es provisional porque la cartera y el IBC no corresponden a la misma fecha.';}if(b.available){openBox.appendChild(cell('Cartera Bs',fmt(b.portfolio_return_bs_pct),signClass(b.portfolio_return_bs_pct)));openBox.appendChild(cell('IBC Bs',fmt(b.ibc_return_bs_pct),signClass(b.ibc_return_bs_pct)));openBox.appendChild(cell('Diferencia vs IBC Bs',fmt(b.alpha_bs_pp),signClass(b.alpha_bs_pp)));openBox.appendChild(cell('Cartera USD',fmt(b.portfolio_return_usd_pct),signClass(b.portfolio_return_usd_pct)));openBox.appendChild(cell('IBC USD',fmt(b.ibc_return_usd_pct),signClass(b.ibc_return_usd_pct)));openBox.appendChild(cell('Diferencia vs IBC USD',fmt(b.alpha_usd_pp),signClass(b.alpha_usd_pp)));}else{const pending='Comparación desde entrada pendiente: '+(b.reason||'histórico insuficiente');message.textContent=message.textContent?message.textContent+' · '+pending:pending;}
+    const p=data.performance||{};if(p.available){['1M','3M','6M','YTD','1Y'].forEach(k=>{const w=(p.windows||{})[k]||{};if(!w.available){windowsBox.appendChild(cell(k,'Pendiente'));return;}windowsBox.appendChild(cell(k+' cartera Bs',fmt(w.return_bs_pct),signClass(w.return_bs_pct)));windowsBox.appendChild(cell(k+' IBC Bs',fmt(w.ibc_return_bs_pct),signClass(w.ibc_return_bs_pct)));if(w.return_usd_pct!==null&&w.return_usd_pct!==undefined){windowsBox.appendChild(cell(k+' cartera USD',fmt(w.return_usd_pct),signClass(w.return_usd_pct)));windowsBox.appendChild(cell(k+' IBC USD',fmt(w.ibc_return_usd_pct),signClass(w.ibc_return_usd_pct)));}});windowsBox.appendChild(cell('Máxima caída cartera Bs',fmt(p.max_drawdown_bs_pct),signClass(p.max_drawdown_bs_pct)));windowsBox.appendChild(cell('Máxima caída cartera USD',fmt(p.max_drawdown_usd_observed_pct),signClass(p.max_drawdown_usd_observed_pct)));}else if(!message.textContent){message.textContent='Las ventanas históricas aparecerán al acumular cierres reales.';}
+  }).catch(err=>{professionalStatus.textContent='Pendiente';professionalMessage.textContent=err.message;status.textContent='Pendiente';message.textContent=err.message;});
 })();
 </script>
 {% endblock %}

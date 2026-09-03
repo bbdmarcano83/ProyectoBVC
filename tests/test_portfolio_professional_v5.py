@@ -80,19 +80,21 @@ class PortfolioProfessionalV5Tests(unittest.TestCase):
         self.assertEqual(out["fees_total_usd_historical"], 0.2)
         self.assertEqual(out["fees_usd_coverage_pct"], 100.0)
 
-    def test_template_exposes_professional_usd_columns_and_fail_closed_copy(self):
+    def test_template_exposes_usd_columns_and_fail_closed_copy_in_plain_language(self):
         text = Path("templates/portafolio.html").read_text(encoding="utf-8")
         for marker in (
-            "Lectura profesional USD · V5",
+            "Rendimiento en dólares",
             "Costo USD hist.",
             "P/L USD",
-            "Ret USD",
+            "Ret. USD",
             "Efecto FX",
-            "Contrib. P/L USD",
+            "Contrib. USD",
             'data-prof="coverage-usd"',
-            "nunca se aproxima con la tasa actual",
+            "nunca se convierte el costo antiguo con la tasa actual",
+            "quedan fuera del cálculo USD en vez de aproximarse",
         ):
             self.assertIn(marker, text)
+        self.assertNotIn("Lectura profesional USD · V5", text)
 
 
 if __name__ == "__main__":
