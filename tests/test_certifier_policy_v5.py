@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from services.fundamental_certifier_policy_v5 import (
     CERTIFIERS,
@@ -69,17 +70,18 @@ class CertifierPolicyV5Tests(unittest.TestCase):
             "PIV.B", "https://sunaval.gob.ve.attacker.invalid/informe.pdf"
         )["valid"])
 
-    def test_collector_accepts_valid_secondary_fundamental_without_fx_when_fixture_disables_gate(self):
-        result = ingest_normalized_report(
-            "PIV.B",
-            {"currency": "USD", "total_assets": 100, "total_liabilities": 40, "equity": 60, "net_income": 10},
-            source_url="https://example.com/informe.pdf",
-            as_of="2025-12-31",
-            document_type="secondary_financial_report",
-            fiscal_period="FY2025",
-            require_fx=False,
-        )
-        self.assertNotEqual(result.get("error"), "fundamental_source_not_admissible")
+    def test_collector_accepts_valid_secondary_fundamental(self):
+        with patch("services.fundamental_collector_v5.save_snapshot", return_value={"saved": True, "duplicate": False, "document_id": 1, "snapshot_id": 2}):
+            result = ingest_normalized_report(
+                "PIV.B",
+                {"currency": "USD", "total_assets": 100, "total_liabilities": 40, "equity": 60, "net_income": 10},
+                source_url="https://example.com/informe.pdf",
+                as_of="2025-12-31",
+                document_type="secondary_financial_report",
+                fiscal_period="FY2025",
+                require_fx=False,
+            )
+        self.assertTrue(result["accepted"])
         self.assertTrue(result["asset_evaluable"])
         self.assertEqual(result["certification"]["evidence_tier"], "B_SECONDARY")
 
