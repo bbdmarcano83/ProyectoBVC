@@ -61,6 +61,16 @@ class PortfolioPositionManagementTests(unittest.TestCase):
         ):
             self.assertIn(marker, html)
 
+    def test_desktop_management_is_visible_before_wide_analytics_columns(self):
+        html = TEMPLATE.read_text(encoding="utf-8")
+        header = html.split("<thead>", 1)[1].split("</thead>", 1)[0]
+        self.assertLess(header.index("Gestionar"), header.index("Cantidad"))
+        self.assertLess(header.index("Gestionar"), header.index("Costo USD hist."))
+        self.assertIn('class="manage-column"', header)
+        self.assertIn("position:sticky", html)
+        self.assertIn("data-usd-status", html)
+        self.assertIn("Falta conciliar bitácora", html)
+
     def test_existing_usd_benchmark_contract_remains_available(self):
         html = TEMPLATE.read_text(encoding="utf-8")
         self.assertIn("/api/v5/portfolio-benchmark", html)
