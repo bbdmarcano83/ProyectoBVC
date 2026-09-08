@@ -1,7 +1,9 @@
 import unittest
 from pathlib import Path
 
-from app.routers.portfolio import _fee_total, _normalizar_simbolo
+from datetime import date
+
+from app.routers.portfolio import _fee_total, _fecha_historica_valida, _normalizar_simbolo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,17 +19,28 @@ class PortfolioPositionManagementTests(unittest.TestCase):
     def test_symbols_are_normalized(self):
         self.assertEqual(_normalizar_simbolo(" rst.b "), "RST.B")
 
+    def test_opening_balance_date_rejects_invalid_and_future_values(self):
+        today = date(2026, 9, 8)
+        self.assertEqual(_fecha_historica_valida("2024-06-30", today=today), date(2024, 6, 30))
+        self.assertIsNone(_fecha_historica_valida("2026-09-09", today=today))
+        self.assertIsNone(_fecha_historica_valida("no-es-fecha", today=today))
+
     def test_router_registers_buy_reduce_correct_delete_and_ledger(self):
         source = ROUTER.read_text(encoding="utf-8")
         for marker in (
             'app.add_api_route("/agregar", agregar',
             'app.add_api_route("/reducir", reducir',
             'app.add_api_route("/editar", editar',
+            'app.add_api_route("/portafolio/historial-inicial", completar_historial_inicial',
             'app.add_api_route("/eliminar", eliminar',
             'tipo="compra"',
             'tipo="venta"',
             'TransaccionHistorial',
             'cant > _to_float(activo.cantidad)',
+            'OPENING_BALANCE_REASON = "portafolio_saldo_inicial"',
+            "operaciones_reales",
+            "await asyncio.to_thread(get_close_rate, entry_day, True)",
+            'url="/portafolio?error=fx-historico-no-disponible"',
         ):
             self.assertIn(marker, source)
 
@@ -54,6 +67,10 @@ class PortfolioPositionManagementTests(unittest.TestCase):
             "Comprar / sumar",
             "Vender / reducir",
             "Corregir posición",
+            "Completar datos USD",
+            'action="/portafolio/historial-inicial"',
+            "Fecha real de adquisición",
+            "BCV histórico verificable",
             "Eliminar posición e historial",
             'action="/reducir"',
             'class="mobile-positions"',

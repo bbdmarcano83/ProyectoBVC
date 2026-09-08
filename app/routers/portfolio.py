@@ -1,7 +1,9 @@
 """Portfolio handlers with weighted-average position management and transaction ledger sync."""
 from __future__ import annotations
 
+import asyncio
 import os
+from datetime import date, datetime, time
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -11,7 +13,11 @@ from app.templating import render
 from database import ActivoPortafolio, TransaccionHistorial, get_db
 from services.auth import dias_restantes, get_usuario_actual, suscripcion_activa
 from services.bvc import _to_float, mercado_abierto, obtener_datos_bvc, obtener_tasa_bcv
+from services.fx_history_v5 import get_close_rate
 from services.portafolio import calcular_fila, resumen_portafolio
+
+
+OPENING_BALANCE_REASON = "portafolio_saldo_inicial"
 
 
 def _fee_total(comision: float, registro: float, iva_pct: float) -> float:
@@ -23,6 +29,14 @@ def _fee_total(comision: float, registro: float, iva_pct: float) -> float:
 
 def _normalizar_simbolo(simb: str) -> str:
     return (simb or "").strip().upper()
+
+
+def _fecha_historica_valida(value: str, *, today: date | None = None) -> date | None:
+    try:
+        parsed = date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+    return parsed if parsed <= (today or date.today()) else None
 
 
 async def ver_portafolio(request: Request, db: Session = Depends(get_db)):
@@ -236,6 +250,67 @@ async def editar(
     return RedirectResponse(url="/portafolio", status_code=303)
 
 
+async def completar_historial_inicial(
+    request: Request,
+    simb: str = Form(...),
+    fecha: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Crea o corrige el lote inicial de una posición importada usando FX histórico verificable."""
+    usuario = get_usuario_actual(request, db)
+    if not usuario:
+        return RedirectResponse(url="/login", status_code=302)
+
+    simbolo = _normalizar_simbolo(simb)
+    entry_day = _fecha_historica_valida(fecha)
+    activo = db.query(ActivoPortafolio).filter(
+        ActivoPortafolio.usuario_id == usuario.id,
+        ActivoPortafolio.simbolo == simbolo,
+    ).first()
+    if not activo or not entry_day or _to_float(activo.cantidad) <= 0 or _to_float(activo.precio_promedio) <= 0:
+        return RedirectResponse(url="/portafolio?error=saldo-inicial-invalido", status_code=303)
+
+    historial = db.query(TransaccionHistorial).filter(
+        TransaccionHistorial.usuario_id == usuario.id,
+        TransaccionHistorial.simbolo == simbolo,
+    ).all()
+    operaciones_reales = [tx for tx in historial if getattr(tx, "motivo", None) != OPENING_BALANCE_REASON]
+    if operaciones_reales:
+        return RedirectResponse(url="/portafolio?error=historial-requiere-conciliacion", status_code=303)
+
+    tasa_historica = await asyncio.to_thread(get_close_rate, entry_day, True)
+    if not tasa_historica or tasa_historica <= 0:
+        return RedirectResponse(url="/portafolio?error=fx-historico-no-disponible", status_code=303)
+
+    for tx in historial:
+        db.delete(tx)
+
+    cantidad = _to_float(activo.cantidad)
+    precio = _to_float(activo.precio_promedio)
+    comision = max(_to_float(activo.comision), 0.0)
+    registro = max(_to_float(activo.registro), 0.0)
+    iva = max(_to_float(activo.iva or 16), 0.0)
+    fee_total = _fee_total(comision, registro, iva)
+    db.add(TransaccionHistorial(
+        usuario_id=usuario.id,
+        simbolo=simbolo,
+        tipo="compra",
+        cantidad=cantidad,
+        precio=precio,
+        comision=comision,
+        registro=registro,
+        iva=iva,
+        motivo=OPENING_BALANCE_REASON,
+        notas="Saldo inicial conciliado desde Portafolio con fecha declarada por el usuario",
+        tasa_bcv=float(tasa_historica),
+        fee_total=fee_total,
+        neto=(cantidad * precio) + fee_total,
+        fecha=datetime.combine(entry_day, time.min),
+    ))
+    db.commit()
+    return RedirectResponse(url="/portafolio?ok=usd-historico-completado", status_code=303)
+
+
 async def eliminar(request: Request, simb: str = Form(...), db: Session = Depends(get_db)):
     """Borrado administrativo completo de posición e historial del símbolo."""
     usuario = get_usuario_actual(request, db)
@@ -262,4 +337,5 @@ def register_portfolio_routes(app: FastAPI) -> None:
     app.add_api_route("/agregar", agregar, methods=["POST"])
     app.add_api_route("/reducir", reducir, methods=["POST"])
     app.add_api_route("/editar", editar, methods=["POST"])
+    app.add_api_route("/portafolio/historial-inicial", completar_historial_inicial, methods=["POST"])
     app.add_api_route("/eliminar", eliminar, methods=["POST"])

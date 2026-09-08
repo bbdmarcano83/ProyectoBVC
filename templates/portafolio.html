@@ -28,8 +28,15 @@
   </header>
 
   {% if request.query_params.get('error') %}
-  <div class="notice bad">No se pudo registrar la operación. Verifica símbolo, cantidad, precio y disponibilidad en cartera.</div>
+  {% set portfolio_error = request.query_params.get('error') %}
+  <div class="notice bad">
+    {% if portfolio_error == 'fx-historico-no-disponible' %}No existe una tasa histórica verificable para esa fecha; no se calculó el costo USD.
+    {% elif portfolio_error == 'historial-requiere-conciliacion' %}Este activo ya tiene compras o ventas. Revisa la bitácora para conciliar sus lotes sin duplicarlos.
+    {% elif portfolio_error == 'saldo-inicial-invalido' %}La fecha, cantidad o costo del saldo inicial no son válidos.
+    {% else %}No se pudo registrar la operación. Verifica símbolo, cantidad, precio y disponibilidad en cartera.{% endif %}
+  </div>
   {% endif %}
+  {% if request.query_params.get('ok') == 'usd-historico-completado' %}<div class="notice good">Historial inicial conciliado. El costo y rendimiento USD ya usan el BCV de la fecha registrada.</div>{% endif %}
 
   <section class="portfolio-summary">
     <div class="hero-value">
@@ -88,6 +95,9 @@
             <details class="operation"><summary>Corregir posición</summary><form action="/editar" method="post" class="inlineform">
               <input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad total<input name="cant" type="number" step="any" min="0" value="{{ f.cantidad }}" required></label><label>Costo promedio<input name="precio" type="number" step="any" min="0" value="{{ f.precio_prom }}" required></label><small>Úsalo solo para corregir cantidad o costo cargados; una compra o venta real debe registrarse arriba.</small><button>Guardar corrección</button>
             </form></details>
+            <details class="operation usd-history-op"><summary>Completar datos USD</summary><form action="/portafolio/historial-inicial" method="post" class="inlineform" onsubmit="return confirm('Se registrará {{ f.simb }} como saldo inicial en la fecha indicada usando el BCV histórico verificable. ¿Continuar?')">
+              <input type="hidden" name="simb" value="{{ f.simb }}"><label>Fecha real de adquisición<input name="fecha" type="date" required></label><small>Solo para posiciones antiguas sin operaciones. Usaremos la cantidad y el costo promedio actuales; no se admite el dólar vigente como sustituto histórico.</small><button class="primary-action">Conciliar costo USD</button>
+            </form></details>
             <a class="history-action" href="/bitacora">Revisar bitácora y fechas</a>
             <form action="/eliminar" method="post" onsubmit="return confirm('Esto eliminará {{ f.simb }} y todo su historial de operaciones en Caracas Bull. ¿Continuar?')"><input type="hidden" name="simb" value="{{ f.simb }}"><button class="danger full">Eliminar posición e historial</button></form>
           </div></details></td>
@@ -110,7 +120,7 @@
       <div class="position-card-head"><div><a href="/detalle/{{ f.simb }}" class="symbol-link">{{ f.simb }}</a><span>{{ '%.2f'|format(f.cantidad) }} títulos</span></div><strong class="{% if f.rend_pct >= 0 %}pos{% else %}neg{% endif %}">{{ '+' if f.rend_pct >= 0 else '' }}{{ '%.2f'|format(f.rend_pct) }}%</strong></div>
       <div class="position-facts"><div><span>Precio actual</span><b>Bs {{ '{:,.2f}'.format(f.precio_actual) }}</b></div><div><span>Costo promedio</span><b>Bs {{ '{:,.2f}'.format(f.precio_prom) }}</b></div><div><span>Cantidad en cartera</span><b>{{ '%.2f'|format(f.cantidad) }}</b></div><div><span>Valor actual</span><b>Bs {{ '{:,.2f}'.format(f.val_mkt) }}</b></div><div><span>Ganancia / pérdida</span><b class="{% if f.ganancia >= 0 %}pos{% else %}neg{% endif %}">{{ '+' if f.ganancia >= 0 else '' }}Bs {{ '{:,.2f}'.format(f.ganancia) }}</b></div></div>
       <div class="mobile-actions"><details class="operation buy-op"><summary>Comprar</summary><form action="/agregar" method="post" class="inlineform"><input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad<input name="cant" type="number" step="any" min="0.000001" required></label><label>Precio<input name="precio" type="number" step="any" min="0.000001" value="{{ f.precio_actual }}" required></label><input name="com" type="hidden" value="0"><input name="reg" type="hidden" value="0"><input name="iva" type="hidden" value="16"><button class="primary-action">Registrar compra</button></form></details><details class="operation sell-op"><summary>Reducir</summary><form action="/reducir" method="post" class="inlineform"><input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad<input name="cant" type="number" step="any" min="0.000001" max="{{ f.cantidad }}" required></label><label>Precio<input name="precio" type="number" step="any" min="0.000001" value="{{ f.precio_actual }}" required></label><input name="com" type="hidden" value="0"><input name="reg" type="hidden" value="0"><input name="iva" type="hidden" value="16"><button class="sell-action">Registrar venta</button></form></details></div>
-      <details class="mobile-more"><summary>Más opciones</summary><div class="manage-menu"><form action="/editar" method="post" class="inlineform"><input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad total<input name="cant" type="number" step="any" min="0" value="{{ f.cantidad }}" required></label><label>Costo promedio<input name="precio" type="number" step="any" min="0" value="{{ f.precio_prom }}" required></label><input name="com" type="hidden" value="0"><input name="reg" type="hidden" value="0"><input name="iva" type="hidden" value="16"><button>Guardar corrección</button></form><form action="/eliminar" method="post" onsubmit="return confirm('Eliminar {{ f.simb }} y su historial?')"><input type="hidden" name="simb" value="{{ f.simb }}"><button class="danger full">Eliminar posición</button></form></div></details>
+      <details class="mobile-more"><summary>Más opciones</summary><div class="manage-menu"><form action="/editar" method="post" class="inlineform"><input type="hidden" name="simb" value="{{ f.simb }}"><label>Cantidad total<input name="cant" type="number" step="any" min="0" value="{{ f.cantidad }}" required></label><label>Costo promedio<input name="precio" type="number" step="any" min="0" value="{{ f.precio_prom }}" required></label><button>Guardar corrección</button></form><form action="/portafolio/historial-inicial" method="post" class="inlineform" onsubmit="return confirm('Registrar saldo inicial de {{ f.simb }} con BCV histórico?')"><input type="hidden" name="simb" value="{{ f.simb }}"><label>Fecha real de adquisición<input name="fecha" type="date" required></label><small>Completa el costo USD de una posición antigua sin operaciones previas.</small><button class="primary-action">Completar datos USD</button></form><form action="/eliminar" method="post" onsubmit="return confirm('Eliminar {{ f.simb }} y su historial?')"><input type="hidden" name="simb" value="{{ f.simb }}"><button class="danger full">Eliminar posición</button></form></div></details>
     </article>{% endfor %}
   </div>
 

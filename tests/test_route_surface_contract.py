@@ -4,9 +4,10 @@ import main
 from scripts.route_inventory import digest
 
 
-# Intentional surface expansion: POST /reducir adds safe partial/full portfolio
-# sales while preserving every pre-existing route.
-EXPECTED_ROUTE_DIGEST = "33f6791e865925baded174d3f9f99b6eb7f82c3f5dbafe4c0ed4dc54ca58d395"
+# Intentional surface expansion: POST /portafolio/historial-inicial lets an
+# imported position obtain audited historical-USD metrics without replacing
+# its acquisition FX with today's rate.
+EXPECTED_ROUTE_DIGEST = "d16f4c4ae98799161186ba1859ec4510536bf94bdaa4ad5141d6096090dd0a2a"
 
 
 class RouteSurfaceContractTests(unittest.TestCase):
